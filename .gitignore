@@ -1,0 +1,32 @@
+# cargo build
+/target/
+**/*.rs.bk
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+*.log
+*.tmp
+
+# Local database cache
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# Local config
+.env
+.env.*
+config.local.*
+settings.local.*
+
+# Music
+*.mp3
+*.flac
+*.m4a
+*.wav
+*.ogg
+*.opus
+*.aac
