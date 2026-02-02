@@ -1,0 +1,8 @@
+[package]
+name = "sonora"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+iced = "0.14.0"
+id3 = "1.16.3"

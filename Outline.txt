@@ -1,0 +1,145 @@
+Outline
+
+Overall Structure (Cargo Workspace)
+-------------------------------------
+sonora/
+├─ sonora-core/        (pure logic, no UI)
+├─ sonora-db/          (SQLite persistence)
+├─ sonora-ui/          (Iced GUI)
+└─ sonora/             (binary / app entry point)
+
+- UI never touches filesystem directly
+- Core never depends on Iced
+- All destructive actions go through preview + commit
+
+
+sonora-core (Application Logic)
+---------------------------------
+sonora-core/
+├─ model/
+│  ├─ Track, Album, Artist, Playlist
+│  ├─ TrackId, AlbumId
+│  └─ TagKey, TagValue
+│
+├─ library/
+│  ├─ Folder import
+│  ├─ Recursive scan (.mp3 only initially)
+│  ├─ Detect new/changed/removed files (mtime + size)
+│
+├─ tags/
+│  ├─ Read ID3 tags
+│  ├─ Write ID3 tags
+│  ├─ Validation (missing/invalid tags)
+│
+├─ ops/
+│  ├─ TagEdit (user intent)
+│  ├─ PlannedOp (preview: before/after)
+│  ├─ CommittedOp (undo data)
+│  └─ Undo/redo journal
+│
+├─ playback/
+│  ├─ Play / pause / seek / stop
+│  └─ Thin wrapper over audio backend
+│
+└─ artwork/ (post-MVP)
+   ├─ Extract embedded art
+   ├─ Embed / replace artwork
+
+
+sonora-db (Persistence Layer)
+--------------------------------
+sonora-db/
+├─ SQLite schema
+│  ├─ tracks
+│  ├─ albums
+│  ├─ playlists
+│  ├─ playcounts
+│  └─ scan_roots
+│
+├─ Migrations
+│
+└─ Repositories
+   ├─ TrackRepo
+   ├─ AlbumRepo
+   ├─ PlaylistRepo
+   └─ PlaycountRepo
+
+- Store indexed metadata
+- Store playlists + play counts
+- No business logic beyond queries/upserts
+
+
+sonora-ui (Iced GUI)
+----------------------
+sonora-ui/
+├─ App state
+│  ├─ Library state
+│  ├─ Selection state
+│  ├─ Edit/dirty state
+│  └─ Playback state
+│
+├─ Views
+│  ├─ Top bar (search, view mode)
+│  ├─ Sidebar (library, playlists)
+│  ├─ Center view (songs / albums)
+│  ├─ Inspector (tags, batch edit)
+│  └─ Now playing bar
+│
+└─ Messages + Commands
+   ├─ ScanLibrary
+   ├─ SelectTracks
+   ├─ PlanEdits
+   ├─ CommitEdits
+   ├─ Undo
+   └─ Playback controls
+
+- UI emits Message
+- Async Command calls core/db
+- Result updates UI state
+
+
+Key Workflows
+----------------
+Library Import:
+- User selects folder
+- Core scans files
+- Tags read → DB upsert
+- UI updates library view
+
+Tag Editing:
+- User edits fields
+- Create TagEdit
+- Generate PlannedOp (preview)
+- User confirms → commit → write tags
+- Undo data recorded
+
+Playback:
+- UI sends play command
+- Core playback module handles audio
+- UI reflects playback state
+
+
+MVP:
+-----------------------
+- MP3 import + library scan
+- Tag read/write
+- Batch tag editing with preview + undo
+- Basic playback (play/pause/seek/volume)
+- Search + filter
+
+Post-MVP:
+-----------------------
+- Gapless playback
+- Smart playlists
+- ReplayGain
+- Online metadata lookup
+- Automation scripting
+- Advanced analytics
+
+
+Safety Guarantees
+-------------------
+- No direct writes without preview
+- All batch operations reversible
+- File rename/edit requires confirmation
+- Errors never silently ignored
