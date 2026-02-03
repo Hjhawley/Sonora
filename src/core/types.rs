@@ -1,38 +1,50 @@
 //! Core data types shared between core logic and the UI.
 //!
-//! These should be "boring structs" (plain data), so they are easy to:
-//! - display in the UI
-//! - save to a database later
-//! - test
+//! Rule of thumb:
+//! - These structs should be “boring bags of data”
+//! - No GUI code
+//! - No filesystem code
+//! - No tag parsing code
 //!
-//! `TrackRow` is intentionally simple right now. It represents one audio file.
+//! Why?
+//! - Easy to display in UI
+//! - Easy to serialize later (JSON/DB)
+//! - Easy to unit test
+//!
+//! `TrackRow` represents ONE audio file on disk plus the metadata we care about.
 
 use std::path::PathBuf;
 
 /// Minimal "row" of track metadata for display.
 /// Think: one line in a table or list.
 ///
-/// We store `Option<String>` for fields because:
+/// Rust newbie translation:
+/// - `Option<T>` means “maybe a value”
+///   - Some(value) = we have it
+///   - None = missing/unknown
+///
+/// We use Option for metadata because:
 /// - some files have missing tags
-/// - some files have corrupt tags
-/// - we want to show "Unknown Artist" in the UI instead of crashing
+/// - some tags fail to read
+/// - we want the UI to handle that gracefully (“Unknown Artist”) instead of crashing
 #[derive(Debug, Clone)]
 pub struct TrackRow {
     /// Full file path on disk.
+    /// This is the only thing we always have.
     pub path: PathBuf,
 
-    /// ID3 Title (or None if missing).
+    /// ID3 Title (Song name)
     pub title: Option<String>,
 
-    /// ID3 Artist (or None if missing).
+    /// ID3 Artist (Per-track artist)
     pub artist: Option<String>,
 
-    /// ID3 Album (or None if missing).
+    /// ID3 Album (Album name)
     pub album: Option<String>,
 
-    /// Track number (e.g. 7).
+    /// Track number (like 1, 2, 3...)
     pub track_no: Option<u32>,
 
-    /// Year (e.g. 2012).
+    /// Release year (like 1998)
     pub year: Option<i32>,
 }
