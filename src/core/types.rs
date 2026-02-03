@@ -1,17 +1,7 @@
 //! Core data types shared between core logic and the UI.
-//!
-//! Rule of thumb:
-//! - These structs should be "boring bags of data"
 //! - No GUI code
 //! - No filesystem code
 //! - No tag parsing code
-//!
-//! Why?
-//! - Easy to display in UI
-//! - Easy to serialize later (JSON/DB)
-//! - Easy to unit test
-//!
-//! 'TrackRow' represents ONE audio file on disk plus the metadata we care about.
 
 use std::path::PathBuf;
 
@@ -27,6 +17,7 @@ use std::path::PathBuf;
 /// - we want the UI to handle that gracefully ("Unknown Artist") instead of crashing
 #[derive(Debug, Clone)]
 pub struct TrackRow {
+    /// 'TrackRow' represents ONE audio file on disk plus the metadata we care about.
     /// Full file path on disk.
     /// This is the only thing we always have.
     pub path: PathBuf,
@@ -40,9 +31,9 @@ pub struct TrackRow {
     /// ID3 Album (Album name)
     pub album: Option<String>,
 
-    /// Track number (like 1, 2, 3...)
+    /// Track number
     pub track_no: Option<u32>,
 
-    /// Release year (like 1998)
+    /// Release year
     pub year: Option<i32>,
 }

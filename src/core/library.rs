@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 ///    - Ok(Vec<PathBuf>) = success; here's our list of file paths
 ///    - Err(String) = failure; here's an error message we can show to the user
 ///
-/// Why can this fail?
+/// Failure states:
 /// - permissions (Windows "Access denied")
 /// - folder doesn't exist
 /// - removable drive disconnected
@@ -55,10 +55,6 @@ fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
 }
 
 /// True if the file extension is '.mp3' (case-insensitive).
-///
-/// Why not just compare strings directly?
-/// - Some filesystems/extensions can be uppercase (.MP3)
-/// - 'Path' stores extensions as OS strings, so we safely convert via 'to_str()'
 fn is_mp3(path: &Path) -> bool {
     path.extension()
         // extension() returns Option<OsStr> (it might not exist)

@@ -186,7 +186,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // Save = ONLY updates memory (NOT disk yet)
+        // Save = currently only updates memory (not disk)
         Message::SaveInspectorToMemory => {
             let Some(i) = state.selected_track else {
                 state.status = "Select a track first.".to_string();
@@ -197,7 +197,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                 return Task::none();
             }
 
-            // Parse numbers (if user typed garbage, show an error)
+            // Parse numbers
             let track_no = parse_optional_u32(&state.inspector.track_no)
                 .map_err(|_| "Track # must be a number".to_string());
 

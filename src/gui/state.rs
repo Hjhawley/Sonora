@@ -13,7 +13,6 @@ use std::path::PathBuf;
 
 use crate::core::types::TrackRow;
 
-/// Dev convenience:
 /// If user didn't add a folder root yet, scan './test'.
 pub(crate) const TEST_ROOT: &str = "test";
 
@@ -22,7 +21,6 @@ pub(crate) const ROOTS_HEIGHT: f32 = 120.0;
 pub(crate) const LIST_HEIGHT: f32 = 460.0;
 
 /// View mode: Albums vs Tracks
-///
 /// This controls how the left list is displayed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ViewMode {
@@ -33,7 +31,6 @@ pub(crate) enum ViewMode {
 }
 
 /// AlbumKey is used as the "grouping key" in Album View.
-///
 /// We group tracks into albums by (artist, album).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
@@ -42,9 +39,7 @@ pub(crate) struct AlbumKey {
 }
 
 /// Inspector draft = what the user is typing in the right panel.
-///
-/// IMPORTANT: this is NOT written to disk yet.
-/// It's just the textbox contents until Save.
+/// This is not written to disk until the user hits Save.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
     pub(crate) title: String,
@@ -55,7 +50,6 @@ pub(crate) struct InspectorDraft {
 }
 
 /// Sonora is the app "state".
-///
 /// Anything the UI needs to remember goes here.
 pub(crate) struct Sonora {
     /// Status text shown near the top.
@@ -102,8 +96,6 @@ impl Default for Sonora {
     }
 }
 
-/// Message = "something happened".
-///
 /// Buttons and text inputs emit these messages.
 /// Then update.rs decides how the state changes.
 #[derive(Debug, Clone)]

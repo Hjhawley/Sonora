@@ -1,13 +1,11 @@
-//! GUI module (Iced).
+//! GUI module (Iced)
 //!
-//! This folder contains ONLY UI concerns:
+//! This folder contains ONLY frontend concerns:
 //! - app state ('Sonora')
 //! - messages ('Message')
 //! - update logic ('update()')
 //! - view layout ('view()')
 //! - small UI helpers ('util')
-//!
-//! The filesystem scanning + tag reading lives in 'crate::core'.
 
 pub(crate) mod state;
 pub(crate) mod update;

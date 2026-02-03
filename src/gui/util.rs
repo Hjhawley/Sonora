@@ -1,7 +1,5 @@
 //! Small pure helper functions used by the GUI.
-//!
-//! - no UI widgets
-//! - no state mutation
+//! - no UI widgets or state mutation
 
 use std::path::Path;
 

@@ -1,13 +1,7 @@
 //! ID3 tag reading utilities.
 //!
 //! This module turns an MP3 file path into a TrackRow.
-//!
 //! We use the 'id3' crate to read tags.
-//!
-//! Philosophy (important):
-//! - Tag read failures are common in real libraries (missing tags, corrupt files).
-//! - That should NOT crash the scan.
-//! - So we return a TrackRow even when reading fails, just with 'None' metadata.
 //!
 //! API design:
 //! - 'read_track_row(path)' returns '(TrackRow, bool)'
@@ -30,7 +24,6 @@ use super::types::TrackRow;
 /// - '(TrackRow, false)' if tags were read successfully
 /// - '(TrackRow, true)' if tag reading failed (TrackRow will have None metadata)
 ///
-/// NOTE:
 /// Right now we ignore the error details ('Err(_)').
 /// Later we can store/log the error string if we want better debugging.
 pub fn read_track_row(path: PathBuf) -> (TrackRow, bool) {

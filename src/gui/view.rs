@@ -1,5 +1,4 @@
-//! The renderer
-//!
+//! The GUI renderer
 //! This file does not mutate state
 //! It reads '&Sonora' and produces widgets
 

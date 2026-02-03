@@ -28,9 +28,10 @@ Agenda
 	Remains to be seen how this will scale with large library sizes
 
 - Next steps
+	More metadata tags (and group by "Album Artist" in Album View)
 	Single & batch file editing
 	Playback
-	If time permits, prettier GUI (low priority)
+	If time permits, prettier GUI (lower priority)
 
 - Questions
 	What would you like to see in an app like this, as a fellow music enthusiast?

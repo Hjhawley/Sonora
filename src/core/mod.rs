@@ -25,20 +25,15 @@ use std::path::PathBuf;
 use types::TrackRow;
 
 /// Scan one or more folder roots for '.mp3' files, then read ID3 tags for each file.
-///
-/// Big picture steps:
-/// 1) For each root folder, find every '.mp3' under it (library::scan_mp3s)
-/// 2) For each file path, read ID3 tags into a TrackRow (tags::read_track_row)
-/// 3) Return all TrackRows + a count of how many tag reads failed
+/// - For each root folder, find every '.mp3' under it (library::scan_mp3s)
+/// - For each file path, read ID3 tags into a TrackRow (tags::read_track_row)
+/// - Return all TrackRows + a count of how many tag reads failed
 ///
 /// Return type:
 /// - 'Ok((Vec<TrackRow>, usize))'
 ///    - Vec<TrackRow> = one "row" per file (path + metadata)
 ///    - usize = how many tag reads failed (still returns rows, just missing metadata)
 /// - 'Err(String)' if filesystem scanning failed (like permissions / missing folder)
-///
-/// Why do we count tag failures instead of erroring out?
-/// - A library can have a few broken files. We still want to load the rest.
 ///
 /// Why do we use HashSet?
 /// - If the user adds overlapping roots, we don't want duplicates.
@@ -50,7 +45,7 @@ pub fn scan_and_read_roots(roots: Vec<PathBuf>) -> Result<(Vec<TrackRow>, usize)
     let mut rows = Vec::new();
     let mut tag_failures = 0usize;
 
-    // HashSet lets us ask "have I seen this path already?" in fast time.
+    // HashSet lets us quickly check "have I seen this path already?"
     let mut seen = HashSet::<PathBuf>::new();
 
     for root in roots {
