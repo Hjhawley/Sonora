@@ -1,3 +1,27 @@
+//! Sonora GUI
+//!
+//! Current behavior (read-only)
+//! - User adds one or more folder roots.
+//! - "Scan Library" walks roots for `.mp3`, reads ID3 into `TrackRow`.
+//! - Library is displayed as either:
+//!   - Track View: flat list of tracks
+//!   - Album View: grouped by (artist, album), with expandable albums
+//! - Selecting a track populates the Inspector form.
+//! - "Save edits" updates the in-memory `TrackRow` only (NO disk writes).
+//!
+//! Not implemented yet
+//! - Writing tags back to files
+//! - Persistent DB/cache
+//! - Audio playback
+//!
+//! Architecture constraints (on purpose)
+//! - UI layer calls `core::*` for scanning/tag reading.
+//! - UI does not perform filesystem IO except validating user-entered root paths.
+//!
+//! Concurrency model
+//! - Scan runs on a spawned thread; UI stays responsive.
+//! - Result is returned via a oneshot channel back into the Iced update loop.
+
 mod core;
 
 use iced::widget::{Column, button, column, row, scrollable, text, text_input};
@@ -15,9 +39,9 @@ const TEST_ROOT: &str = "test";
 const ROOTS_HEIGHT: f32 = 120.0;
 const LIST_HEIGHT: f32 = 460.0;
 
-// ---------------------------
+
 // View mode: Albums vs Tracks
-// ---------------------------
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ViewMode {
     Albums,
@@ -32,9 +56,9 @@ struct AlbumKey {
     album: String,
 }
 
-// ---------------------------
+
 // Inspector = the editable UI state
-// ---------------------------
+
 // IMPORTANT: this is NOT writing to disk yet.
 // It’s just the text boxes on the right.
 #[derive(Debug, Default, Clone)]
@@ -62,7 +86,7 @@ struct Sonora {
     selected_album: Option<AlbumKey>, // used in Albums view
     selected_track: Option<usize>,    // index into tracks
 
-    // Right-side inspector “form”
+    // Right-side inspector "form"
     inspector: InspectorDraft,
     inspector_dirty: bool, // true when user typed something
 }
@@ -123,9 +147,9 @@ fn main() -> iced::Result {
 
 fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     match message {
-        // ---------------------------
+        
         // Roots (folders)
-        // ---------------------------
+        
         Message::RootInputChanged(s) => {
             state.root_input = s;
             Task::none()
@@ -167,9 +191,9 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // ---------------------------
+        
         // Scan
-        // ---------------------------
+        
         Message::ScanLibrary => {
             if state.scanning {
                 return Task::none();
@@ -191,7 +215,7 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                     let (tx, rx) = oneshot::channel::<Result<(Vec<TrackRow>, usize), String>>();
 
                     std::thread::spawn(move || {
-                        // This is the “heavy work” thread
+                        // This is the "heavy work" thread
                         let _ = tx.send(crate::core::scan_and_read_roots(roots_to_scan));
                     });
 
@@ -236,9 +260,9 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // ---------------------------
+        
         // View mode
-        // ---------------------------
+        
         Message::SetViewMode(mode) => {
             state.view_mode = mode;
 
@@ -254,9 +278,9 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // ---------------------------
+        
         // Album selection
-        // ---------------------------
+        
         Message::SelectAlbum(key) => {
             state.selected_album = Some(key);
             state.selected_track = None; // selecting an album is not selecting a track
@@ -264,9 +288,9 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // ---------------------------
+        
         // Track selection
-        // ---------------------------
+        
         Message::SelectTrack(i) => {
             if i < state.tracks.len() {
                 state.selected_track = Some(i);
@@ -275,9 +299,9 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // ---------------------------
+        
         // Inspector typing
-        // ---------------------------
+        
         Message::EditTitle(s) => {
             state.inspector.title = s;
             state.inspector_dirty = true;
@@ -304,9 +328,9 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // ---------------------------
+        
         // Save = ONLY updates memory (NOT disk yet)
-        // ---------------------------
+        
         Message::SaveInspectorToMemory => {
             let Some(i) = state.selected_track else {
                 state.status = "Select a track first.".to_string();
@@ -374,9 +398,9 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     }
 }
 
-// ---------------------------
+
 // View (UI)
-// ---------------------------
+
 fn view(state: &Sonora) -> Column<'_, Message> {
     // ------- Roots UI -------
     let root_input = text_input("Add folder path (ex: H:\\music)", &state.root_input)
@@ -455,9 +479,9 @@ fn view(state: &Sonora) -> Column<'_, Message> {
     .spacing(12)
 }
 
-// ---------------------------
+
 // Build Tracks list (click to select a track)
-// ---------------------------
+
 fn build_tracks_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     let mut list = column![];
 
@@ -481,10 +505,10 @@ fn build_tracks_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     scrollable(list.spacing(6)).height(Length::Fixed(LIST_HEIGHT))
 }
 
-// ---------------------------
+
 // Build Albums list (grouped)
 // Click an album = expands its tracks
-// ---------------------------
+
 fn build_albums_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     // Group tracks by (artist, album)
     let mut groups: BTreeMap<AlbumKey, Vec<usize>> = BTreeMap::new();
@@ -550,9 +574,9 @@ fn build_albums_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     scrollable(list.spacing(6)).height(Length::Fixed(LIST_HEIGHT))
 }
 
-// ---------------------------
+
 // Inspector UI (right panel)
-// ---------------------------
+
 fn build_inspector(state: &Sonora) -> Column<'_, Message> {
     // If nothing is selected, show an empty state
     let Some(i) = state.selected_track else {
@@ -617,9 +641,9 @@ fn build_inspector(state: &Sonora) -> Column<'_, Message> {
     .spacing(10)
 }
 
-// ---------------------------
+
 // Helpers
-// ---------------------------
+
 fn load_inspector_from_track(state: &mut Sonora) {
     let Some(i) = state.selected_track else {
         clear_inspector(state);
