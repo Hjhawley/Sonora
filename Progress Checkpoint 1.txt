@@ -1,0 +1,36 @@
+Progress Checkpoint 1
+Agenda
+
+- Current state: a working GUI prototype can scan folders, find .mp3s, read ID3 metadata, and display Track/Album views with an inspector. Edits can be made in memory only, not written to files.
+
+- Demo
+
+- Right on track with my schedule:
+	Repo + architecture outline
+	Working Iced GUI window
+	Folder import + scan
+	ID3 tag reading from files
+
+- Still need to thoroughly test:
+	Different filetypes
+	Recursive scan
+	Should start writing some Unit tests
+
+- Current structure:
+	/core = scanning, ID3 tag reading, data types
+	/gui = handle frontend stuff to keep main.rs lean
+
+- Difficulties
+	Rust/Iced learning curve, heavily relying on ChatGPT to teach me what does what
+	Ex: why are 'column' and 'Column' two different objects? (one is the actual class and one is a function that builds the object)
+
+- Potential challenges
+	Remains to be seen how this will scale with large library sizes
+
+- Next steps
+	Single & batch file editing
+	Playback
+	If time permits, prettier GUI (low priority)
+
+- Questions
+	What would you like to see in an app like this, as a fellow music enthusiast?
