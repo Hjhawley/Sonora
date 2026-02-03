@@ -39,7 +39,6 @@ const TEST_ROOT: &str = "test";
 const ROOTS_HEIGHT: f32 = 120.0;
 const LIST_HEIGHT: f32 = 460.0;
 
-
 // View mode: Albums vs Tracks
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,7 +54,6 @@ struct AlbumKey {
     artist: String,
     album: String,
 }
-
 
 // Inspector = the editable UI state
 
@@ -147,9 +145,7 @@ fn main() -> iced::Result {
 
 fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     match message {
-        
         // Roots (folders)
-        
         Message::RootInputChanged(s) => {
             state.root_input = s;
             Task::none()
@@ -191,9 +187,7 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        
         // Scan
-        
         Message::ScanLibrary => {
             if state.scanning {
                 return Task::none();
@@ -260,9 +254,7 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        
         // View mode
-        
         Message::SetViewMode(mode) => {
             state.view_mode = mode;
 
@@ -278,9 +270,7 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        
         // Album selection
-        
         Message::SelectAlbum(key) => {
             state.selected_album = Some(key);
             state.selected_track = None; // selecting an album is not selecting a track
@@ -288,9 +278,7 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        
         // Track selection
-        
         Message::SelectTrack(i) => {
             if i < state.tracks.len() {
                 state.selected_track = Some(i);
@@ -299,9 +287,7 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        
         // Inspector typing
-        
         Message::EditTitle(s) => {
             state.inspector.title = s;
             state.inspector_dirty = true;
@@ -328,9 +314,7 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        
         // Save = ONLY updates memory (NOT disk yet)
-        
         Message::SaveInspectorToMemory => {
             let Some(i) = state.selected_track else {
                 state.status = "Select a track first.".to_string();
@@ -397,7 +381,6 @@ fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
     }
 }
-
 
 // View (UI)
 
@@ -479,7 +462,6 @@ fn view(state: &Sonora) -> Column<'_, Message> {
     .spacing(12)
 }
 
-
 // Build Tracks list (click to select a track)
 
 fn build_tracks_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
@@ -504,7 +486,6 @@ fn build_tracks_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
 
     scrollable(list.spacing(6)).height(Length::Fixed(LIST_HEIGHT))
 }
-
 
 // Build Albums list (grouped)
 // Click an album = expands its tracks
@@ -574,7 +555,6 @@ fn build_albums_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     scrollable(list.spacing(6)).height(Length::Fixed(LIST_HEIGHT))
 }
 
-
 // Inspector UI (right panel)
 
 fn build_inspector(state: &Sonora) -> Column<'_, Message> {
@@ -589,7 +569,11 @@ fn build_inspector(state: &Sonora) -> Column<'_, Message> {
     };
 
     if i >= state.tracks.len() {
-        return column![text("Inspector"), text("Invalid selection, rescan?")].spacing(8);
+        return column![
+            text("Metadata inspector"),
+            text("Invalid selection, rescan?")
+        ]
+        .spacing(8);
     }
 
     let t = &state.tracks[i];
@@ -640,7 +624,6 @@ fn build_inspector(state: &Sonora) -> Column<'_, Message> {
     ]
     .spacing(10)
 }
-
 
 // Helpers
 
