@@ -171,9 +171,9 @@ fn view(state: &Sonora) -> Column<'_, Message> {
     let mut roots_list = column![];
     for (i, p) in state.roots.iter().enumerate() {
         let remove_btn = if state.scanning {
-            button("×")
+            button("x")
         } else {
-            button("×").on_press(Message::RemoveRoot(i))
+            button("x").on_press(Message::RemoveRoot(i))
         };
 
         roots_list = roots_list.push(row![text(p.display().to_string()), remove_btn].spacing(8));
