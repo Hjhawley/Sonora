@@ -7,4 +7,5 @@ pub struct TrackRow {
     pub artist: Option<String>,
     pub album: Option<String>,
     pub track_no: Option<u32>,
+    pub year: Option<i32>,
 }
