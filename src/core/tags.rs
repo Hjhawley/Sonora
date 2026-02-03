@@ -11,8 +11,8 @@
 //!
 //! API design:
 //! - 'read_track_row(path)' returns '(TrackRow, bool)'
-//!   - bool = true means “tag read failed”
-//!   - bool = false means “tag read succeeded”
+//!   - bool = true means "tag read failed"
+//!   - bool = false means "tag read succeeded"
 
 use std::path::PathBuf;
 
@@ -24,7 +24,7 @@ use super::types::TrackRow;
 ///
 /// Why does it take 'PathBuf' (owned) instead of '&Path' (borrowed)?
 /// - Because TrackRow stores the path.
-/// - It’s convenient to “move” the PathBuf into TrackRow without cloning.
+/// - It's convenient to "move" the PathBuf into TrackRow without cloning.
 ///
 /// Returns:
 /// - '(TrackRow, false)' if tags were read successfully
@@ -32,7 +32,7 @@ use super::types::TrackRow;
 ///
 /// NOTE:
 /// Right now we ignore the error details ('Err(_)').
-/// Later you can store/log the error string if you want better debugging.
+/// Later we can store/log the error string if we want better debugging.
 pub fn read_track_row(path: PathBuf) -> (TrackRow, bool) {
     match Tag::read_from_path(&path) {
         Ok(tag) => (

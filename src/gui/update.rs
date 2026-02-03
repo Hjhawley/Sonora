@@ -1,4 +1,4 @@
-//! Update logic (“the brain”).
+//! Update logic ("the brain").
 //!
 //! This file contains:
 //! - the main 'update()' function (handles messages)
@@ -33,13 +33,13 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
             let p = PathBuf::from(input);
 
-            // Don’t let user add garbage paths
+            // Don't let user add garbage paths
             if !Path::new(input).is_dir() {
                 state.status = format!("Not a folder: {}", p.display());
                 return Task::none();
             }
 
-            // Don’t add duplicates
+            // Don't add duplicates
             if state.roots.contains(&p) {
                 state.status = format!("Already added: {}", p.display());
                 state.root_input.clear();
@@ -71,7 +71,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             state.tracks.clear();
             state.status = "Scanning…".to_string();
 
-            // If user hasn’t added roots, scan ./test
+            // If user hasn't added roots, scan ./test
             let roots_to_scan = if state.roots.is_empty() {
                 vec![PathBuf::from(TEST_ROOT)]
             } else {
@@ -83,7 +83,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                     let (tx, rx) = oneshot::channel::<Result<(Vec<TrackRow>, usize), String>>();
 
                     std::thread::spawn(move || {
-                        // This is the “heavy work” thread
+                        // This is the "heavy work" thread
                         let _ = tx.send(core::scan_and_read_roots(roots_to_scan));
                     });
 
@@ -113,7 +113,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
                     state.tracks = rows;
 
-                    // After rescanning, your selections may not make sense anymore.
+                    // After rescanning, user's selections may not make sense anymore.
                     state.selected_track = None;
                     state.selected_album = None;
                     clear_inspector(state);

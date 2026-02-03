@@ -1,7 +1,7 @@
 //! Core data types shared between core logic and the UI.
 //!
 //! Rule of thumb:
-//! - These structs should be “boring bags of data”
+//! - These structs should be "boring bags of data"
 //! - No GUI code
 //! - No filesystem code
 //! - No tag parsing code
@@ -16,17 +16,15 @@
 use std::path::PathBuf;
 
 /// Minimal "row" of track metadata for display.
-/// Think: one line in a table or list.
-///
-/// Rust newbie translation:
-/// - 'Option<T>' means “maybe a value”
+/// one line in a table or list.
+/// - 'Option<T>' means "maybe a value"
 ///   - Some(value) = we have it
 ///   - None = missing/unknown
 ///
 /// We use Option for metadata because:
 /// - some files have missing tags
 /// - some tags fail to read
-/// - we want the UI to handle that gracefully (“Unknown Artist”) instead of crashing
+/// - we want the UI to handle that gracefully ("Unknown Artist") instead of crashing
 #[derive(Debug, Clone)]
 pub struct TrackRow {
     /// Full file path on disk.

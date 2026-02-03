@@ -1,19 +1,19 @@
 //! Sonora core module (non-UI logic).
 //!
-//! Think of 'core' as: **“the brain”** (filesystem scan + tag reading),
-//! while the GUI is just: **“the face”** (buttons, lists, text inputs).
+//! Think of 'core' as: **"the brain"** (filesystem scan + tag reading),
+//! while the GUI is just: **"the face"** (buttons, lists, text inputs).
 //!
 //! Why split core vs UI?
 //! - UI code stays simple and less error-prone
 //! - core logic becomes easier to test
-//! - later you can reuse core for:
+//! - later we can reuse core for:
 //!   - a CLI tool
 //!   - a different GUI
 //!   - a background scanner service
 //!
 //! In other words:
-//! - The UI should *ask* for data (“scan these folders”)
-//! - core should *return* plain structs (“here are the tracks”)
+//! - The UI should *ask* for data ("scan these folders")
+//! - core should *return* plain structs ("here are the tracks")
 
 pub mod library;
 pub mod tags;
@@ -33,7 +33,7 @@ use types::TrackRow;
 ///
 /// Return type:
 /// - 'Ok((Vec<TrackRow>, usize))'
-///    - Vec<TrackRow> = one “row” per file (path + metadata)
+///    - Vec<TrackRow> = one "row" per file (path + metadata)
 ///    - usize = how many tag reads failed (still returns rows, just missing metadata)
 /// - 'Err(String)' if filesystem scanning failed (like permissions / missing folder)
 ///
@@ -41,16 +41,16 @@ use types::TrackRow;
 /// - A library can have a few broken files. We still want to load the rest.
 ///
 /// Why do we use HashSet?
-/// - If the user adds overlapping roots, we don’t want duplicates.
+/// - If the user adds overlapping roots, we don't want duplicates.
 ///   Example:
 ///   - Root A: 'D:\Music'
 ///   - Root B: 'D:\Music\Soundtracks'
-///   Those overlap, so without dedupe, you’d double-count files.
+///   Those overlap, so without dedupe, we'd double-count files.
 pub fn scan_and_read_roots(roots: Vec<PathBuf>) -> Result<(Vec<TrackRow>, usize), String> {
     let mut rows = Vec::new();
     let mut tag_failures = 0usize;
 
-    // HashSet lets us ask “have I seen this path already?” in fast time.
+    // HashSet lets us ask "have I seen this path already?" in fast time.
     let mut seen = HashSet::<PathBuf>::new();
 
     for root in roots {

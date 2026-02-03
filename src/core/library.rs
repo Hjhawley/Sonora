@@ -1,56 +1,40 @@
-//! Filesystem scanning utilities (read-only).
-//!
-//! Think of this module as: **“give me a folder, I’ll give you back mp3 file paths.”**
-//!
-//! What this module *does*:
+//! Filesystem scanning utilities (read-only)
 //! - Walks folders recursively (visits subfolders too)
-//! - Collects files that end in '.mp3' (case-insensitive)
-//!
-//! What this module *does NOT* do (on purpose):
-//! - It does NOT read ID3 tags
-//! - It does NOT know anything about the GUI (Iced)
-//! - It does NOT write or modify files
-//!
-//! Why keep it this dumb?
-//! - Easier to test
-//! - Easier to reuse later (CLI app, different GUI, etc.)
+//! - Collects files that end in '.mp3'
+//! - Does NOT read ID3 tags
+//! - Does NOT know anything about the GUI (Iced)
+//! - Does NOT write or modify files
 
 use std::path::{Path, PathBuf};
 
 /// Recursively scan a directory tree and return all '.mp3' file paths.
-///
-/// Rust newbie translation:
-/// - 'root: &Path' means “borrow a path” (we don’t take ownership, we just look at it).
+/// - 'root: &Path' means "borrow a path" (we don't take ownership, we just look at it)
 /// - 'Result<Vec<PathBuf>, String>' means:
-///    - **Ok(Vec<PathBuf>)** = success; here’s your list of file paths
-///    - **Err(String)** = failure; here’s an error message you can show to the user
+///    - Ok(Vec<PathBuf>) = success; here's our list of file paths
+///    - Err(String) = failure; here's an error message we can show to the user
 ///
 /// Why can this fail?
-/// - permissions (Windows “Access denied”)
-/// - folder doesn’t exist
+/// - permissions (Windows "Access denied")
+/// - folder doesn't exist
 /// - removable drive disconnected
-///
-/// Note: this returns **paths only**, not metadata.
 pub fn scan_mp3s(root: &Path) -> Result<Vec<PathBuf>, String> {
     // We'll push matches into this Vec as we find them.
     let mut out = Vec::new();
 
-    // 'walk_dir' does the real recursive work.
+    // 'walk_dir' does the recursive work
     // '?' means:
-    // “If walk_dir returns Err(...), stop immediately and return that Err upward.”
+    // "If walk_dir returns Err(...), stop immediately and return that Err upward."
     walk_dir(root, &mut out)?;
 
     Ok(out)
 }
 
 /// Recursive helper: walks ONE directory and pushes matching files into 'out'.
-///
-/// Rust newbie translation:
 /// - 'out: &mut Vec<PathBuf>' means:
-///   “Here’s the same list; please modify it by pushing into it.”
+///   "Here's the same list; please modify it by pushing into it."
 fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     // read_dir gives an iterator of entries in this folder.
-    // This can fail if you can’t read the directory.
+    // This can fail if we can't read the directory.
     let entries = std::fs::read_dir(dir).map_err(|e| format!("{dir:?}: {e}"))?;
 
     for entry in entries {

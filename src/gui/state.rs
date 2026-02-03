@@ -1,6 +1,6 @@
 //! GUI state + message types.
 //!
-//! This file defines the “shape” of your app:
+//! This file defines the "shape" of the app:
 //! - what the app remembers ('Sonora')
 //! - what can happen ('Message')
 //! - small helper enums/structs used by the UI
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use crate::core::types::TrackRow;
 
 /// Dev convenience:
-/// If user didn’t add a folder root yet, scan './test'.
+/// If user didn't add a folder root yet, scan './test'.
 pub(crate) const TEST_ROOT: &str = "test";
 
 /// Fixed UI heights (pixels) for scroll areas.
@@ -44,7 +44,7 @@ pub(crate) struct AlbumKey {
 /// Inspector draft = what the user is typing in the right panel.
 ///
 /// IMPORTANT: this is NOT written to disk yet.
-/// It’s just the textbox contents until Save.
+/// It's just the textbox contents until Save.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
     pub(crate) title: String,
@@ -102,7 +102,7 @@ impl Default for Sonora {
     }
 }
 
-/// Message = “something happened”.
+/// Message = "something happened".
 ///
 /// Buttons and text inputs emit these messages.
 /// Then update.rs decides how the state changes.
