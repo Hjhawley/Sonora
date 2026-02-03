@@ -11,7 +11,7 @@
 //! - Easy to serialize later (JSON/DB)
 //! - Easy to unit test
 //!
-//! `TrackRow` represents ONE audio file on disk plus the metadata we care about.
+//! 'TrackRow' represents ONE audio file on disk plus the metadata we care about.
 
 use std::path::PathBuf;
 
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 /// Think: one line in a table or list.
 ///
 /// Rust newbie translation:
-/// - `Option<T>` means “maybe a value”
+/// - 'Option<T>' means “maybe a value”
 ///   - Some(value) = we have it
 ///   - None = missing/unknown
 ///

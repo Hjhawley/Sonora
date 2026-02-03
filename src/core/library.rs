@@ -4,7 +4,7 @@
 //!
 //! What this module *does*:
 //! - Walks folders recursively (visits subfolders too)
-//! - Collects files that end in `.mp3` (case-insensitive)
+//! - Collects files that end in '.mp3' (case-insensitive)
 //!
 //! What this module *does NOT* do (on purpose):
 //! - It does NOT read ID3 tags
@@ -17,11 +17,11 @@
 
 use std::path::{Path, PathBuf};
 
-/// Recursively scan a directory tree and return all `.mp3` file paths.
+/// Recursively scan a directory tree and return all '.mp3' file paths.
 ///
 /// Rust newbie translation:
-/// - `root: &Path` means “borrow a path” (we don’t take ownership, we just look at it).
-/// - `Result<Vec<PathBuf>, String>` means:
+/// - 'root: &Path' means “borrow a path” (we don’t take ownership, we just look at it).
+/// - 'Result<Vec<PathBuf>, String>' means:
 ///    - **Ok(Vec<PathBuf>)** = success; here’s your list of file paths
 ///    - **Err(String)** = failure; here’s an error message you can show to the user
 ///
@@ -35,18 +35,18 @@ pub fn scan_mp3s(root: &Path) -> Result<Vec<PathBuf>, String> {
     // We'll push matches into this Vec as we find them.
     let mut out = Vec::new();
 
-    // `walk_dir` does the real recursive work.
-    // `?` means:
+    // 'walk_dir' does the real recursive work.
+    // '?' means:
     // “If walk_dir returns Err(...), stop immediately and return that Err upward.”
     walk_dir(root, &mut out)?;
 
     Ok(out)
 }
 
-/// Recursive helper: walks ONE directory and pushes matching files into `out`.
+/// Recursive helper: walks ONE directory and pushes matching files into 'out'.
 ///
 /// Rust newbie translation:
-/// - `out: &mut Vec<PathBuf>` means:
+/// - 'out: &mut Vec<PathBuf>' means:
 ///   “Here’s the same list; please modify it by pushing into it.”
 fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     // read_dir gives an iterator of entries in this folder.
@@ -54,7 +54,7 @@ fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     let entries = std::fs::read_dir(dir).map_err(|e| format!("{dir:?}: {e}"))?;
 
     for entry in entries {
-        // Each `entry` is a Result<DirEntry, Error> so we unwrap it safely.
+        // Each 'entry' is a Result<DirEntry, Error> so we unwrap it safely.
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
 
@@ -70,11 +70,11 @@ fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
-/// True if the file extension is `.mp3` (case-insensitive).
+/// True if the file extension is '.mp3' (case-insensitive).
 ///
 /// Why not just compare strings directly?
 /// - Some filesystems/extensions can be uppercase (.MP3)
-/// - `Path` stores extensions as OS strings, so we safely convert via `to_str()`
+/// - 'Path' stores extensions as OS strings, so we safely convert via 'to_str()'
 fn is_mp3(path: &Path) -> bool {
     path.extension()
         // extension() returns Option<OsStr> (it might not exist)

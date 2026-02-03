@@ -1,16 +1,14 @@
 //! Small pure helper functions used by the GUI.
 //!
-//! “Pure” here means:
 //! - no UI widgets
 //! - no state mutation
-//! - easy to test later
 
 use std::path::Path;
 
 use crate::core::types::TrackRow;
 
 /// Gets filename without extension, used as a fallback title.
-/// Example: `song.mp3` -> `song`
+/// Ex: 'song.mp3' -> 'song'
 pub(crate) fn filename_stem(path: &Path) -> String {
     path.file_stem()
         .and_then(|s| s.to_str())

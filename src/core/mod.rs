@@ -1,6 +1,6 @@
 //! Sonora core module (non-UI logic).
 //!
-//! Think of `core` as: **“the brain”** (filesystem scan + tag reading),
+//! Think of 'core' as: **“the brain”** (filesystem scan + tag reading),
 //! while the GUI is just: **“the face”** (buttons, lists, text inputs).
 //!
 //! Why split core vs UI?
@@ -24,18 +24,18 @@ use std::path::PathBuf;
 
 use types::TrackRow;
 
-/// Scan one or more folder roots for `.mp3` files, then read ID3 tags for each file.
+/// Scan one or more folder roots for '.mp3' files, then read ID3 tags for each file.
 ///
 /// Big picture steps:
-/// 1) For each root folder, find every `.mp3` under it (library::scan_mp3s)
+/// 1) For each root folder, find every '.mp3' under it (library::scan_mp3s)
 /// 2) For each file path, read ID3 tags into a TrackRow (tags::read_track_row)
 /// 3) Return all TrackRows + a count of how many tag reads failed
 ///
 /// Return type:
-/// - `Ok((Vec<TrackRow>, usize))`
+/// - 'Ok((Vec<TrackRow>, usize))'
 ///    - Vec<TrackRow> = one “row” per file (path + metadata)
 ///    - usize = how many tag reads failed (still returns rows, just missing metadata)
-/// - `Err(String)` if filesystem scanning failed (like permissions / missing folder)
+/// - 'Err(String)' if filesystem scanning failed (like permissions / missing folder)
 ///
 /// Why do we count tag failures instead of erroring out?
 /// - A library can have a few broken files. We still want to load the rest.
@@ -43,8 +43,8 @@ use types::TrackRow;
 /// Why do we use HashSet?
 /// - If the user adds overlapping roots, we don’t want duplicates.
 ///   Example:
-///   - Root A: `D:\Music`
-///   - Root B: `D:\Music\Soundtracks`
+///   - Root A: 'D:\Music'
+///   - Root B: 'D:\Music\Soundtracks'
 ///   Those overlap, so without dedupe, you’d double-count files.
 pub fn scan_and_read_roots(roots: Vec<PathBuf>) -> Result<(Vec<TrackRow>, usize), String> {
     let mut rows = Vec::new();
@@ -55,7 +55,7 @@ pub fn scan_and_read_roots(roots: Vec<PathBuf>) -> Result<(Vec<TrackRow>, usize)
 
     for root in roots {
         // 1) Find all mp3 paths under this root folder.
-        // `?` = bubble up the error if scanning fails.
+        // '?' = bubble up the error if scanning fails.
         let paths = library::scan_mp3s(&root)?;
 
         // 2) Read tags for each path and convert to TrackRow.

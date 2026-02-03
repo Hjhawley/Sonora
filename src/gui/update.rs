@@ -1,7 +1,7 @@
 //! Update logic (“the brain”).
 //!
 //! This file contains:
-//! - the main `update()` function (handles messages)
+//! - the main 'update()' function (handles messages)
 //! - small state-mutation helpers (load/clear inspector)
 //!
 //! Rule of thumb:

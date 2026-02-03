@@ -1,8 +1,8 @@
 //! GUI state + message types.
 //!
 //! This file defines the “shape” of your app:
-//! - what the app remembers (`Sonora`)
-//! - what can happen (`Message`)
+//! - what the app remembers ('Sonora')
+//! - what can happen ('Message')
 //! - small helper enums/structs used by the UI
 //!
 //! Keeping this separate makes it easier to navigate:
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use crate::core::types::TrackRow;
 
 /// Dev convenience:
-/// If user didn’t add a folder root yet, scan `./test`.
+/// If user didn’t add a folder root yet, scan './test'.
 pub(crate) const TEST_ROOT: &str = "test";
 
 /// Fixed UI heights (pixels) for scroll areas.
@@ -26,7 +26,7 @@ pub(crate) const LIST_HEIGHT: f32 = 460.0;
 /// This controls how the left list is displayed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ViewMode {
-    /// Grouped view: Artist+Album rows, expandable into tracks.
+    /// Grouped view: Artist + Album rows, expandable into tracks.
     Albums,
     /// Flat view: one big list of tracks.
     Tracks,

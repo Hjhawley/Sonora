@@ -1,7 +1,7 @@
-//! View/layout code (“the renderer”).
+//! The renderer
 //!
-//! This file should contain *no state mutation*.
-//! It reads `&Sonora` and produces widgets.
+//! This file does not mutate state
+//! It reads '&Sonora' and produces widgets
 
 use iced::Length;
 use iced::widget::{Column, button, column, row, scrollable, text, text_input};
