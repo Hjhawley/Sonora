@@ -1,0 +1,6 @@
+features:
+online tag pulling
+smart playlists
+open with audacity
+smart shuffle
+rhythmbox?
