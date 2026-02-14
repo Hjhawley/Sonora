@@ -335,16 +335,42 @@ fn popm_rating_and_count(tag: &Tag) -> (Option<u8>, Option<u64>) {
 }
 
 /// Extract play count from PCNT if present.
+///
+/// PCNT is a binary frame (variable-length big-endian integer).
+/// Many versions of the `id3` crate expose it as `Content::Unknown(Vec<u8>)`,
+/// not as a dedicated `Content::Counter` variant.
 fn pcnt_count(tag: &Tag) -> Option<u64> {
     for frame in tag.frames() {
         if frame.id() != "PCNT" {
             continue;
         }
-        if let Content::Counter(c) = frame.content() {
-            return Some(*c);
-        }
+
+        // Future-proof: even if id3 adds a dedicated PCNT variant later,
+        // this still gives you an Unknown view of the raw bytes.
+        let unk = frame.content().to_unknown().ok()?;
+        return parse_be_u64(unk.as_ref().data.as_slice());
     }
     None
+}
+
+/// Parse a variable-length big-endian integer into u64 (ID3 PCNT format).
+fn parse_be_u64(bytes: &[u8]) -> Option<u64> {
+    if bytes.is_empty() {
+        return None;
+    }
+
+    // If it's longer than 8 bytes, keep the least-significant 8.
+    let bytes = if bytes.len() > 8 {
+        &bytes[bytes.len() - 8..]
+    } else {
+        bytes
+    };
+
+    let mut v: u64 = 0;
+    for &b in bytes {
+        v = (v << 8) | (b as u64);
+    }
+    Some(v)
 }
 
 /// Collect "extra" text frames we didn't explicitly model as fields.
