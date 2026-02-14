@@ -1,78 +1,95 @@
-//! GUI state + message types.
-//!
-//! This file defines the "shape" of the app:
-//! - what the app remembers ('Sonora')
-//! - what can happen ('Message')
-//! - small helper enums/structs used by the UI
-//!
-//! Keeping this separate makes it easier to navigate:
-//! - update.rs handles behavior
-//! - view.rs handles layout
+//! GUI state + messages.
+//! Pure data definitions used by update.rs + view.rs.
 
 use std::path::PathBuf;
 
 use crate::core::types::TrackRow;
 
-/// If user didn't add a folder root yet, scan './test'.
+/// Dev convenience: if user didn’t add roots, scan ./test
 pub(crate) const TEST_ROOT: &str = "test";
 
-/// Fixed UI heights (pixels) for scroll areas.
+/// Fixed UI heights (pixels)
 pub(crate) const ROOTS_HEIGHT: f32 = 120.0;
 pub(crate) const LIST_HEIGHT: f32 = 460.0;
 
-/// View mode: Albums vs Tracks
-/// This controls how the left list is displayed.
+/// Albums vs Tracks list mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ViewMode {
-    /// Grouped view: Artist + Album rows, expandable into tracks.
     Albums,
-    /// Flat view: one big list of tracks.
     Tracks,
 }
 
-/// AlbumKey is used as the "grouping key" in Album View.
-/// We group tracks into albums by (artist, album).
+/// Grouping key for Album View.
+/// Use ALBUM ARTIST (TPE2) first.
+/// Fallback behavior happens in view.rs (Unknown Artist, etc).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
-    pub(crate) artist: String,
-    pub(crate) album: String,
+    pub album_artist: String,
+    pub album: String,
 }
 
-/// Inspector draft = what the user is typing in the right panel.
-/// This is not written to disk until the user hits Save.
+/// Draft editable metadata (strings, so user can type anything).
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
-    pub(crate) title: String,
-    pub(crate) artist: String,
-    pub(crate) album: String,
-    pub(crate) track_no: String,
-    pub(crate) year: String,
+    // Core tags
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub album_artist: String,
+    pub composer: String,
+
+    pub track_no: String,
+    pub track_total: String,
+    pub disc_no: String,
+    pub disc_total: String,
+
+    pub year: String,
+    pub date: String,
+    pub genre: String,
+
+    // Extended (toggleable)
+    pub lyricist: String,
+    pub conductor: String,
+    pub remixer: String,
+    pub publisher: String,
+    pub grouping: String,
+    pub subtitle: String,
+    pub bpm: String,
+    pub key: String,
+    pub mood: String,
+    pub language: String,
+    pub isrc: String,
+    pub encoder_settings: String,
+    pub encoded_by: String,
+    pub copyright: String,
+
+    pub comment: String,
+    pub lyrics: String,
 }
 
-/// Sonora is the app "state".
-/// Anything the UI needs to remember goes here.
+/// App state
 pub(crate) struct Sonora {
-    /// Status text shown near the top.
-    pub(crate) status: String,
+    pub status: String,
+    pub scanning: bool,
 
-    /// True while scanning is running in another thread.
-    pub(crate) scanning: bool,
+    // Roots
+    pub root_input: String,
+    pub roots: Vec<PathBuf>,
 
-    // Folder roots UI
-    pub(crate) root_input: String,
-    pub(crate) roots: Vec<PathBuf>,
+    // Library
+    pub tracks: Vec<TrackRow>,
 
-    // Loaded tracks
-    pub(crate) tracks: Vec<TrackRow>,
+    // UI
+    pub view_mode: ViewMode,
+    pub selected_album: Option<AlbumKey>,
+    pub selected_track: Option<usize>,
 
-    // UI structure
-    pub(crate) view_mode: ViewMode,
-    pub(crate) selected_album: Option<AlbumKey>,
-    pub(crate) selected_track: Option<usize>,
+    // Inspector
+    pub inspector: InspectorDraft,
+    pub inspector_dirty: bool,
 
-    // Inspector (right panel)
-    pub(crate) inspector: InspectorDraft,
-    pub(crate) inspector_dirty: bool,
+    // UI toggles
+    pub show_extended: bool,
 }
 
 impl Default for Sonora {
@@ -92,15 +109,16 @@ impl Default for Sonora {
 
             inspector: InspectorDraft::default(),
             inspector_dirty: false,
+
+            show_extended: false,
         }
     }
 }
 
-/// Buttons and text inputs emit these messages.
-/// Then update.rs decides how the state changes.
+/// Message = “something happened”.
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    // Roots UI
+    // Roots
     RootInputChanged(String),
     AddRootPressed,
     RemoveRoot(usize),
@@ -109,18 +127,48 @@ pub(crate) enum Message {
     ScanLibrary,
     ScanFinished(Result<(Vec<TrackRow>, usize), String>),
 
-    // View mode + selection
+    // View + selection
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
     SelectTrack(usize),
 
-    // Inspector editing
+    // Inspector edits (core)
     EditTitle(String),
     EditArtist(String),
     EditAlbum(String),
-    EditTrackNo(String),
-    EditYear(String),
+    EditAlbumArtist(String),
+    EditComposer(String),
 
+    EditTrackNo(String),
+    EditTrackTotal(String),
+    EditDiscNo(String),
+    EditDiscTotal(String),
+
+    EditYear(String),
+    EditDate(String),
+    EditGenre(String),
+
+    // Inspector edits (extended)
+    ToggleExtended(bool),
+
+    EditLyricist(String),
+    EditConductor(String),
+    EditRemixer(String),
+    EditPublisher(String),
+    EditGrouping(String),
+    EditSubtitle(String),
+    EditBpm(String),
+    EditKey(String),
+    EditMood(String),
+    EditLanguage(String),
+    EditIsrc(String),
+    EditEncoderSettings(String),
+    EditEncodedBy(String),
+    EditCopyright(String),
+    EditComment(String),
+    EditLyrics(String),
+
+    // Actions
     SaveInspectorToMemory,
     RevertInspector,
 }

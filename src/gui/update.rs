@@ -1,11 +1,5 @@
-//! Update logic ("the brain").
-//!
-//! This file contains:
-//! - the main 'update()' function (handles messages)
-//! - small state-mutation helpers (load/clear inspector)
-//!
-//! Rule of thumb:
-//! - If it *changes* state → it belongs here (not in view.rs)
+//! Update logic.
+//! Mutates state in response to Messages.
 
 use iced::Task;
 use iced::futures::channel::oneshot;
@@ -19,7 +13,7 @@ use super::util::{clean_optional_string, filename_stem, parse_optional_i32, pars
 
 pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     match message {
-        // Roots (folders)
+        // Roots
         Message::RootInputChanged(s) => {
             state.root_input = s;
             Task::none()
@@ -49,7 +43,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             state.roots.push(p.clone());
             state.root_input.clear();
             state.status = format!("Added folder: {}", p.display());
-
             Task::none()
         }
 
@@ -83,7 +76,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                     let (tx, rx) = oneshot::channel::<Result<(Vec<TrackRow>, usize), String>>();
 
                     std::thread::spawn(move || {
-                        // This is the "heavy work" thread
                         let _ = tx.send(core::scan_and_read_roots(roots_to_scan));
                     });
 
@@ -93,7 +85,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                 Message::ScanFinished,
             )
         }
-
         Message::ScanFinished(result) => {
             state.scanning = false;
 
@@ -142,18 +133,16 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // Album selection (toggle expand/collapse)
+        // Album selection (toggle collapse)
         Message::SelectAlbum(key) => {
             if state.selected_album.as_ref() == Some(&key) {
-                state.selected_album = None;
+                state.selected_album = None; // collapse
             } else {
-                state.selected_album = Some(key);
+                state.selected_album = Some(key); // expand
             }
 
-            // changing album selection clears track + inspector.
             state.selected_track = None;
             clear_inspector(state);
-
             Task::none()
         }
 
@@ -166,7 +155,13 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // Inspector typing
+        // Inspector toggles
+        Message::ToggleExtended(v) => {
+            state.show_extended = v;
+            Task::none()
+        }
+
+        // Inspector typing (core)
         Message::EditTitle(s) => {
             state.inspector.title = s;
             state.inspector_dirty = true;
@@ -182,8 +177,33 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             state.inspector_dirty = true;
             Task::none()
         }
+        Message::EditAlbumArtist(s) => {
+            state.inspector.album_artist = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditComposer(s) => {
+            state.inspector.composer = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
         Message::EditTrackNo(s) => {
             state.inspector.track_no = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditTrackTotal(s) => {
+            state.inspector.track_total = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditDiscNo(s) => {
+            state.inspector.disc_no = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditDiscTotal(s) => {
+            state.inspector.disc_total = s;
             state.inspector_dirty = true;
             Task::none()
         }
@@ -192,64 +212,189 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             state.inspector_dirty = true;
             Task::none()
         }
+        Message::EditDate(s) => {
+            state.inspector.date = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditGenre(s) => {
+            state.inspector.genre = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
 
-        // Save = currently only updates memory (not disk)
+        // Inspector typing (extended)
+        Message::EditLyricist(s) => {
+            state.inspector.lyricist = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditConductor(s) => {
+            state.inspector.conductor = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditRemixer(s) => {
+            state.inspector.remixer = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditPublisher(s) => {
+            state.inspector.publisher = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditGrouping(s) => {
+            state.inspector.grouping = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditSubtitle(s) => {
+            state.inspector.subtitle = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditBpm(s) => {
+            state.inspector.bpm = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditKey(s) => {
+            state.inspector.key = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditMood(s) => {
+            state.inspector.mood = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditLanguage(s) => {
+            state.inspector.language = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditIsrc(s) => {
+            state.inspector.isrc = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditEncoderSettings(s) => {
+            state.inspector.encoder_settings = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditEncodedBy(s) => {
+            state.inspector.encoded_by = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditCopyright(s) => {
+            state.inspector.copyright = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditComment(s) => {
+            state.inspector.comment = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditLyrics(s) => {
+            state.inspector.lyrics = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+
+        // Save (memory only)
         Message::SaveInspectorToMemory => {
             let Some(i) = state.selected_track else {
                 state.status = "Select a track first.".to_string();
                 return Task::none();
             };
-
             if i >= state.tracks.len() {
                 return Task::none();
             }
 
-            // Parse numbers
+            // Parse numeric fields (collect errors)
+            let mut errs: Vec<&'static str> = Vec::new();
+
             let track_no = parse_optional_u32(&state.inspector.track_no)
-                .map_err(|_| "Track # must be a number".to_string());
-
+                .inspect_err(|_| errs.push("Track #"))
+                .ok();
+            let track_total = parse_optional_u32(&state.inspector.track_total)
+                .inspect_err(|_| errs.push("Track total"))
+                .ok();
+            let disc_no = parse_optional_u32(&state.inspector.disc_no)
+                .inspect_err(|_| errs.push("Disc #"))
+                .ok();
+            let disc_total = parse_optional_u32(&state.inspector.disc_total)
+                .inspect_err(|_| errs.push("Disc total"))
+                .ok();
             let year = parse_optional_i32(&state.inspector.year)
-                .map_err(|_| "Year must be a number".to_string());
+                .inspect_err(|_| errs.push("Year"))
+                .ok();
 
-            // Borrow the errors without moving the Results
-            let track_err = track_no.as_ref().err();
-            let year_err = year.as_ref().err();
+            let bpm = if state.show_extended {
+                parse_optional_u32(&state.inspector.bpm)
+                    .inspect_err(|_| errs.push("BPM"))
+                    .ok()
+            } else {
+                Some(state.tracks[i].bpm) // unchanged
+            };
 
-            if track_err.is_some() || year_err.is_some() {
-                let mut msg = String::from("Not saved: ");
-
-                if let Some(e) = track_err {
-                    msg.push_str(e);
-                }
-
-                if track_err.is_some() && year_err.is_some() {
-                    msg.push_str(" | ");
-                }
-
-                if let Some(e) = year_err {
-                    msg.push_str(e);
-                }
-
-                state.status = msg;
+            if !errs.is_empty() {
+                state.status = format!("Not saved: invalid {}", errs.join(", "));
                 return Task::none();
             }
 
-            // Now it's safe to unwrap because we know they're Ok(...)
+            // Unwrap safe because errs empty
             let track_no = track_no.unwrap();
+            let track_total = track_total.unwrap();
+            let disc_no = disc_no.unwrap();
+            let disc_total = disc_total.unwrap();
             let year = year.unwrap();
+            let bpm = bpm.unwrap();
 
-            // Write values into the in-memory TrackRow
             let t = &mut state.tracks[i];
 
+            // Core
             t.title = clean_optional_string(&state.inspector.title);
             t.artist = clean_optional_string(&state.inspector.artist);
             t.album = clean_optional_string(&state.inspector.album);
+            t.album_artist = clean_optional_string(&state.inspector.album_artist);
+            t.composer = clean_optional_string(&state.inspector.composer);
+
             t.track_no = track_no;
+            t.track_total = track_total;
+            t.disc_no = disc_no;
+            t.disc_total = disc_total;
+
             t.year = year;
+            t.date = clean_optional_string(&state.inspector.date);
+            t.genre = clean_optional_string(&state.inspector.genre);
+
+            // Extended (only if user is looking at them — otherwise keep existing)
+            if state.show_extended {
+                t.lyricist = clean_optional_string(&state.inspector.lyricist);
+                t.conductor = clean_optional_string(&state.inspector.conductor);
+                t.remixer = clean_optional_string(&state.inspector.remixer);
+                t.publisher = clean_optional_string(&state.inspector.publisher);
+                t.grouping = clean_optional_string(&state.inspector.grouping);
+                t.subtitle = clean_optional_string(&state.inspector.subtitle);
+                t.bpm = bpm;
+                t.key = clean_optional_string(&state.inspector.key);
+                t.mood = clean_optional_string(&state.inspector.mood);
+                t.language = clean_optional_string(&state.inspector.language);
+                t.isrc = clean_optional_string(&state.inspector.isrc);
+                t.encoder_settings = clean_optional_string(&state.inspector.encoder_settings);
+                t.encoded_by = clean_optional_string(&state.inspector.encoded_by);
+                t.copyright = clean_optional_string(&state.inspector.copyright);
+                t.comment = clean_optional_string(&state.inspector.comment);
+                t.lyrics = clean_optional_string(&state.inspector.lyrics);
+            }
 
             state.inspector_dirty = false;
             state.status = "Changes saved to memory, not written to files (yet)".to_string();
-
             Task::none()
         }
 
@@ -266,7 +411,6 @@ fn load_inspector_from_track(state: &mut Sonora) {
         clear_inspector(state);
         return;
     };
-
     if i >= state.tracks.len() {
         clear_inspector(state);
         return;
@@ -274,18 +418,39 @@ fn load_inspector_from_track(state: &mut Sonora) {
 
     let t = &state.tracks[i];
 
+    // Core: show actual values (blank if None) so we don't write "Unknown" into tags later.
     state.inspector.title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
-    state.inspector.artist = t
-        .artist
-        .clone()
-        .unwrap_or_else(|| "Unknown Artist".to_string());
-    state.inspector.album = t
-        .album
-        .clone()
-        .unwrap_or_else(|| "Unknown Album".to_string());
+    state.inspector.artist = t.artist.clone().unwrap_or_default();
+    state.inspector.album = t.album.clone().unwrap_or_default();
+    state.inspector.album_artist = t.album_artist.clone().unwrap_or_default();
+    state.inspector.composer = t.composer.clone().unwrap_or_default();
 
     state.inspector.track_no = t.track_no.map(|n| n.to_string()).unwrap_or_default();
+    state.inspector.track_total = t.track_total.map(|n| n.to_string()).unwrap_or_default();
+    state.inspector.disc_no = t.disc_no.map(|n| n.to_string()).unwrap_or_default();
+    state.inspector.disc_total = t.disc_total.map(|n| n.to_string()).unwrap_or_default();
+
     state.inspector.year = t.year.map(|y| y.to_string()).unwrap_or_default();
+    state.inspector.date = t.date.clone().unwrap_or_default();
+    state.inspector.genre = t.genre.clone().unwrap_or_default();
+
+    // Extended
+    state.inspector.lyricist = t.lyricist.clone().unwrap_or_default();
+    state.inspector.conductor = t.conductor.clone().unwrap_or_default();
+    state.inspector.remixer = t.remixer.clone().unwrap_or_default();
+    state.inspector.publisher = t.publisher.clone().unwrap_or_default();
+    state.inspector.grouping = t.grouping.clone().unwrap_or_default();
+    state.inspector.subtitle = t.subtitle.clone().unwrap_or_default();
+    state.inspector.bpm = t.bpm.map(|n| n.to_string()).unwrap_or_default();
+    state.inspector.key = t.key.clone().unwrap_or_default();
+    state.inspector.mood = t.mood.clone().unwrap_or_default();
+    state.inspector.language = t.language.clone().unwrap_or_default();
+    state.inspector.isrc = t.isrc.clone().unwrap_or_default();
+    state.inspector.encoder_settings = t.encoder_settings.clone().unwrap_or_default();
+    state.inspector.encoded_by = t.encoded_by.clone().unwrap_or_default();
+    state.inspector.copyright = t.copyright.clone().unwrap_or_default();
+    state.inspector.comment = t.comment.clone().unwrap_or_default();
+    state.inspector.lyrics = t.lyrics.clone().unwrap_or_default();
 
     state.inspector_dirty = false;
 }
