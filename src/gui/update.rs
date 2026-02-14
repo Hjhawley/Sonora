@@ -142,11 +142,18 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // Album selection
+        // Album selection (toggle expand/collapse)
         Message::SelectAlbum(key) => {
-            state.selected_album = Some(key);
-            state.selected_track = None; // selecting an album is not selecting a track
+            if state.selected_album.as_ref() == Some(&key) {
+                state.selected_album = None;
+            } else {
+                state.selected_album = Some(key);
+            }
+
+            // changing album selection clears track + inspector.
+            state.selected_track = None;
             clear_inspector(state);
+
             Task::none()
         }
 

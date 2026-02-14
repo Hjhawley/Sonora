@@ -110,16 +110,24 @@ fn build_albums_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     let mut groups: BTreeMap<AlbumKey, Vec<usize>> = BTreeMap::new();
 
     for (i, t) in state.tracks.iter().enumerate() {
-        let artist = t
-            .artist
+        // Prefer Album Artist for album grouping
+        // Fallback chain: album_artist -> artist -> "Unknown Album Artist"
+        let album_artist = t
+            .album_artist
             .clone()
-            .unwrap_or_else(|| "Unknown Artist".to_string());
+            .or_else(|| t.artist.clone())
+            .unwrap_or_else(|| "Unknown Album Artist".to_string());
+
         let album = t
             .album
             .clone()
             .unwrap_or_else(|| "Unknown Album".to_string());
 
-        let key = AlbumKey { artist, album };
+        let key = AlbumKey {
+            artist: album_artist,
+            album,
+        };
+
         groups.entry(key).or_default().push(i);
     }
 
