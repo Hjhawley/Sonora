@@ -62,7 +62,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
             state.scanning = true;
             state.tracks.clear();
-            state.status = "Scanning…".to_string();
+            state.status = "Scanning...".to_string();
 
             // If user hasn't added roots, scan ./test
             let roots_to_scan = if state.roots.is_empty() {

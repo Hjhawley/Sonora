@@ -5,8 +5,10 @@ use std::path::PathBuf;
 
 use crate::core::types::TrackRow;
 
-/// Dev convenience: if user didn’t add roots, scan ./test
-pub(crate) const TEST_ROOT: &str = "test";
+/// Dev convenience: if user didn’t add roots, scan /test
+pub(crate) const TEST_ROOT: &str =
+    concat!(env!("CARGO_MANIFEST_DIR"), "/test");
+
 
 /// Fixed UI heights (pixels)
 pub(crate) const ROOTS_HEIGHT: f32 = 120.0;

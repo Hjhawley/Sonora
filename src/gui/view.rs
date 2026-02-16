@@ -1,7 +1,7 @@
 //! GUI renderer (reads state, produces widgets; no mutation).
 
 use iced::widget::{
-    Column, button, checkbox, column, container, row, scrollable, text, text_input,
+    Column, button, checkbox, column, container, mouse_area, row, scrollable, text, text_input,
 };
 use iced::{Alignment, Length};
 use std::collections::BTreeMap;
@@ -16,11 +16,19 @@ const EDITOR_W: f32 = 380.0;
 
 const LABEL_W: f32 = 110.0;
 
-const ALBUM_GRID_H: f32 = 240.0;
-const GRID_COLS: usize = 5;
+// list sizing
+const HEADER_TEXT: f32 = 14.0;
+const ROW_TEXT: f32 = 14.0;
 
-const ALBUM_TILE_W: f32 = 150.0;
-const ALBUM_COVER: f32 = 120.0;
+const TRACK_ROW_H: f32 = 26.0;
+const TRACK_ROW_VPAD: f32 = 2.0;
+const TRACK_ROW_HPAD: f32 = 8.0;
+const TRACK_LIST_SPACING: f32 = 1.0;
+
+const ALBUM_LIST_H: f32 = 260.0;
+const ALBUM_ROW_H: f32 = 56.0;
+const ALBUM_ROW_COVER: f32 = 44.0;
+const ALBUM_LIST_SPACING: f32 = 1.0;
 
 const COVER_BIG: f32 = 220.0;
 
@@ -91,37 +99,32 @@ pub(crate) fn view(state: &Sonora) -> Column<'_, Message> {
 }
 
 fn build_playback_bar() -> iced::widget::Container<'static, Message> {
-    // Pure placeholder for now. You can replace this later with:
-    // - now playing (title/artist)
-    // - transport buttons
-    // - seek bar + time
-    // - volume
-    container(row![text("playback (not yet implemented)").size(28),].align_y(Alignment::Center))
+    container(row![text("playback (not yet implemented)").size(28)].align_y(Alignment::Center))
         .padding(16)
 }
 
 fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let scan_btn = if state.scanning {
-        button("Scanning…")
+        button("Scanning...")
     } else {
         button("Scan Library").on_press(Message::ScanLibrary)
     };
 
+    // Make the active mode visually obvious (✓) instead of relying on “disabled button look”.
     let albums_btn = if state.view_mode == ViewMode::Albums {
-        button("Album View")
+        button("✓ Album View")
     } else {
         button("Album View").on_press(Message::SetViewMode(ViewMode::Albums))
     };
 
     let tracks_btn = if state.view_mode == ViewMode::Tracks {
-        button("Track View")
+        button("✓ Track View")
     } else {
         button("Track View").on_press(Message::SetViewMode(ViewMode::Tracks))
     };
 
     let view_toggle = row![albums_btn, tracks_btn].spacing(8);
 
-    // Roots UI stays in the sidebar (later you can move this into Settings)
     let root_input = text_input("Add folder path (ex: H:\\music)", &state.root_input)
         .on_input(Message::RootInputChanged)
         .on_submit(Message::AddRootPressed)
@@ -145,10 +148,8 @@ fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
 
         roots_list = roots_list.push(row![text(p.display().to_string()), remove_btn].spacing(8));
     }
-
     let roots_panel = scrollable(roots_list.spacing(6)).height(Length::Fixed(160.0));
 
-    // Placeholder playlist section (no state/messages yet)
     let playlists = column![
         text("Playlists").size(16),
         button("Library"),
@@ -181,6 +182,8 @@ fn build_center_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
     container(inner).padding(12)
 }
 
+// Track view
+
 fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     column![
         text("Tracks").size(18),
@@ -191,20 +194,22 @@ fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
 
 fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     let header = row![
-        text("").width(Length::Fixed(24.0)),
-        text("#").width(Length::Fixed(44.0)),
-        text("Title").width(Length::Fixed(240.0)),
-        text("Artist").width(Length::Fixed(190.0)),
-        text("Album").width(Length::Fixed(240.0)),
-        text("Album Artist").width(Length::Fixed(170.0)),
-        text("Year").width(Length::Fixed(70.0)),
-        text("Genre").width(Length::Fixed(140.0)),
-        text("Len").width(Length::Fixed(70.0)),
+        text("").size(HEADER_TEXT).width(Length::Fixed(24.0)),
+        text("#").size(HEADER_TEXT).width(Length::Fixed(44.0)),
+        text("Title").size(HEADER_TEXT).width(Length::Fixed(240.0)),
+        text("Artist").size(HEADER_TEXT).width(Length::Fixed(190.0)),
+        text("Album").size(HEADER_TEXT).width(Length::Fixed(240.0)),
+        text("Album Artist")
+            .size(HEADER_TEXT)
+            .width(Length::Fixed(170.0)),
+        text("Year").size(HEADER_TEXT).width(Length::Fixed(70.0)),
+        text("Genre").size(HEADER_TEXT).width(Length::Fixed(140.0)),
+        text("Len").size(HEADER_TEXT).width(Length::Fixed(70.0)),
     ]
     .spacing(10)
     .align_y(Alignment::Center);
 
-    let mut col = column![header].spacing(6);
+    let mut col = column![header].spacing(TRACK_LIST_SPACING);
 
     for (i, t) in state.tracks.iter().enumerate() {
         let selected = state.selected_track == Some(i);
@@ -224,27 +229,40 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         let len = fmt_duration(t.duration_ms);
 
         let row_cells = row![
-            text(marker).width(Length::Fixed(24.0)),
-            text(track_no).width(Length::Fixed(44.0)),
-            text(title).width(Length::Fixed(240.0)),
-            text(artist).width(Length::Fixed(190.0)),
-            text(album).width(Length::Fixed(240.0)),
-            text(album_artist).width(Length::Fixed(170.0)),
-            text(year).width(Length::Fixed(70.0)),
-            text(genre).width(Length::Fixed(140.0)),
-            text(len).width(Length::Fixed(70.0)),
+            text(marker).size(ROW_TEXT).width(Length::Fixed(24.0)),
+            text(track_no).size(ROW_TEXT).width(Length::Fixed(44.0)),
+            text(title).size(ROW_TEXT).width(Length::Fixed(240.0)),
+            text(artist).size(ROW_TEXT).width(Length::Fixed(190.0)),
+            text(album).size(ROW_TEXT).width(Length::Fixed(240.0)),
+            text(album_artist)
+                .size(ROW_TEXT)
+                .width(Length::Fixed(170.0)),
+            text(year).size(ROW_TEXT).width(Length::Fixed(70.0)),
+            text(genre).size(ROW_TEXT).width(Length::Fixed(140.0)),
+            text(len).size(ROW_TEXT).width(Length::Fixed(70.0)),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
 
-        col = col.push(button(row_cells).on_press(Message::SelectTrack(i)));
+        // IMPORTANT: mouse_area gives you “clickable row” without button chrome.
+        let row_widget = mouse_area(
+            container(row_cells)
+                .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
+                .height(Length::Fixed(TRACK_ROW_H))
+                .width(Length::Fill),
+        )
+        .on_press(Message::SelectTrack(i));
+
+        col = col.push(row_widget);
     }
 
     scrollable(col).height(Length::Fill)
 }
 
+// Album view
+
 fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
-    // group tracks -> albums
+    // group tracks -> albums (LOCAL)
     let mut groups: BTreeMap<AlbumKey, Vec<usize>> = BTreeMap::new();
 
     for (i, t) in state.tracks.iter().enumerate() {
@@ -268,13 +286,12 @@ fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
             .push(i);
     }
 
-    // Build OWNED tiles so the grid can't borrow `groups`
-    let selected_key = state.selected_album.clone();
-    let tiles: Vec<(AlbumKey, usize)> = groups.iter().map(|(k, v)| (k.clone(), v.len())).collect();
+    // Build owned rows (no borrowing issues)
+    let selected_key: Option<AlbumKey> = state.selected_album.clone();
+    let albums: Vec<(AlbumKey, usize)> = groups.iter().map(|(k, v)| (k.clone(), v.len())).collect();
 
-    let grid = build_album_grid(selected_key, tiles);
+    let list = build_album_list(selected_key.clone(), albums);
 
-    // pull selected album OUT as owned values to avoid E0515
     let selected_payload: Option<(AlbumKey, Vec<usize>)> = state
         .selected_album
         .as_ref()
@@ -282,55 +299,50 @@ fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
 
     let detail = build_album_detail(state, selected_payload);
 
-    column![text("Albums").size(18), grid, detail.height(Length::Fill),].spacing(12)
+    column![
+        text("Albums").size(18),
+        list.height(Length::Fixed(ALBUM_LIST_H)),
+        detail.height(Length::Fill),
+    ]
+    .spacing(12)
 }
 
-fn build_album_grid(
+fn build_album_list(
     selected: Option<AlbumKey>,
-    tiles: Vec<(AlbumKey, usize)>,
-) -> iced::Element<'static, Message> {
-    let mut out = column![];
+    albums: Vec<(AlbumKey, usize)>,
+) -> iced::widget::Scrollable<'static, Message> {
+    let mut col: Column<'static, Message> = column![].spacing(ALBUM_LIST_SPACING);
 
-    let mut current = row![];
-    let mut n = 0usize;
-
-    for (key, count) in tiles {
+    for (key, count) in albums {
         let is_selected = selected.as_ref() == Some(&key);
-        let prefix = if is_selected { "● " } else { "" };
+        let marker = if is_selected { "●" } else { "" };
 
-        // clone just for display; message owns its own AlbumKey
-        let album = key.album.clone();
-        let album_artist = key.album_artist.clone();
+        let title_line = format!("{marker} {}", key.album);
+        let artist_line = key.album_artist.clone();
+        let count_line = format!("{count} tracks");
 
-        let tile_body = column![
-            cover_placeholder(ALBUM_COVER),
-            text(format!("{prefix}{album}")).size(14),
-            text(album_artist).size(12),
-            text(format!("{count} tracks")).size(12),
+        let row_cells = row![
+            cover_placeholder(ALBUM_ROW_COVER),
+            column![text(title_line).size(14), text(artist_line).size(12),]
+                .spacing(2)
+                .width(Length::Fill),
+            text(count_line).size(12).width(Length::Fixed(90.0)),
         ]
-        .spacing(6)
-        .width(Length::Fixed(ALBUM_TILE_W))
-        .align_x(Alignment::Center);
+        .spacing(12)
+        .align_y(Alignment::Center);
 
-        let tile = button(container(tile_body).padding(6)).on_press(Message::SelectAlbum(key));
+        let row_widget = mouse_area(
+            container(row_cells)
+                .padding([6, 8])
+                .height(Length::Fixed(ALBUM_ROW_H))
+                .width(Length::Fill),
+        )
+        .on_press(Message::SelectAlbum(key));
 
-        current = current.push(tile);
-        n += 1;
-
-        if n == GRID_COLS {
-            out = out.push(current.spacing(12));
-            current = row![];
-            n = 0;
-        }
+        col = col.push(row_widget);
     }
 
-    if n > 0 {
-        out = out.push(current.spacing(12));
-    }
-
-    scrollable(out.spacing(12))
-        .height(Length::Fixed(ALBUM_GRID_H))
-        .into()
+    scrollable(col)
 }
 
 fn build_album_detail(
@@ -368,7 +380,6 @@ fn build_album_detail(
         .unwrap_or_else(|| "-".into());
     let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
-    // Header (Spotify-ish)
     let header = row![
         cover_placeholder(COVER_BIG),
         column![
@@ -383,8 +394,7 @@ fn build_album_detail(
     .spacing(18)
     .align_y(Alignment::Center);
 
-    // Track list
-    let mut list = column![];
+    let mut list = column![].spacing(TRACK_LIST_SPACING);
 
     for &i in &idxs {
         let t = &state.tracks[i];
@@ -399,27 +409,34 @@ fn build_album_detail(
         let selected = state.selected_track == Some(i);
         let marker = if selected { "▶" } else { "" };
 
-        let line = button(
-            row![
-                text(marker).width(Length::Fixed(24.0)),
-                text(n).width(Length::Fixed(32.0)),
-                column![text(title), text(artist).size(12)]
-                    .spacing(2)
-                    .width(Length::Fill),
-                text(dur).width(Length::Fixed(60.0)),
-            ]
-            .spacing(10)
-            .align_y(Alignment::Center),
+        let row_cells = row![
+            text(marker).size(ROW_TEXT).width(Length::Fixed(24.0)),
+            text(n).size(ROW_TEXT).width(Length::Fixed(32.0)),
+            column![text(title).size(ROW_TEXT), text(artist).size(12)]
+                .spacing(2)
+                .width(Length::Fill),
+            text(dur).size(ROW_TEXT).width(Length::Fixed(60.0)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        let row_widget = mouse_area(
+            container(row_cells)
+                .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
+                .height(Length::Fixed(TRACK_ROW_H))
+                .width(Length::Fill),
         )
         .on_press(Message::SelectTrack(i));
 
-        list = list.push(line);
+        list = list.push(row_widget);
     }
 
-    let tracks_panel = scrollable(list.spacing(6)).height(Length::Fill);
+    let tracks_panel = scrollable(list).height(Length::Fill);
 
     container(column![header, tracks_panel].spacing(12)).padding(12)
 }
+
+// Metadata inspector
 
 fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let Some(i) = state.selected_track else {
