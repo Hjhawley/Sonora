@@ -1,14 +1,127 @@
 //! GUI renderer (reads state, produces widgets; no mutation).
 
-use iced::Length;
-use iced::widget::{Column, button, checkbox, column, row, scrollable, text, text_input};
+use iced::widget::{
+    Column, button, checkbox, column, container, row, scrollable, text, text_input,
+};
+use iced::{Alignment, Length};
 use std::collections::BTreeMap;
 
-use super::state::{AlbumKey, LIST_HEIGHT, Message, ROOTS_HEIGHT, Sonora, ViewMode};
-use super::util::{filename_stem, format_track_one_line};
+use super::state::{AlbumKey, Message, Sonora, ViewMode};
+use super::util::filename_stem;
+
+const PLAYBACK_H: f32 = 76.0;
+
+const SIDEBAR_W: f32 = 260.0;
+const EDITOR_W: f32 = 380.0;
+
+const LABEL_W: f32 = 110.0;
+
+const ALBUM_GRID_H: f32 = 240.0;
+const GRID_COLS: usize = 5;
+
+const ALBUM_TILE_W: f32 = 150.0;
+const ALBUM_COVER: f32 = 120.0;
+
+const COVER_BIG: f32 = 220.0;
+
+fn fmt_duration(ms: Option<u32>) -> String {
+    let Some(ms) = ms else { return "-".into() };
+    let s = ms / 1000;
+    let m = s / 60;
+    let s = s % 60;
+    format!("{m}:{s:02}")
+}
+
+fn cover_placeholder(size: f32) -> iced::widget::Container<'static, Message> {
+    container(
+        column![text("♪").size(28), text("cover").size(12)]
+            .spacing(4)
+            .align_x(Alignment::Center),
+    )
+    .width(Length::Fixed(size))
+    .height(Length::Fixed(size))
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+}
+
+fn field_row<'a>(
+    label: &'a str,
+    value: &'a str,
+    on_input: impl Fn(String) -> Message + 'a,
+) -> iced::widget::Row<'a, Message> {
+    row![
+        text(label).width(Length::Fixed(LABEL_W)),
+        text_input("", value).on_input(on_input).width(Length::Fill),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+}
+
+fn num_pair_row<'a>(
+    label: &'a str,
+    left: &'a str,
+    left_on: impl Fn(String) -> Message + 'a,
+    right: &'a str,
+    right_on: impl Fn(String) -> Message + 'a,
+) -> iced::widget::Row<'a, Message> {
+    row![
+        text(label).width(Length::Fixed(LABEL_W)),
+        text_input("", left)
+            .on_input(left_on)
+            .width(Length::Fixed(70.0)),
+        text("/"),
+        text_input("", right)
+            .on_input(right_on)
+            .width(Length::Fixed(70.0)),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center)
+}
 
 pub(crate) fn view(state: &Sonora) -> Column<'_, Message> {
-    // Roots UI
+    let playback = build_playback_bar().height(Length::Fixed(PLAYBACK_H));
+
+    let sidebar = build_sidebar(state).width(Length::Fixed(SIDEBAR_W));
+    let main = build_center_panel(state).width(Length::Fill);
+    let editor = build_inspector_panel(state).width(Length::Fixed(EDITOR_W));
+
+    let body = row![sidebar, main, editor].spacing(12).height(Length::Fill);
+
+    column![playback, body].spacing(12).padding(12)
+}
+
+fn build_playback_bar() -> iced::widget::Container<'static, Message> {
+    // Pure placeholder for now. You can replace this later with:
+    // - now playing (title/artist)
+    // - transport buttons
+    // - seek bar + time
+    // - volume
+    container(row![text("playback (not yet implemented)").size(28),].align_y(Alignment::Center))
+        .padding(16)
+}
+
+fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
+    let scan_btn = if state.scanning {
+        button("Scanning…")
+    } else {
+        button("Scan Library").on_press(Message::ScanLibrary)
+    };
+
+    let albums_btn = if state.view_mode == ViewMode::Albums {
+        button("Album View")
+    } else {
+        button("Album View").on_press(Message::SetViewMode(ViewMode::Albums))
+    };
+
+    let tracks_btn = if state.view_mode == ViewMode::Tracks {
+        button("Track View")
+    } else {
+        button("Track View").on_press(Message::SetViewMode(ViewMode::Tracks))
+    };
+
+    let view_toggle = row![albums_btn, tracks_btn].spacing(8);
+
+    // Roots UI stays in the sidebar (later you can move this into Settings)
     let root_input = text_input("Add folder path (ex: H:\\music)", &state.root_input)
         .on_input(Message::RootInputChanged)
         .on_submit(Message::AddRootPressed)
@@ -32,82 +145,109 @@ pub(crate) fn view(state: &Sonora) -> Column<'_, Message> {
 
         roots_list = roots_list.push(row![text(p.display().to_string()), remove_btn].spacing(8));
     }
-    let roots_panel = scrollable(roots_list.spacing(6)).height(Length::Fixed(ROOTS_HEIGHT));
 
-    // View mode toggle
-    let albums_btn = if state.view_mode == ViewMode::Albums {
-        button("Album View")
-    } else {
-        button("Album View").on_press(Message::SetViewMode(ViewMode::Albums))
-    };
+    let roots_panel = scrollable(roots_list.spacing(6)).height(Length::Fixed(160.0));
 
-    let tracks_btn = if state.view_mode == ViewMode::Tracks {
-        button("Track View")
-    } else {
-        button("Track View").on_press(Message::SetViewMode(ViewMode::Tracks))
-    };
+    // Placeholder playlist section (no state/messages yet)
+    let playlists = column![
+        text("Playlists").size(16),
+        button("Library"),
+        button("Favorites (coming soon)"),
+        button("Recently added (coming soon)"),
+    ]
+    .spacing(6);
 
-    let view_toggle = row![albums_btn, tracks_btn].spacing(8);
-
-    // Scan button
-    let scan_btn = if state.scanning {
-        button("Scanning…")
-    } else {
-        button("Scan Library").on_press(Message::ScanLibrary)
-    };
-
-    // Main list (Albums or Tracks)
-    let main_list = match state.view_mode {
-        ViewMode::Tracks => build_tracks_list(state),
-        ViewMode::Albums => build_albums_list(state),
-    };
-
-    // Inspector panel
-    let inspector_panel = build_inspector(state);
-
-    let body = row![
-        column![scan_btn, main_list]
-            .spacing(10)
-            .width(Length::FillPortion(2)),
-        inspector_panel.width(Length::FillPortion(1)),
+    let col = column![
+        text("Sonora").size(20),
+        text(&state.status).size(12),
+        scan_btn,
+        view_toggle,
+        text("Library folders").size(16),
+        add_row,
+        roots_panel,
+        playlists,
     ]
     .spacing(12);
 
+    container(scrollable(col).height(Length::Fill)).padding(12)
+}
+
+fn build_center_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
+    let inner: iced::Element<'_, Message> = match state.view_mode {
+        ViewMode::Tracks => build_tracks_center(state).into(),
+        ViewMode::Albums => build_albums_center(state).into(),
+    };
+
+    container(inner).padding(12)
+}
+
+fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     column![
-        text("Sonora"),
-        text(&state.status),
-        add_row,
-        roots_panel,
-        view_toggle,
-        body,
+        text("Tracks").size(18),
+        build_tracks_table(state).height(Length::Fill),
     ]
     .spacing(12)
 }
 
-fn build_tracks_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
-    let mut list = column![];
+fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
+    let header = row![
+        text("").width(Length::Fixed(24.0)),
+        text("#").width(Length::Fixed(44.0)),
+        text("Title").width(Length::Fixed(240.0)),
+        text("Artist").width(Length::Fixed(190.0)),
+        text("Album").width(Length::Fixed(240.0)),
+        text("Album Artist").width(Length::Fixed(170.0)),
+        text("Year").width(Length::Fixed(70.0)),
+        text("Genre").width(Length::Fixed(140.0)),
+        text("Len").width(Length::Fixed(70.0)),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
+
+    let mut col = column![header].spacing(6);
 
     for (i, t) in state.tracks.iter().enumerate() {
-        let label = format_track_one_line(t);
+        let selected = state.selected_track == Some(i);
+        let marker = if selected { "▶" } else { "" };
 
-        let prefix = if state.selected_track == Some(i) {
-            "▶ "
-        } else {
-            "  "
-        };
+        let track_no = t.track_no.map(|n| n.to_string()).unwrap_or_default();
+        let title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
+        let artist = t.artist.clone().unwrap_or_else(|| "Unknown".into());
+        let album = t.album.clone().unwrap_or_else(|| "Unknown".into());
+        let album_artist = t
+            .album_artist
+            .clone()
+            .or_else(|| t.artist.clone())
+            .unwrap_or_else(|| "Unknown".into());
+        let year = t.year.map(|y| y.to_string()).unwrap_or_default();
+        let genre = t.genre.clone().unwrap_or_default();
+        let len = fmt_duration(t.duration_ms);
 
-        list =
-            list.push(button(text(format!("{prefix}{label}"))).on_press(Message::SelectTrack(i)));
+        let row_cells = row![
+            text(marker).width(Length::Fixed(24.0)),
+            text(track_no).width(Length::Fixed(44.0)),
+            text(title).width(Length::Fixed(240.0)),
+            text(artist).width(Length::Fixed(190.0)),
+            text(album).width(Length::Fixed(240.0)),
+            text(album_artist).width(Length::Fixed(170.0)),
+            text(year).width(Length::Fixed(70.0)),
+            text(genre).width(Length::Fixed(140.0)),
+            text(len).width(Length::Fixed(70.0)),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center);
+
+        col = col.push(button(row_cells).on_press(Message::SelectTrack(i)));
     }
 
-    scrollable(list.spacing(6)).height(Length::Fixed(LIST_HEIGHT))
+    scrollable(col).height(Length::Fill)
 }
 
-fn build_albums_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
+fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
+    // group tracks -> albums
     let mut groups: BTreeMap<AlbumKey, Vec<usize>> = BTreeMap::new();
 
     for (i, t) in state.tracks.iter().enumerate() {
-        // IMPORTANT: group by ALBUM ARTIST, not track artist
         let album_artist = t
             .album_artist
             .clone()
@@ -119,127 +259,286 @@ fn build_albums_list(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
             .clone()
             .unwrap_or_else(|| "Unknown Album".to_string());
 
-        let key = AlbumKey {
-            album_artist,
-            album,
-        };
-        groups.entry(key).or_default().push(i);
+        groups
+            .entry(AlbumKey {
+                album_artist,
+                album,
+            })
+            .or_default()
+            .push(i);
     }
 
-    let mut list = column![];
+    // Build OWNED tiles so the grid can't borrow `groups`
+    let selected_key = state.selected_album.clone();
+    let tiles: Vec<(AlbumKey, usize)> = groups.iter().map(|(k, v)| (k.clone(), v.len())).collect();
 
-    for (key, track_indexes) in groups {
-        let is_selected_album = state.selected_album.as_ref() == Some(&key);
+    let grid = build_album_grid(selected_key, tiles);
 
-        let album_label = format!(
-            "{} — {} ({} tracks)",
-            key.album_artist,
-            key.album,
-            track_indexes.len()
-        );
+    // pull selected album OUT as owned values to avoid E0515
+    let selected_payload: Option<(AlbumKey, Vec<usize>)> = state
+        .selected_album
+        .as_ref()
+        .and_then(|k| groups.get(k).map(|v| (k.clone(), v.clone())));
 
-        let album_prefix = if is_selected_album { "[-] " } else { "[+] " };
+    let detail = build_album_detail(state, selected_payload);
 
-        // Click toggles expand/collapse (update.rs handles it)
-        list = list.push(
-            button(text(format!("{album_prefix}{album_label}")))
-                .on_press(Message::SelectAlbum(key.clone())),
-        );
+    column![text("Albums").size(18), grid, detail.height(Length::Fill),].spacing(12)
+}
 
-        if is_selected_album {
-            for i in track_indexes {
-                let t = &state.tracks[i];
+fn build_album_grid(
+    selected: Option<AlbumKey>,
+    tiles: Vec<(AlbumKey, usize)>,
+) -> iced::Element<'static, Message> {
+    let mut out = column![];
 
-                let title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
-                let track_no = t
-                    .track_no
-                    .map(|n| n.to_string())
-                    .unwrap_or_else(|| "??".to_string());
+    let mut current = row![];
+    let mut n = 0usize;
 
-                let track_line = format!("    #{track_no} — {title}");
-                let prefix = if state.selected_track == Some(i) {
-                    "    ▶ "
-                } else {
-                    "      "
-                };
+    for (key, count) in tiles {
+        let is_selected = selected.as_ref() == Some(&key);
+        let prefix = if is_selected { "● " } else { "" };
 
-                list = list.push(
-                    button(text(format!("{prefix}{track_line}"))).on_press(Message::SelectTrack(i)),
-                );
-            }
+        // clone just for display; message owns its own AlbumKey
+        let album = key.album.clone();
+        let album_artist = key.album_artist.clone();
+
+        let tile_body = column![
+            cover_placeholder(ALBUM_COVER),
+            text(format!("{prefix}{album}")).size(14),
+            text(album_artist).size(12),
+            text(format!("{count} tracks")).size(12),
+        ]
+        .spacing(6)
+        .width(Length::Fixed(ALBUM_TILE_W))
+        .align_x(Alignment::Center);
+
+        let tile = button(container(tile_body).padding(6)).on_press(Message::SelectAlbum(key));
+
+        current = current.push(tile);
+        n += 1;
+
+        if n == GRID_COLS {
+            out = out.push(current.spacing(12));
+            current = row![];
+            n = 0;
         }
     }
 
-    scrollable(list.spacing(6)).height(Length::Fixed(LIST_HEIGHT))
+    if n > 0 {
+        out = out.push(current.spacing(12));
+    }
+
+    scrollable(out.spacing(12))
+        .height(Length::Fixed(ALBUM_GRID_H))
+        .into()
 }
 
-fn build_inspector(state: &Sonora) -> Column<'_, Message> {
-    let Some(i) = state.selected_track else {
-        return column![
-            text("Metadata inspector"),
-            text("Select a track to edit metadata."),
-            text("(Edits are not actually written to files for now.)"),
+fn build_album_detail(
+    state: &Sonora,
+    selected: Option<(AlbumKey, Vec<usize>)>,
+) -> iced::widget::Container<'_, Message> {
+    let Some((key, track_idxs)) = selected else {
+        return container(text("Select an album to view tracks.")).padding(12);
+    };
+
+    if track_idxs.is_empty() {
+        return container(text("Album has no tracks (weird).")).padding(12);
+    }
+
+    let mut idxs = track_idxs;
+    idxs.sort_by(|&a, &b| {
+        let ta = &state.tracks[a];
+        let tb = &state.tracks[b];
+        (
+            ta.disc_no.unwrap_or(0),
+            ta.track_no.unwrap_or(0),
+            ta.title.clone().unwrap_or_default(),
+        )
+            .cmp(&(
+                tb.disc_no.unwrap_or(0),
+                tb.track_no.unwrap_or(0),
+                tb.title.clone().unwrap_or_default(),
+            ))
+    });
+
+    let first = &state.tracks[idxs[0]];
+    let year = first
+        .year
+        .map(|y| y.to_string())
+        .unwrap_or_else(|| "-".into());
+    let genre = first.genre.clone().unwrap_or_else(|| "-".into());
+
+    // Header (Spotify-ish)
+    let header = row![
+        cover_placeholder(COVER_BIG),
+        column![
+            text(key.album.clone()).size(26),
+            text(key.album_artist.clone()).size(18),
+            text(format!("{genre} • {year}")).size(14),
+            text(format!("{} songs", idxs.len())).size(12),
         ]
-        .spacing(8);
+        .spacing(6)
+        .width(Length::Fill),
+    ]
+    .spacing(18)
+    .align_y(Alignment::Center);
+
+    // Track list
+    let mut list = column![];
+
+    for &i in &idxs {
+        let t = &state.tracks[i];
+        let n = t
+            .track_no
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "—".into());
+        let title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
+        let artist = t.artist.clone().unwrap_or_else(|| "Unknown".into());
+        let dur = fmt_duration(t.duration_ms);
+
+        let selected = state.selected_track == Some(i);
+        let marker = if selected { "▶" } else { "" };
+
+        let line = button(
+            row![
+                text(marker).width(Length::Fixed(24.0)),
+                text(n).width(Length::Fixed(32.0)),
+                column![text(title), text(artist).size(12)]
+                    .spacing(2)
+                    .width(Length::Fill),
+                text(dur).width(Length::Fixed(60.0)),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+        )
+        .on_press(Message::SelectTrack(i));
+
+        list = list.push(line);
+    }
+
+    let tracks_panel = scrollable(list.spacing(6)).height(Length::Fill);
+
+    container(column![header, tracks_panel].spacing(12)).padding(12)
+}
+
+fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
+    let Some(i) = state.selected_track else {
+        return container(
+            column![
+                text("Metadata editor").size(18),
+                text("Select a track (center panel)."),
+            ]
+            .spacing(8),
+        )
+        .padding(12);
     };
 
     if i >= state.tracks.len() {
-        return column![
-            text("Metadata inspector"),
-            text("Invalid selection, rescan?")
+        return container(text("Invalid selection (rescan?).")).padding(12);
+    }
+
+    let t = &state.tracks[i];
+    let path_line = format!("{}", t.path.display());
+
+    let top = column![
+        text("Metadata editor").size(18),
+        text("Path").size(12),
+        text(path_line).size(12),
+        text(format!(
+            "Artwork: {} | Len: {} | Rating: {} | Plays: {} | Compilation: {}",
+            t.artwork_count,
+            fmt_duration(t.duration_ms),
+            t.rating
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "-".into()),
+            t.play_count
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "-".into()),
+            t.compilation
+                .map(|v| v.to_string())
+                .unwrap_or_else(|| "-".into()),
+        ))
+        .size(12),
+    ]
+    .spacing(6);
+
+    let core = column![
+        field_row("Title", &state.inspector.title, Message::EditTitle),
+        field_row("Artist", &state.inspector.artist, Message::EditArtist),
+        field_row("Album", &state.inspector.album, Message::EditAlbum),
+        field_row(
+            "Album Artist",
+            &state.inspector.album_artist,
+            Message::EditAlbumArtist
+        ),
+        field_row("Composer", &state.inspector.composer, Message::EditComposer),
+        num_pair_row(
+            "Track",
+            &state.inspector.track_no,
+            Message::EditTrackNo,
+            &state.inspector.track_total,
+            Message::EditTrackTotal,
+        ),
+        num_pair_row(
+            "Disc",
+            &state.inspector.disc_no,
+            Message::EditDiscNo,
+            &state.inspector.disc_total,
+            Message::EditDiscTotal,
+        ),
+        field_row("Year", &state.inspector.year, Message::EditYear),
+        field_row("Genre", &state.inspector.genre, Message::EditGenre),
+        field_row("Date", &state.inspector.date, Message::EditDate),
+    ]
+    .spacing(8);
+
+    let toggle = checkbox(state.show_extended)
+        .label("Show extended tags")
+        .on_toggle(Message::ToggleExtended);
+
+    let mut extended = column![];
+    if state.show_extended {
+        extended = column![
+            field_row("Lyricist", &state.inspector.lyricist, Message::EditLyricist),
+            field_row(
+                "Conductor",
+                &state.inspector.conductor,
+                Message::EditConductor
+            ),
+            field_row("Remixer", &state.inspector.remixer, Message::EditRemixer),
+            field_row(
+                "Publisher",
+                &state.inspector.publisher,
+                Message::EditPublisher
+            ),
+            field_row("Grouping", &state.inspector.grouping, Message::EditGrouping),
+            field_row("Subtitle", &state.inspector.subtitle, Message::EditSubtitle),
+            field_row("BPM", &state.inspector.bpm, Message::EditBpm),
+            field_row("Key", &state.inspector.key, Message::EditKey),
+            field_row("Mood", &state.inspector.mood, Message::EditMood),
+            field_row("Language", &state.inspector.language, Message::EditLanguage),
+            field_row("ISRC", &state.inspector.isrc, Message::EditIsrc),
+            field_row(
+                "Encoder",
+                &state.inspector.encoder_settings,
+                Message::EditEncoderSettings
+            ),
+            field_row(
+                "Encoded by",
+                &state.inspector.encoded_by,
+                Message::EditEncodedBy
+            ),
+            field_row(
+                "Copyright",
+                &state.inspector.copyright,
+                Message::EditCopyright
+            ),
+            field_row("Comment", &state.inspector.comment, Message::EditComment),
+            field_row("Lyrics", &state.inspector.lyrics, Message::EditLyrics),
         ]
         .spacing(8);
     }
 
-    let t = &state.tracks[i];
-    let path_line = format!("Path:\n{}", t.path.display());
-
-    // Core inputs
-    let title = text_input("Title", &state.inspector.title)
-        .on_input(Message::EditTitle)
-        .width(Length::Fill);
-    let artist = text_input("Artist (track)", &state.inspector.artist)
-        .on_input(Message::EditArtist)
-        .width(Length::Fill);
-    let album_artist = text_input("Album Artist", &state.inspector.album_artist)
-        .on_input(Message::EditAlbumArtist)
-        .width(Length::Fill);
-    let album = text_input("Album", &state.inspector.album)
-        .on_input(Message::EditAlbum)
-        .width(Length::Fill);
-    let composer = text_input("Composer", &state.inspector.composer)
-        .on_input(Message::EditComposer)
-        .width(Length::Fill);
-
-    let track_no = text_input("Track #", &state.inspector.track_no)
-        .on_input(Message::EditTrackNo)
-        .width(Length::Fill);
-    let track_total = text_input("Track total", &state.inspector.track_total)
-        .on_input(Message::EditTrackTotal)
-        .width(Length::Fill);
-    let disc_no = text_input("Disc #", &state.inspector.disc_no)
-        .on_input(Message::EditDiscNo)
-        .width(Length::Fill);
-    let disc_total = text_input("Disc total", &state.inspector.disc_total)
-        .on_input(Message::EditDiscTotal)
-        .width(Length::Fill);
-
-    let year = text_input("Year", &state.inspector.year)
-        .on_input(Message::EditYear)
-        .width(Length::Fill);
-    let date = text_input("Date (TDRC)", &state.inspector.date)
-        .on_input(Message::EditDate)
-        .width(Length::Fill);
-    let genre = text_input("Genre", &state.inspector.genre)
-        .on_input(Message::EditGenre)
-        .width(Length::Fill);
-
-    // Toggle for extended tags
-    let extended_toggle = checkbox(state.show_extended)
-        .label("Show extended tags")
-        .on_toggle(Message::ToggleExtended);
-
-    // Buttons
     let save_btn = if state.scanning || !state.inspector_dirty {
         button("Save edits")
     } else {
@@ -252,111 +551,9 @@ fn build_inspector(state: &Sonora) -> Column<'_, Message> {
         button("Cancel edits").on_press(Message::RevertInspector)
     };
 
-    // Read-only stats (also kills dead_code warnings)
-    let stats_line = format!(
-        "Artwork: {} | Duration(ms): {} | Rating: {} | Plays: {} | Compilation: {}",
-        t.artwork_count,
-        t.duration_ms
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".into()),
-        t.rating
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".into()),
-        t.play_count
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".into()),
-        t.compilation
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".into()),
-    );
+    let buttons = row![save_btn, revert_btn].spacing(8);
 
-    let maps_line = format!(
-        "User text: {} | URLs: {} | Extra text: {}",
-        t.user_text.len(),
-        t.urls.len(),
-        t.extra_text.len(),
-    );
+    let editor = scrollable(column![top, core, toggle, extended].spacing(12)).height(Length::Fill);
 
-    let mut col = column![
-        text("Metadata inspector"),
-        text(path_line),
-        text(stats_line),
-        text(maps_line),
-        title,
-        row![artist, album_artist].spacing(8),
-        row![album, composer].spacing(8),
-        row![track_no, track_total].spacing(8),
-        row![disc_no, disc_total].spacing(8),
-        row![year, genre].spacing(8),
-        date,
-        extended_toggle,
-    ]
-    .spacing(10);
-
-    if state.show_extended {
-        let lyricist = text_input("Lyricist", &state.inspector.lyricist)
-            .on_input(Message::EditLyricist)
-            .width(Length::Fill);
-        let conductor = text_input("Conductor", &state.inspector.conductor)
-            .on_input(Message::EditConductor)
-            .width(Length::Fill);
-        let remixer = text_input("Remixer", &state.inspector.remixer)
-            .on_input(Message::EditRemixer)
-            .width(Length::Fill);
-        let publisher = text_input("Publisher", &state.inspector.publisher)
-            .on_input(Message::EditPublisher)
-            .width(Length::Fill);
-        let grouping = text_input("Grouping", &state.inspector.grouping)
-            .on_input(Message::EditGrouping)
-            .width(Length::Fill);
-        let subtitle = text_input("Subtitle", &state.inspector.subtitle)
-            .on_input(Message::EditSubtitle)
-            .width(Length::Fill);
-        let bpm = text_input("BPM", &state.inspector.bpm)
-            .on_input(Message::EditBpm)
-            .width(Length::Fill);
-        let key = text_input("Key", &state.inspector.key)
-            .on_input(Message::EditKey)
-            .width(Length::Fill);
-        let mood = text_input("Mood", &state.inspector.mood)
-            .on_input(Message::EditMood)
-            .width(Length::Fill);
-        let language = text_input("Language", &state.inspector.language)
-            .on_input(Message::EditLanguage)
-            .width(Length::Fill);
-        let isrc = text_input("ISRC", &state.inspector.isrc)
-            .on_input(Message::EditIsrc)
-            .width(Length::Fill);
-        let encoder_settings = text_input("Encoder settings", &state.inspector.encoder_settings)
-            .on_input(Message::EditEncoderSettings)
-            .width(Length::Fill);
-        let encoded_by = text_input("Encoded by", &state.inspector.encoded_by)
-            .on_input(Message::EditEncodedBy)
-            .width(Length::Fill);
-        let copyright = text_input("Copyright", &state.inspector.copyright)
-            .on_input(Message::EditCopyright)
-            .width(Length::Fill);
-        let comment = text_input("Comment", &state.inspector.comment)
-            .on_input(Message::EditComment)
-            .width(Length::Fill);
-        let lyrics = text_input("Lyrics (USLT)", &state.inspector.lyrics)
-            .on_input(Message::EditLyrics)
-            .width(Length::Fill);
-
-        col = col
-            .push(lyricist)
-            .push(row![conductor, remixer].spacing(8))
-            .push(row![publisher, grouping].spacing(8))
-            .push(subtitle)
-            .push(row![bpm, key].spacing(8))
-            .push(row![mood, language].spacing(8))
-            .push(isrc)
-            .push(encoder_settings)
-            .push(encoded_by)
-            .push(copyright)
-            .push(comment)
-            .push(lyrics);
-    }
-
-    col.push(row![save_btn, revert_btn].spacing(8))
+    container(column![editor, buttons].spacing(12)).padding(12)
 }
