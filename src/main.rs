@@ -1,16 +1,15 @@
 //! Sonora GUI prototype
 //!
-//! Current behavior (read-only)
+//! Current behavior
 //! - User adds one or more folder roots.
 //! - "Scan Library" walks roots for '.mp3', reads ID3 into 'TrackRow'.
 //! - Library is displayed as either:
 //!   - Track View: flat list of tracks
 //!   - Album View: grouped by (artist, album), with expandable albums
 //! - Selecting a track populates the Inspector form.
-//! - "Save edits" updates the in-memory 'TrackRow' only (no disk writes yet)
+//! - Save edits to disk
 //!
 //! Not yet implemented
-//! - Writing tags back to files
 //! - Persistent DB/cache
 //! - Audio playback
 //!

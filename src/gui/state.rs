@@ -6,9 +6,7 @@ use std::path::PathBuf;
 use crate::core::types::TrackRow;
 
 /// Dev convenience: if user didn’t add roots, scan /test
-pub(crate) const TEST_ROOT: &str =
-    concat!(env!("CARGO_MANIFEST_DIR"), "/test");
-
+pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 
 /// Fixed UI heights (pixels)
 pub(crate) const ROOTS_HEIGHT: f32 = 120.0;
@@ -89,6 +87,7 @@ pub(crate) struct Sonora {
     // Inspector
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
+    pub saving: bool,
 
     // UI toggles
     pub show_extended: bool,
@@ -111,6 +110,7 @@ impl Default for Sonora {
 
             inspector: InspectorDraft::default(),
             inspector_dirty: false,
+            saving: false,
 
             show_extended: false,
         }
@@ -171,6 +171,7 @@ pub(crate) enum Message {
     EditLyrics(String),
 
     // Actions
-    SaveInspectorToMemory,
+    SaveInspectorToFile,
+    SaveFinished(usize, Result<TrackRow, String>),
     RevertInspector,
 }

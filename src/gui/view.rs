@@ -559,7 +559,7 @@ fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message>
     let save_btn = if state.scanning || !state.inspector_dirty {
         button("Save edits")
     } else {
-        button("Save edits").on_press(Message::SaveInspectorToMemory)
+        button("Save edits").on_press(Message::SaveInspectorToFile)
     };
 
     let revert_btn = if state.scanning {

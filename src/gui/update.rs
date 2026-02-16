@@ -85,6 +85,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                 Message::ScanFinished,
             )
         }
+
         Message::ScanFinished(result) => {
             state.scanning = false;
 
@@ -305,8 +306,17 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
-        // Save (memory only)
-        Message::SaveInspectorToMemory => {
+        // Save to disk
+        Message::SaveInspectorToFile => {
+            if state.scanning || state.saving {
+                return Task::none();
+            }
+
+            if !state.inspector_dirty {
+                state.status = "No changes to save.".to_string();
+                return Task::none();
+            }
+
             let Some(i) = state.selected_track else {
                 state.status = "Select a track first.".to_string();
                 return Task::none();
@@ -315,86 +325,63 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                 return Task::none();
             }
 
-            // Parse numeric fields (collect errors)
-            let mut errs: Vec<&'static str> = Vec::new();
-
-            let track_no = parse_optional_u32(&state.inspector.track_no)
-                .inspect_err(|_| errs.push("Track #"))
-                .ok();
-            let track_total = parse_optional_u32(&state.inspector.track_total)
-                .inspect_err(|_| errs.push("Track total"))
-                .ok();
-            let disc_no = parse_optional_u32(&state.inspector.disc_no)
-                .inspect_err(|_| errs.push("Disc #"))
-                .ok();
-            let disc_total = parse_optional_u32(&state.inspector.disc_total)
-                .inspect_err(|_| errs.push("Disc total"))
-                .ok();
-            let year = parse_optional_i32(&state.inspector.year)
-                .inspect_err(|_| errs.push("Year"))
-                .ok();
-
-            let bpm = if state.show_extended {
-                parse_optional_u32(&state.inspector.bpm)
-                    .inspect_err(|_| errs.push("BPM"))
-                    .ok()
-            } else {
-                Some(state.tracks[i].bpm) // unchanged
+            // Build the row we actually want to write (from inspector), with validation.
+            let row_to_write = match build_row_from_inspector(state, i) {
+                Ok(r) => r,
+                Err(e) => {
+                    state.status = e;
+                    return Task::none();
+                }
             };
 
-            if !errs.is_empty() {
-                state.status = format!("Not saved: invalid {}", errs.join(", "));
-                return Task::none();
+            state.saving = true;
+            state.status = "Writing tags to file...".to_string();
+
+            let write_extended = state.show_extended;
+
+            Task::perform(
+                async move {
+                    let (tx, rx) = oneshot::channel::<Result<TrackRow, String>>();
+
+                    std::thread::spawn(move || {
+                        let res = crate::core::tags::write_track_row(&row_to_write, write_extended)
+                            .and_then(|_| {
+                                let (r, failed) =
+                                    crate::core::tags::read_track_row(row_to_write.path.clone());
+                                if failed {
+                                    Err("Wrote tags, but failed to re-read them".to_string())
+                                } else {
+                                    Ok(r)
+                                }
+                            });
+
+                        let _ = tx.send(res);
+                    });
+
+                    rx.await
+                        .map_err(|_| "Save thread dropped without returning".to_string())?
+                },
+                move |res| Message::SaveFinished(i, res),
+            )
+        }
+
+        Message::SaveFinished(i, result) => {
+            state.saving = false;
+
+            match result {
+                Ok(new_row) => {
+                    if i < state.tracks.len() {
+                        state.tracks[i] = new_row;
+                        load_inspector_from_track(state);
+                    }
+                    state.inspector_dirty = false;
+                    state.status = "Tags written to file.".to_string();
+                }
+                Err(e) => {
+                    state.status = format!("Save failed: {e}");
+                }
             }
 
-            // Unwrap safe because errs empty
-            let track_no = track_no.unwrap();
-            let track_total = track_total.unwrap();
-            let disc_no = disc_no.unwrap();
-            let disc_total = disc_total.unwrap();
-            let year = year.unwrap();
-            let bpm = bpm.unwrap();
-
-            let t = &mut state.tracks[i];
-
-            // Core
-            t.title = clean_optional_string(&state.inspector.title);
-            t.artist = clean_optional_string(&state.inspector.artist);
-            t.album = clean_optional_string(&state.inspector.album);
-            t.album_artist = clean_optional_string(&state.inspector.album_artist);
-            t.composer = clean_optional_string(&state.inspector.composer);
-
-            t.track_no = track_no;
-            t.track_total = track_total;
-            t.disc_no = disc_no;
-            t.disc_total = disc_total;
-
-            t.year = year;
-            t.date = clean_optional_string(&state.inspector.date);
-            t.genre = clean_optional_string(&state.inspector.genre);
-
-            // Extended (only if user is looking at them — otherwise keep existing)
-            if state.show_extended {
-                t.lyricist = clean_optional_string(&state.inspector.lyricist);
-                t.conductor = clean_optional_string(&state.inspector.conductor);
-                t.remixer = clean_optional_string(&state.inspector.remixer);
-                t.publisher = clean_optional_string(&state.inspector.publisher);
-                t.grouping = clean_optional_string(&state.inspector.grouping);
-                t.subtitle = clean_optional_string(&state.inspector.subtitle);
-                t.bpm = bpm;
-                t.key = clean_optional_string(&state.inspector.key);
-                t.mood = clean_optional_string(&state.inspector.mood);
-                t.language = clean_optional_string(&state.inspector.language);
-                t.isrc = clean_optional_string(&state.inspector.isrc);
-                t.encoder_settings = clean_optional_string(&state.inspector.encoder_settings);
-                t.encoded_by = clean_optional_string(&state.inspector.encoded_by);
-                t.copyright = clean_optional_string(&state.inspector.copyright);
-                t.comment = clean_optional_string(&state.inspector.comment);
-                t.lyrics = clean_optional_string(&state.inspector.lyrics);
-            }
-
-            state.inspector_dirty = false;
-            state.status = "Changes saved to memory, not written to files (yet)".to_string();
             Task::none()
         }
 
@@ -403,6 +390,100 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
     }
+}
+
+/// Build the TrackRow to write by applying the inspector draft onto the currently selected row.
+/// Mirrors your “save-to-memory” semantics:
+/// - core fields always applied
+/// - extended fields applied only if `state.show_extended == true`
+/// - empty/whitespace => None (which your writer treats as “remove tag”)
+fn build_row_from_inspector(state: &Sonora, i: usize) -> Result<TrackRow, String> {
+    let base = state
+        .tracks
+        .get(i)
+        .cloned()
+        .ok_or_else(|| "Invalid selection (rescan?).".to_string())?;
+
+    // Parse numeric fields (collect errors)
+    let mut errs: Vec<&'static str> = Vec::new();
+
+    let track_no = parse_optional_u32(&state.inspector.track_no)
+        .inspect_err(|_| errs.push("Track #"))
+        .ok()
+        .flatten();
+
+    let track_total = parse_optional_u32(&state.inspector.track_total)
+        .inspect_err(|_| errs.push("Track total"))
+        .ok()
+        .flatten();
+
+    let disc_no = parse_optional_u32(&state.inspector.disc_no)
+        .inspect_err(|_| errs.push("Disc #"))
+        .ok()
+        .flatten();
+
+    let disc_total = parse_optional_u32(&state.inspector.disc_total)
+        .inspect_err(|_| errs.push("Disc total"))
+        .ok()
+        .flatten();
+
+    let year = parse_optional_i32(&state.inspector.year)
+        .inspect_err(|_| errs.push("Year"))
+        .ok()
+        .flatten();
+
+    let bpm = if state.show_extended {
+        parse_optional_u32(&state.inspector.bpm)
+            .inspect_err(|_| errs.push("BPM"))
+            .ok()
+            .flatten()
+    } else {
+        base.bpm
+    };
+
+    if !errs.is_empty() {
+        return Err(format!("Not saved: invalid {}", errs.join(", ")));
+    }
+
+    let mut out = base;
+
+    // Core
+    out.title = clean_optional_string(&state.inspector.title);
+    out.artist = clean_optional_string(&state.inspector.artist);
+    out.album = clean_optional_string(&state.inspector.album);
+    out.album_artist = clean_optional_string(&state.inspector.album_artist);
+    out.composer = clean_optional_string(&state.inspector.composer);
+
+    out.track_no = track_no;
+    out.track_total = track_total;
+    out.disc_no = disc_no;
+    out.disc_total = disc_total;
+
+    out.year = year;
+    out.date = clean_optional_string(&state.inspector.date);
+    out.genre = clean_optional_string(&state.inspector.genre);
+
+    // Extended (only if user is looking at them — otherwise keep existing)
+    if state.show_extended {
+        out.lyricist = clean_optional_string(&state.inspector.lyricist);
+        out.conductor = clean_optional_string(&state.inspector.conductor);
+        out.remixer = clean_optional_string(&state.inspector.remixer);
+        out.publisher = clean_optional_string(&state.inspector.publisher);
+        out.grouping = clean_optional_string(&state.inspector.grouping);
+        out.subtitle = clean_optional_string(&state.inspector.subtitle);
+        out.bpm = bpm;
+        out.key = clean_optional_string(&state.inspector.key);
+        out.mood = clean_optional_string(&state.inspector.mood);
+        out.language = clean_optional_string(&state.inspector.language);
+        out.isrc = clean_optional_string(&state.inspector.isrc);
+        out.encoder_settings = clean_optional_string(&state.inspector.encoder_settings);
+        out.encoded_by = clean_optional_string(&state.inspector.encoded_by);
+        out.copyright = clean_optional_string(&state.inspector.copyright);
+        out.comment = clean_optional_string(&state.inspector.comment);
+        out.lyrics = clean_optional_string(&state.inspector.lyrics);
+    }
+
+    Ok(out)
 }
 
 // Helpers (state mutation)
