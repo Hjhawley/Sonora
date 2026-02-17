@@ -26,7 +26,7 @@ pub(crate) struct AlbumKey {
 /// Draft editable metadata (strings, so user can type anything).
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
-    // Core tags
+    // Standard (visible by default)
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -39,14 +39,15 @@ pub(crate) struct InspectorDraft {
     pub disc_total: String,
 
     pub year: String,
-    pub date: String,
     pub genre: String,
 
-    // Extended (toggleable)
     pub grouping: String,
     pub comment: String,
     pub lyrics: String,
     pub lyricist: String,
+
+    // Extended (toggleable)
+    pub date: String,
     pub conductor: String,
     pub remixer: String,
     pub publisher: String,
@@ -65,7 +66,7 @@ pub(crate) struct InspectorDraft {
 /// Used to collapse many Message::EditX variants into one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum InspectorField {
-    // Core
+    // Standard (visible by default)
     Title,
     Artist,
     Album,
@@ -78,14 +79,15 @@ pub(crate) enum InspectorField {
     DiscTotal,
 
     Year,
-    Date,
     Genre,
 
-    // Extended
     Grouping,
     Comment,
     Lyrics,
     Lyricist,
+
+    // Extended (toggleable)
+    Date,
     Conductor,
     Remixer,
     Publisher,

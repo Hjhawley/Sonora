@@ -47,6 +47,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     ]
     .spacing(6);
 
+    // Standard (visible by default)
     let core = column![
         field_row("Title", &state.inspector.title, |s| {
             Message::InspectorChanged(Field::Title, s)
@@ -83,29 +84,30 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
         field_row("Genre", &state.inspector.genre, |s| {
             Message::InspectorChanged(Field::Genre, s)
         }),
-        field_row("Date", &state.inspector.date, |s| {
-            Message::InspectorChanged(Field::Date, s)
+        field_row("Grouping", &state.inspector.grouping, |s| {
+            Message::InspectorChanged(Field::Grouping, s)
+        }),
+        field_row("Comment", &state.inspector.comment, |s| {
+            Message::InspectorChanged(Field::Comment, s)
+        }),
+        field_row("Lyrics", &state.inspector.lyrics, |s| {
+            Message::InspectorChanged(Field::Lyrics, s)
+        }),
+        field_row("Lyricist", &state.inspector.lyricist, |s| {
+            Message::InspectorChanged(Field::Lyricist, s)
         }),
     ]
     .spacing(8);
 
     let toggle = checkbox(state.show_extended)
-        .label("Show extended tags")
+        .label("Show more tags")
         .on_toggle(Message::ToggleExtended);
 
+    // Extended (toggleable)
     let extended = if state.show_extended {
         column![
-            field_row("Grouping", &state.inspector.grouping, |s| {
-                Message::InspectorChanged(Field::Grouping, s)
-            }),
-            field_row("Comment", &state.inspector.comment, |s| {
-                Message::InspectorChanged(Field::Comment, s)
-            }),
-            field_row("Lyrics", &state.inspector.lyrics, |s| {
-                Message::InspectorChanged(Field::Lyrics, s)
-            }),
-            field_row("Lyricist", &state.inspector.lyricist, |s| {
-                Message::InspectorChanged(Field::Lyricist, s)
+            field_row("Date", &state.inspector.date, |s| {
+                Message::InspectorChanged(Field::Date, s)
             }),
             field_row("Conductor", &state.inspector.conductor, |s| {
                 Message::InspectorChanged(Field::Conductor, s)

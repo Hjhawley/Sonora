@@ -21,7 +21,7 @@ pub(crate) fn inspector_changed(
 /// Update a single inspector string field based on `InspectorField`.
 fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String) {
     match field {
-        // Core
+        // Standard (visible by default)
         InspectorField::Title => state.inspector.title = value,
         InspectorField::Artist => state.inspector.artist = value,
         InspectorField::Album => state.inspector.album = value,
@@ -34,14 +34,15 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
         InspectorField::DiscTotal => state.inspector.disc_total = value,
 
         InspectorField::Year => state.inspector.year = value,
-        InspectorField::Date => state.inspector.date = value,
         InspectorField::Genre => state.inspector.genre = value,
 
-        // Extended
         InspectorField::Grouping => state.inspector.grouping = value,
         InspectorField::Comment => state.inspector.comment = value,
         InspectorField::Lyrics => state.inspector.lyrics = value,
         InspectorField::Lyricist => state.inspector.lyricist = value,
+
+        // Extended (toggleable)
+        InspectorField::Date => state.inspector.date = value,
         InspectorField::Conductor => state.inspector.conductor = value,
         InspectorField::Remixer => state.inspector.remixer = value,
         InspectorField::Publisher => state.inspector.publisher = value,
@@ -70,7 +71,7 @@ pub(crate) fn load_inspector_from_track(state: &mut Sonora) {
 
     let t = &state.tracks[i];
 
-    // Core: show raw values (blank if None) so we don't accidentally write placeholders into tags.
+    // Standard (visible by default)
     state.inspector.title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
     state.inspector.artist = t.artist.clone().unwrap_or_default();
     state.inspector.album = t.album.clone().unwrap_or_default();
@@ -83,18 +84,20 @@ pub(crate) fn load_inspector_from_track(state: &mut Sonora) {
     state.inspector.disc_total = t.disc_total.map(|n| n.to_string()).unwrap_or_default();
 
     state.inspector.year = t.year.map(|y| y.to_string()).unwrap_or_default();
-    state.inspector.date = t.date.clone().unwrap_or_default();
     state.inspector.genre = t.genre.clone().unwrap_or_default();
 
-    // Extended
     state.inspector.grouping = t.grouping.clone().unwrap_or_default();
     state.inspector.comment = t.comment.clone().unwrap_or_default();
     state.inspector.lyrics = t.lyrics.clone().unwrap_or_default();
     state.inspector.lyricist = t.lyricist.clone().unwrap_or_default();
+
+    // Extended (toggleable)
+    state.inspector.date = t.date.clone().unwrap_or_default();
     state.inspector.conductor = t.conductor.clone().unwrap_or_default();
     state.inspector.remixer = t.remixer.clone().unwrap_or_default();
     state.inspector.publisher = t.publisher.clone().unwrap_or_default();
     state.inspector.subtitle = t.subtitle.clone().unwrap_or_default();
+
     state.inspector.bpm = t.bpm.map(|n| n.to_string()).unwrap_or_default();
     state.inspector.key = t.key.clone().unwrap_or_default();
     state.inspector.mood = t.mood.clone().unwrap_or_default();

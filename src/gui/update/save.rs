@@ -24,7 +24,6 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    // Build the row we want to write (from inspector), with validation.
     let row_to_write = match build_row_from_inspector(state, i) {
         Ok(r) => r,
         Err(e) => {
@@ -81,13 +80,6 @@ pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
     Task::none()
 }
 
-/// Build the TrackRow to write by applying the inspector draft onto the currently selected row.
-///
-/// Semantics:
-/// - Core fields are always applied.
-/// - Extended fields are only applied if `state.show_extended == true`.
-///   (If the user isn't showing them, we preserve existing values to avoid accidental deletion.)
-/// - Empty/whitespace input becomes `None` (your tag writer treats `None` as “remove this tag”.)
 fn build_row_from_inspector(
     state: &Sonora,
     i: usize,
@@ -126,6 +118,7 @@ fn build_row_from_inspector(
         .ok()
         .flatten();
 
+    // BPM is extended now, so only validate/overwrite when extended is visible.
     let bpm = if state.show_extended {
         parse_optional_u32(&state.inspector.bpm)
             .inspect_err(|_| errs.push("BPM"))
@@ -139,7 +132,9 @@ fn build_row_from_inspector(
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
     }
 
-    // Core (always applied)
+    // -------------------------
+    // Standard (always applied)
+    // -------------------------
     out.title = clean_opt(&state.inspector.title);
     out.artist = clean_opt(&state.inspector.artist);
     out.album = clean_opt(&state.inspector.album);
@@ -152,16 +147,19 @@ fn build_row_from_inspector(
     out.disc_total = disc_total;
 
     out.year = year;
-    out.date = clean_opt(&state.inspector.date);
     out.genre = clean_opt(&state.inspector.genre);
 
-    // Extended (only if visible)
-    if state.show_extended {
-        out.grouping = clean_opt(&state.inspector.grouping);
-        out.comment = clean_opt(&state.inspector.comment);
-        out.lyrics = clean_opt(&state.inspector.lyrics);
+    out.grouping = clean_opt(&state.inspector.grouping);
+    out.comment = clean_opt(&state.inspector.comment);
+    out.lyrics = clean_opt(&state.inspector.lyrics);
+    out.lyricist = clean_opt(&state.inspector.lyricist);
 
-        out.lyricist = clean_opt(&state.inspector.lyricist);
+    // -------------------------
+    // Extended (only if visible)
+    // -------------------------
+    if state.show_extended {
+        out.date = clean_opt(&state.inspector.date);
+
         out.conductor = clean_opt(&state.inspector.conductor);
         out.remixer = clean_opt(&state.inspector.remixer);
         out.publisher = clean_opt(&state.inspector.publisher);
