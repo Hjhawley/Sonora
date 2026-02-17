@@ -8,10 +8,6 @@ use crate::core::types::TrackRow;
 /// Dev convenience: if user didn’t add roots, scan /test
 pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 
-/// Fixed UI heights (pixels)
-pub(crate) const ROOTS_HEIGHT: f32 = 120.0;
-pub(crate) const LIST_HEIGHT: f32 = 460.0;
-
 /// Albums vs Tracks list mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ViewMode {
