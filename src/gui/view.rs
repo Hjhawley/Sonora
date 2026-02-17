@@ -6,7 +6,7 @@ use iced::widget::{
 use iced::{Alignment, Length};
 use std::collections::BTreeMap;
 
-use super::state::{AlbumKey, Message, Sonora, ViewMode};
+use super::state::{AlbumKey, InspectorField as Field, Message, Sonora, ViewMode};
 use super::util::filename_stem;
 
 const PLAYBACK_H: f32 = 76.0;
@@ -244,7 +244,7 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         .spacing(10)
         .align_y(Alignment::Center);
 
-        // IMPORTANT: mouse_area gives you “clickable row” without button chrome.
+        // mouse_area gives you “clickable row” without button chrome.
         let row_widget = mouse_area(
             container(row_cells)
                 .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
@@ -480,32 +480,48 @@ fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message>
     .spacing(6);
 
     let core = column![
-        field_row("Title", &state.inspector.title, Message::EditTitle),
-        field_row("Artist", &state.inspector.artist, Message::EditArtist),
-        field_row("Album", &state.inspector.album, Message::EditAlbum),
-        field_row(
-            "Album Artist",
-            &state.inspector.album_artist,
-            Message::EditAlbumArtist
-        ),
-        field_row("Composer", &state.inspector.composer, Message::EditComposer),
+        field_row("Title", &state.inspector.title, |s| {
+            Message::InspectorChanged(Field::Title, s)
+        }),
+        field_row("Artist", &state.inspector.artist, |s| {
+            Message::InspectorChanged(Field::Artist, s)
+        }),
+        field_row("Album", &state.inspector.album, |s| {
+            Message::InspectorChanged(Field::Album, s)
+        }),
+        field_row("Album Artist", &state.inspector.album_artist, |s| {
+            Message::InspectorChanged(Field::AlbumArtist, s)
+        }),
+        field_row("Composer", &state.inspector.composer, |s| {
+            Message::InspectorChanged(Field::Composer, s)
+        }),
         num_pair_row(
             "Track",
             &state.inspector.track_no,
-            Message::EditTrackNo,
+            |s| Message::InspectorChanged(Field::TrackNo, s),
             &state.inspector.track_total,
-            Message::EditTrackTotal,
+            |s| Message::InspectorChanged(Field::TrackTotal, s),
         ),
         num_pair_row(
             "Disc",
             &state.inspector.disc_no,
-            Message::EditDiscNo,
+            |s| Message::InspectorChanged(Field::DiscNo, s),
             &state.inspector.disc_total,
-            Message::EditDiscTotal,
+            |s| Message::InspectorChanged(Field::DiscTotal, s),
         ),
-        field_row("Year", &state.inspector.year, Message::EditYear),
-        field_row("Genre", &state.inspector.genre, Message::EditGenre),
-        field_row("Date", &state.inspector.date, Message::EditDate),
+        field_row(
+            "Year",
+            &state.inspector.year,
+            |s| Message::InspectorChanged(Field::Year, s)
+        ),
+        field_row("Genre", &state.inspector.genre, |s| {
+            Message::InspectorChanged(Field::Genre, s)
+        }),
+        field_row(
+            "Date",
+            &state.inspector.date,
+            |s| Message::InspectorChanged(Field::Date, s)
+        ),
     ]
     .spacing(8);
 
@@ -516,42 +532,60 @@ fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message>
     let mut extended = column![];
     if state.show_extended {
         extended = column![
-            field_row("Grouping", &state.inspector.grouping, Message::EditGrouping),
-            field_row("Comment", &state.inspector.comment, Message::EditComment),
-            field_row("Lyrics", &state.inspector.lyrics, Message::EditLyrics),
-            field_row("Lyricist", &state.inspector.lyricist, Message::EditLyricist),
+            field_row("Grouping", &state.inspector.grouping, |s| {
+                Message::InspectorChanged(Field::Grouping, s)
+            }),
+            field_row("Comment", &state.inspector.comment, |s| {
+                Message::InspectorChanged(Field::Comment, s)
+            }),
+            field_row("Lyrics", &state.inspector.lyrics, |s| {
+                Message::InspectorChanged(Field::Lyrics, s)
+            }),
+            field_row("Lyricist", &state.inspector.lyricist, |s| {
+                Message::InspectorChanged(Field::Lyricist, s)
+            }),
+            field_row("Conductor", &state.inspector.conductor, |s| {
+                Message::InspectorChanged(Field::Conductor, s)
+            }),
+            field_row("Remixer", &state.inspector.remixer, |s| {
+                Message::InspectorChanged(Field::Remixer, s)
+            }),
+            field_row("Publisher", &state.inspector.publisher, |s| {
+                Message::InspectorChanged(Field::Publisher, s)
+            }),
+            field_row("Subtitle", &state.inspector.subtitle, |s| {
+                Message::InspectorChanged(Field::Subtitle, s)
+            }),
+            field_row("BPM", &state.inspector.bpm, |s| Message::InspectorChanged(
+                Field::Bpm,
+                s
+            )),
+            field_row("Key", &state.inspector.key, |s| Message::InspectorChanged(
+                Field::Key,
+                s
+            )),
             field_row(
-                "Conductor",
-                &state.inspector.conductor,
-                Message::EditConductor
+                "Mood",
+                &state.inspector.mood,
+                |s| Message::InspectorChanged(Field::Mood, s)
             ),
-            field_row("Remixer", &state.inspector.remixer, Message::EditRemixer),
+            field_row("Language", &state.inspector.language, |s| {
+                Message::InspectorChanged(Field::Language, s)
+            }),
             field_row(
-                "Publisher",
-                &state.inspector.publisher,
-                Message::EditPublisher
+                "ISRC",
+                &state.inspector.isrc,
+                |s| Message::InspectorChanged(Field::Isrc, s)
             ),
-            field_row("Subtitle", &state.inspector.subtitle, Message::EditSubtitle),
-            field_row("BPM", &state.inspector.bpm, Message::EditBpm),
-            field_row("Key", &state.inspector.key, Message::EditKey),
-            field_row("Mood", &state.inspector.mood, Message::EditMood),
-            field_row("Language", &state.inspector.language, Message::EditLanguage),
-            field_row("ISRC", &state.inspector.isrc, Message::EditIsrc),
-            field_row(
-                "Encoder",
-                &state.inspector.encoder_settings,
-                Message::EditEncoderSettings
-            ),
-            field_row(
-                "Encoded by",
-                &state.inspector.encoded_by,
-                Message::EditEncodedBy
-            ),
-            field_row(
-                "Copyright",
-                &state.inspector.copyright,
-                Message::EditCopyright
-            ),
+            field_row("Encoder", &state.inspector.encoder_settings, |s| {
+                Message::InspectorChanged(Field::EncoderSettings, s)
+            }),
+            field_row("Encoded by", &state.inspector.encoded_by, |s| {
+                Message::InspectorChanged(Field::EncodedBy, s)
+            }),
+            field_row("Copyright", &state.inspector.copyright, |s| {
+                Message::InspectorChanged(Field::Copyright, s)
+            }),
         ]
         .spacing(8);
     }

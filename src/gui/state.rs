@@ -20,8 +20,7 @@ pub(crate) enum ViewMode {
 }
 
 /// Grouping key for Album View.
-/// Use ALBUM ARTIST (TPE2) first.
-/// Fallback behavior happens in view.rs (Unknown Artist, etc).
+/// We prefer ALBUM ARTIST (TPE2), with fallback handled in view.rs.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
     pub album_artist: String,
@@ -64,6 +63,45 @@ pub(crate) struct InspectorDraft {
     pub encoder_settings: String,
     pub encoded_by: String,
     pub copyright: String,
+}
+
+/// Identifies which inspector field changed.
+/// Used to collapse many Message::EditX variants into one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InspectorField {
+    // Core
+    Title,
+    Artist,
+    Album,
+    AlbumArtist,
+    Composer,
+
+    TrackNo,
+    TrackTotal,
+    DiscNo,
+    DiscTotal,
+
+    Year,
+    Date,
+    Genre,
+
+    // Extended
+    Grouping,
+    Comment,
+    Lyrics,
+    Lyricist,
+    Conductor,
+    Remixer,
+    Publisher,
+    Subtitle,
+    Bpm,
+    Key,
+    Mood,
+    Language,
+    Isrc,
+    EncoderSettings,
+    EncodedBy,
+    Copyright,
 }
 
 /// App state
@@ -133,41 +171,9 @@ pub(crate) enum Message {
     SelectAlbum(AlbumKey),
     SelectTrack(usize),
 
-    // Inspector edits (core)
-    EditTitle(String),
-    EditArtist(String),
-    EditAlbum(String),
-    EditAlbumArtist(String),
-    EditComposer(String),
-
-    EditTrackNo(String),
-    EditTrackTotal(String),
-    EditDiscNo(String),
-    EditDiscTotal(String),
-
-    EditYear(String),
-    EditDate(String),
-    EditGenre(String),
-
-    // Inspector edits (extended)
+    // Inspector edits
     ToggleExtended(bool),
-
-    EditGrouping(String),
-    EditComment(String),
-    EditLyrics(String),
-    EditLyricist(String),
-    EditConductor(String),
-    EditRemixer(String),
-    EditPublisher(String),
-    EditSubtitle(String),
-    EditBpm(String),
-    EditKey(String),
-    EditMood(String),
-    EditLanguage(String),
-    EditIsrc(String),
-    EditEncoderSettings(String),
-    EditEncodedBy(String),
-    EditCopyright(String),
+    InspectorChanged(InspectorField, String),
 
     // Actions
     SaveInspectorToFile,

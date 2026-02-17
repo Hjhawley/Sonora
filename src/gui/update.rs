@@ -1,25 +1,35 @@
 //! Update logic.
-//! Mutates state in response to Messages.
+//! Mutates state in response to `Message` events.
+//!
+//! Notes:
+//! - The UI thread should stay responsive.
+//! - Potentially slow work (filesystem scan, tag writes) is done on a background thread.
+//! - Background threads report back via `Message::*Finished` with a `Result`.
 
 use iced::Task;
 use iced::futures::channel::oneshot;
 use std::path::{Path, PathBuf};
 
 use crate::core;
-use crate::core::types::TrackRow;
 
-use super::state::{Message, Sonora, TEST_ROOT, ViewMode};
-use super::util::{clean_optional_string, filename_stem, parse_optional_i32, parse_optional_u32};
+use super::state::{InspectorField, Message, Sonora, TEST_ROOT, ViewMode};
+use super::util::{filename_stem, parse_optional_i32, parse_optional_u32};
 
 pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     match message {
+        // --------------------
         // Roots
+        // --------------------
         Message::RootInputChanged(s) => {
             state.root_input = s;
             Task::none()
         }
 
         Message::AddRootPressed => {
+            if state.scanning || state.saving {
+                return Task::none();
+            }
+
             let input = state.root_input.trim();
             if input.is_empty() {
                 return Task::none();
@@ -27,13 +37,13 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
             let p = PathBuf::from(input);
 
-            // Don't let user add garbage paths
+            // Validate: user must add an existing directory.
             if !Path::new(input).is_dir() {
                 state.status = format!("Not a folder: {}", p.display());
                 return Task::none();
             }
 
-            // Don't add duplicates
+            // Avoid duplicates.
             if state.roots.contains(&p) {
                 state.status = format!("Already added: {}", p.display());
                 state.root_input.clear();
@@ -47,41 +57,35 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
 
         Message::RemoveRoot(i) => {
-            if i < state.roots.len() && !state.scanning {
+            if i < state.roots.len() && !state.scanning && !state.saving {
                 let removed = state.roots.remove(i);
                 state.status = format!("Removed folder: {}", removed.display());
             }
             Task::none()
         }
 
+        // --------------------
         // Scan
+        // --------------------
         Message::ScanLibrary => {
-            if state.scanning {
+            if state.scanning || state.saving {
                 return Task::none();
             }
 
             state.scanning = true;
             state.tracks.clear();
             state.status = "Scanning...".to_string();
+            clear_selection_and_inspector(state);
 
             // If user hasn't added roots, scan ./test
-            let roots_to_scan = if state.roots.is_empty() {
+            let roots_to_scan: Vec<PathBuf> = if state.roots.is_empty() {
                 vec![PathBuf::from(TEST_ROOT)]
             } else {
                 state.roots.clone()
             };
 
             Task::perform(
-                async move {
-                    let (tx, rx) = oneshot::channel::<Result<(Vec<TrackRow>, usize), String>>();
-
-                    std::thread::spawn(move || {
-                        let _ = tx.send(core::scan_and_read_roots(roots_to_scan));
-                    });
-
-                    rx.await
-                        .map_err(|_| "Scan thread dropped without returning".to_string())?
-                },
+                spawn_blocking(move || core::scan_and_read_roots(&roots_to_scan)),
                 Message::ScanFinished,
             )
         }
@@ -105,25 +109,26 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
                     state.tracks = rows;
 
-                    // After rescanning, user's selections may not make sense anymore.
-                    state.selected_track = None;
-                    state.selected_album = None;
-                    clear_inspector(state);
+                    // After rescanning, any previous selection is invalid.
+                    clear_selection_and_inspector(state);
                 }
                 Err(e) => {
                     state.status = format!("Error: {e}");
                     state.tracks.clear();
+                    clear_selection_and_inspector(state);
                 }
             }
 
             Task::none()
         }
 
+        // --------------------
         // View mode
+        // --------------------
         Message::SetViewMode(mode) => {
             state.view_mode = mode;
 
-            // Switching views should feel predictable:
+            // Switching views should feel predictable.
             state.selected_track = None;
             clear_inspector(state);
 
@@ -136,6 +141,10 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         // Album selection (toggle collapse)
         Message::SelectAlbum(key) => {
+            if state.view_mode != ViewMode::Albums {
+                state.view_mode = ViewMode::Albums;
+            }
+
             if state.selected_album.as_ref() == Some(&key) {
                 state.selected_album = None; // collapse
             } else {
@@ -156,157 +165,26 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // --------------------
         // Inspector toggles
+        // --------------------
         Message::ToggleExtended(v) => {
             state.show_extended = v;
             Task::none()
         }
 
-        // Inspector typing (core)
-        Message::EditTitle(s) => {
-            state.inspector.title = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditArtist(s) => {
-            state.inspector.artist = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditAlbum(s) => {
-            state.inspector.album = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditAlbumArtist(s) => {
-            state.inspector.album_artist = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditComposer(s) => {
-            state.inspector.composer = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditTrackNo(s) => {
-            state.inspector.track_no = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditTrackTotal(s) => {
-            state.inspector.track_total = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditDiscNo(s) => {
-            state.inspector.disc_no = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditDiscTotal(s) => {
-            state.inspector.disc_total = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditYear(s) => {
-            state.inspector.year = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditDate(s) => {
-            state.inspector.date = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditGenre(s) => {
-            state.inspector.genre = s;
+        // --------------------
+        // Inspector typing (core + extended)
+        // --------------------
+        Message::InspectorChanged(field, value) => {
+            set_inspector_field(state, field, value);
             state.inspector_dirty = true;
             Task::none()
         }
 
-        // Inspector typing (extended)
-        Message::EditGrouping(s) => {
-            state.inspector.grouping = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditComment(s) => {
-            state.inspector.comment = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditLyrics(s) => {
-            state.inspector.lyrics = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditLyricist(s) => {
-            state.inspector.lyricist = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditConductor(s) => {
-            state.inspector.conductor = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditRemixer(s) => {
-            state.inspector.remixer = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditPublisher(s) => {
-            state.inspector.publisher = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditSubtitle(s) => {
-            state.inspector.subtitle = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditBpm(s) => {
-            state.inspector.bpm = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditKey(s) => {
-            state.inspector.key = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditMood(s) => {
-            state.inspector.mood = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditLanguage(s) => {
-            state.inspector.language = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditIsrc(s) => {
-            state.inspector.isrc = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditEncoderSettings(s) => {
-            state.inspector.encoder_settings = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditEncodedBy(s) => {
-            state.inspector.encoded_by = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditCopyright(s) => {
-            state.inspector.copyright = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-
+        // --------------------
         // Save to disk
+        // --------------------
         Message::SaveInspectorToFile => {
             if state.scanning || state.saving {
                 return Task::none();
@@ -322,10 +200,11 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
                 return Task::none();
             };
             if i >= state.tracks.len() {
+                state.status = "Invalid selection (rescan?).".to_string();
                 return Task::none();
             }
 
-            // Build the row we actually want to write (from inspector), with validation.
+            // Build the row we want to write (from inspector), with validation.
             let row_to_write = match build_row_from_inspector(state, i) {
                 Ok(r) => r,
                 Err(e) => {
@@ -336,31 +215,22 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
             state.saving = true;
             state.status = "Writing tags to file...".to_string();
-
             let write_extended = state.show_extended;
 
             Task::perform(
-                async move {
-                    let (tx, rx) = oneshot::channel::<Result<TrackRow, String>>();
-
-                    std::thread::spawn(move || {
-                        let res = crate::core::tags::write_track_row(&row_to_write, write_extended)
-                            .and_then(|_| {
-                                let (r, failed) =
-                                    crate::core::tags::read_track_row(row_to_write.path.clone());
-                                if failed {
-                                    Err("Wrote tags, but failed to re-read them".to_string())
-                                } else {
-                                    Ok(r)
-                                }
-                            });
-
-                        let _ = tx.send(res);
-                    });
-
-                    rx.await
-                        .map_err(|_| "Save thread dropped without returning".to_string())?
-                },
+                spawn_blocking(move || {
+                    crate::core::tags::write_track_row(&row_to_write, write_extended).and_then(
+                        |_| {
+                            let (r, failed) =
+                                crate::core::tags::read_track_row(row_to_write.path.clone());
+                            if failed {
+                                Err("Wrote tags, but failed to re-read them".to_string())
+                            } else {
+                                Ok(r)
+                            }
+                        },
+                    )
+                }),
                 move |res| Message::SaveFinished(i, res),
             )
         }
@@ -392,19 +262,82 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     }
 }
 
+/// Update a single inspector string field based on `InspectorField`.
+fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String) {
+    match field {
+        // Core
+        InspectorField::Title => state.inspector.title = value,
+        InspectorField::Artist => state.inspector.artist = value,
+        InspectorField::Album => state.inspector.album = value,
+        InspectorField::AlbumArtist => state.inspector.album_artist = value,
+        InspectorField::Composer => state.inspector.composer = value,
+
+        InspectorField::TrackNo => state.inspector.track_no = value,
+        InspectorField::TrackTotal => state.inspector.track_total = value,
+        InspectorField::DiscNo => state.inspector.disc_no = value,
+        InspectorField::DiscTotal => state.inspector.disc_total = value,
+
+        InspectorField::Year => state.inspector.year = value,
+        InspectorField::Date => state.inspector.date = value,
+        InspectorField::Genre => state.inspector.genre = value,
+
+        // Extended
+        InspectorField::Grouping => state.inspector.grouping = value,
+        InspectorField::Comment => state.inspector.comment = value,
+        InspectorField::Lyrics => state.inspector.lyrics = value,
+        InspectorField::Lyricist => state.inspector.lyricist = value,
+        InspectorField::Conductor => state.inspector.conductor = value,
+        InspectorField::Remixer => state.inspector.remixer = value,
+        InspectorField::Publisher => state.inspector.publisher = value,
+        InspectorField::Subtitle => state.inspector.subtitle = value,
+
+        InspectorField::Bpm => state.inspector.bpm = value,
+        InspectorField::Key => state.inspector.key = value,
+        InspectorField::Mood => state.inspector.mood = value,
+        InspectorField::Language => state.inspector.language = value,
+        InspectorField::Isrc => state.inspector.isrc = value,
+        InspectorField::EncoderSettings => state.inspector.encoder_settings = value,
+        InspectorField::EncodedBy => state.inspector.encoded_by = value,
+        InspectorField::Copyright => state.inspector.copyright = value,
+    }
+}
+
+/// Run a blocking function on a background thread and await the result.
+///
+/// This is intentionally tiny: it avoids repeating the oneshot + thread boilerplate
+/// for every “do work off-thread, then send Message::Finished(Result<...>)” case.
+async fn spawn_blocking<T>(f: impl FnOnce() -> T + Send + 'static) -> T
+where
+    T: Send + 'static,
+{
+    let (tx, rx) = oneshot::channel::<T>();
+
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+
+    rx.await
+        .expect("background worker dropped without returning")
+}
+
 /// Build the TrackRow to write by applying the inspector draft onto the currently selected row.
-/// Mirrors your “save-to-memory” semantics:
-/// - core fields always applied
-/// - extended fields applied only if `state.show_extended == true`
-/// - empty/whitespace => None (which your writer treats as “remove tag”)
-fn build_row_from_inspector(state: &Sonora, i: usize) -> Result<TrackRow, String> {
-    let base = state
+///
+/// Semantics:
+/// - Core fields are always applied.
+/// - Extended fields are only applied if `state.show_extended == true`.
+///   (If the user isn't showing them, we preserve existing values to avoid accidental deletion.)
+/// - Empty/whitespace input becomes `None` (your tag writer treats `None` as “remove this tag”.)
+fn build_row_from_inspector(
+    state: &Sonora,
+    i: usize,
+) -> Result<crate::core::types::TrackRow, String> {
+    let mut out = state
         .tracks
         .get(i)
         .cloned()
         .ok_or_else(|| "Invalid selection (rescan?).".to_string())?;
 
-    // Parse numeric fields (collect errors)
+    // Parse numeric fields (collect invalid labels; we don't auto-correct user input).
     let mut errs: Vec<&'static str> = Vec::new();
 
     let track_no = parse_optional_u32(&state.inspector.track_no)
@@ -438,21 +371,19 @@ fn build_row_from_inspector(state: &Sonora, i: usize) -> Result<TrackRow, String
             .ok()
             .flatten()
     } else {
-        base.bpm
+        out.bpm
     };
 
     if !errs.is_empty() {
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
     }
 
-    let mut out = base;
-
-    // Core
-    out.title = clean_optional_string(&state.inspector.title);
-    out.artist = clean_optional_string(&state.inspector.artist);
-    out.album = clean_optional_string(&state.inspector.album);
-    out.album_artist = clean_optional_string(&state.inspector.album_artist);
-    out.composer = clean_optional_string(&state.inspector.composer);
+    // Core (always applied)
+    out.title = clean_opt(&state.inspector.title);
+    out.artist = clean_opt(&state.inspector.artist);
+    out.album = clean_opt(&state.inspector.album);
+    out.album_artist = clean_opt(&state.inspector.album_artist);
+    out.composer = clean_opt(&state.inspector.composer);
 
     out.track_no = track_no;
     out.track_total = track_total;
@@ -460,33 +391,54 @@ fn build_row_from_inspector(state: &Sonora, i: usize) -> Result<TrackRow, String
     out.disc_total = disc_total;
 
     out.year = year;
-    out.date = clean_optional_string(&state.inspector.date);
-    out.genre = clean_optional_string(&state.inspector.genre);
+    out.date = clean_opt(&state.inspector.date);
+    out.genre = clean_opt(&state.inspector.genre);
 
-    // Extended (only if user is looking at them — otherwise keep existing)
+    // Extended (only if visible)
     if state.show_extended {
-        out.grouping = clean_optional_string(&state.inspector.grouping);
-        out.comment = clean_optional_string(&state.inspector.comment);
-        out.lyrics = clean_optional_string(&state.inspector.lyrics);
-        out.lyricist = clean_optional_string(&state.inspector.lyricist);
-        out.conductor = clean_optional_string(&state.inspector.conductor);
-        out.remixer = clean_optional_string(&state.inspector.remixer);
-        out.publisher = clean_optional_string(&state.inspector.publisher);
-        out.subtitle = clean_optional_string(&state.inspector.subtitle);
+        out.grouping = clean_opt(&state.inspector.grouping);
+        out.comment = clean_opt(&state.inspector.comment);
+        out.lyrics = clean_opt(&state.inspector.lyrics);
+
+        out.lyricist = clean_opt(&state.inspector.lyricist);
+        out.conductor = clean_opt(&state.inspector.conductor);
+        out.remixer = clean_opt(&state.inspector.remixer);
+        out.publisher = clean_opt(&state.inspector.publisher);
+        out.subtitle = clean_opt(&state.inspector.subtitle);
+
         out.bpm = bpm;
-        out.key = clean_optional_string(&state.inspector.key);
-        out.mood = clean_optional_string(&state.inspector.mood);
-        out.language = clean_optional_string(&state.inspector.language);
-        out.isrc = clean_optional_string(&state.inspector.isrc);
-        out.encoder_settings = clean_optional_string(&state.inspector.encoder_settings);
-        out.encoded_by = clean_optional_string(&state.inspector.encoded_by);
-        out.copyright = clean_optional_string(&state.inspector.copyright);
+        out.key = clean_opt(&state.inspector.key);
+        out.mood = clean_opt(&state.inspector.mood);
+        out.language = clean_opt(&state.inspector.language);
+        out.isrc = clean_opt(&state.inspector.isrc);
+        out.encoder_settings = clean_opt(&state.inspector.encoder_settings);
+        out.encoded_by = clean_opt(&state.inspector.encoded_by);
+        out.copyright = clean_opt(&state.inspector.copyright);
     }
 
     Ok(out)
 }
 
+/// Trim user input; return `None` if the result is empty.
+fn clean_opt(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
+}
+
+// --------------------
 // Helpers (state mutation)
+// --------------------
+
+fn clear_selection_and_inspector(state: &mut Sonora) {
+    state.selected_track = None;
+    state.selected_album = None;
+    clear_inspector(state);
+}
+
 fn load_inspector_from_track(state: &mut Sonora) {
     let Some(i) = state.selected_track else {
         clear_inspector(state);
@@ -499,7 +451,7 @@ fn load_inspector_from_track(state: &mut Sonora) {
 
     let t = &state.tracks[i];
 
-    // Core: show actual values (blank if None) so we don't write "Unknown" into tags later.
+    // Core: show raw values (blank if None) so we don't accidentally write placeholders into tags.
     state.inspector.title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
     state.inspector.artist = t.artist.clone().unwrap_or_default();
     state.inspector.album = t.album.clone().unwrap_or_default();
