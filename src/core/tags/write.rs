@@ -28,8 +28,42 @@ fn set_slash_pair(tag: &mut Tag, id: &str, n: Option<u32>, total: Option<u32>) {
     }
 }
 
+/// Helper: replace with a single COMM (eng) or remove all COMM if empty/None
+fn set_comment_opt(tag: &mut Tag, v: &Option<String>) {
+    match v.as_deref().map(str::trim) {
+        Some(s) if !s.is_empty() => {
+            let _ = tag.remove("COMM");
+            tag.add_frame(Comment {
+                lang: "eng".to_string(),
+                description: "".to_string(),
+                text: s.to_string(),
+            });
+        }
+        _ => {
+            let _ = tag.remove("COMM");
+        }
+    }
+}
+
+/// Helper: replace with a single USLT (eng) or remove all USLT if empty/None
+fn set_lyrics_opt(tag: &mut Tag, v: &Option<String>) {
+    match v.as_deref().map(str::trim) {
+        Some(s) if !s.is_empty() => {
+            let _ = tag.remove("USLT");
+            tag.add_frame(Lyrics {
+                lang: "eng".to_string(),
+                description: "".to_string(),
+                text: s.to_string(),
+            });
+        }
+        _ => {
+            let _ = tag.remove("USLT");
+        }
+    }
+}
+
 /// Write tags for a single file, based on the desired contents of `row`.
-/// - Always writes "core" fields.
+/// - Always writes "standard" fields (visible by default in UI).
 /// - Writes "extended" fields only if `write_extended == true`.
 ///
 /// Semantics:
@@ -40,6 +74,9 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
     // Load existing tag if possible; otherwise start fresh.
     let mut tag = Tag::read_from_path(path).unwrap_or_else(|_| Tag::new());
 
+    // -------------------------
+    // Standard (always written)
+    // -------------------------
     set_text_opt(&mut tag, "TIT2", &row.title); // title
     set_text_opt(&mut tag, "TPE1", &row.artist); // artist
     set_text_opt(&mut tag, "TALB", &row.album); // album
@@ -57,44 +94,19 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
         None => tag.remove_year(),
     }
 
-    // Date string (keep as text; real libraries vary)
-    set_text_opt(&mut tag, "TDRC", &row.date);
+    // Standard fields that used to be incorrectly gated as "extended"
+    set_text_opt(&mut tag, "TIT1", &row.grouping); // grouping
+    set_comment_opt(&mut tag, &row.comment); // comment
+    set_lyrics_opt(&mut tag, &row.lyrics); // lyrics
+    set_text_opt(&mut tag, "TEXT", &row.lyricist); // lyricist
 
-    // extended fields
+    // -------------------------
+    // Extended (toggleable)
+    // -------------------------
     if write_extended {
-        set_text_opt(&mut tag, "TIT1", &row.grouping);
+        // Date string (keep as text; real libraries vary)
+        set_text_opt(&mut tag, "TDRC", &row.date);
 
-        // Comment (COMM): replace with a single "eng" comment
-        match row.comment.as_deref().map(str::trim) {
-            Some(s) if !s.is_empty() => {
-                let _ = tag.remove("COMM");
-                let _ = tag.add_frame(Comment {
-                    lang: "eng".to_string(),
-                    description: "".to_string(),
-                    text: s.to_string(),
-                });
-            }
-            _ => {
-                let _ = tag.remove("COMM");
-            }
-        }
-
-        // Lyrics (USLT): replace with a single "eng" lyrics frame for MVP
-        match row.lyrics.as_deref().map(str::trim) {
-            Some(s) if !s.is_empty() => {
-                let _ = tag.remove("USLT");
-                let _ = tag.add_frame(Lyrics {
-                    lang: "eng".to_string(),
-                    description: "".to_string(),
-                    text: s.to_string(),
-                });
-            }
-            _ => {
-                let _ = tag.remove("USLT");
-            }
-        }
-
-        set_text_opt(&mut tag, "TEXT", &row.lyricist);
         set_text_opt(&mut tag, "TPE3", &row.conductor);
         set_text_opt(&mut tag, "TPE4", &row.remixer);
         set_text_opt(&mut tag, "TPUB", &row.publisher);
@@ -103,7 +115,7 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
         match row.bpm {
             Some(b) => tag.set_text("TBPM", b.to_string()),
             None => {
-                let _ = tag.remove("TBPM"); // discard Vec<Frame>
+                let _ = tag.remove("TBPM");
             }
         }
 

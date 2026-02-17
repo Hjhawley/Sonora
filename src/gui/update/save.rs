@@ -1,11 +1,9 @@
 use iced::Task;
 
-use super::super::state::{Message, Sonora};
+use super::super::state::{KEEP_SENTINEL, Message, Sonora};
 use super::super::util::{parse_optional_i32, parse_optional_u32};
 use super::helpers::spawn_blocking;
 use super::inspector::load_inspector_from_track;
-
-const MIXED_SENTINEL: &str = "< mixed metadata >";
 
 pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
     if state.scanning || state.saving {
@@ -17,10 +15,10 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    // Batch selection support:
-    // - if selected_tracks non-empty => write to all of them
-    // - else fall back to selected_track
-    let targets: Vec<usize> = if !state.selected_tracks.is_empty() {
+    // Determine which indices we are saving to.
+    // - If selected_tracks has anything, use it
+    // - Else fall back to selected_track
+    let mut indices: Vec<usize> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
     } else if let Some(i) = state.selected_track {
         vec![i]
@@ -28,49 +26,77 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         vec![]
     };
 
-    if targets.is_empty() {
-        state.status = "Select one or more tracks first.".to_string();
-        return Task::none();
-    }
-    if targets.iter().any(|&i| i >= state.tracks.len()) {
-        state.status = "Invalid selection (rescan?).".to_string();
+    indices.sort_unstable();
+    indices.dedup();
+
+    if indices.is_empty() {
+        state.status = "Select a track first.".to_string();
         return Task::none();
     }
 
-    // Build N rows to write (one per target), with validation + "< mixed metadata >" semantics.
-    let rows_to_write = match build_rows_from_inspector(state, &targets) {
-        Ok(v) => v,
-        Err(e) => {
-            state.status = e;
+    // Validate + build rows to write
+    let mut rows_to_write = Vec::with_capacity(indices.len());
+    for &i in &indices {
+        if i >= state.tracks.len() {
+            state.status = "Invalid selection (rescan?).".to_string();
             return Task::none();
         }
-    };
+        match build_row_from_inspector_for_index(state, i) {
+            Ok(r) => rows_to_write.push((i, r)),
+            Err(e) => {
+                state.status = e;
+                return Task::none();
+            }
+        }
+    }
 
     state.saving = true;
-    state.status = if rows_to_write.len() == 1 {
+    state.status = if indices.len() == 1 {
         "Writing tags to file...".to_string()
     } else {
-        format!("Writing tags to {} files...", rows_to_write.len())
+        format!("Writing tags to {} files...", indices.len())
     };
 
     let write_extended = state.show_extended;
 
+    // Single-file path: keep your old message shape (SaveFinished)
+    if rows_to_write.len() == 1 {
+        let (i, row_to_write) = rows_to_write.remove(0);
+
+        return Task::perform(
+            spawn_blocking(move || {
+                crate::core::tags::write_track_row(&row_to_write, write_extended).and_then(|_| {
+                    let (r, failed) = crate::core::tags::read_track_row(row_to_write.path.clone());
+                    if failed {
+                        Err("Wrote tags, but failed to re-read them".to_string())
+                    } else {
+                        Ok(r)
+                    }
+                })
+            }),
+            move |res| Message::SaveFinished(i, res),
+        );
+    }
+
+    // Batch path: write all, re-read all, return Vec<(idx, TrackRow)>
     Task::perform(
         spawn_blocking(move || {
-            // write all; then re-read all
-            let mut updated: Vec<(usize, crate::core::types::TrackRow)> = Vec::new();
+            let mut out: Vec<(usize, crate::core::types::TrackRow)> = Vec::new();
 
-            for (idx, row) in rows_to_write {
-                crate::core::tags::write_track_row(&row, write_extended)?;
+            for (i, row) in rows_to_write {
+                crate::core::tags::write_track_row(&row, write_extended)
+                    .map_err(|e| format!("Write failed for index {i}: {e}"))?;
 
                 let (r, failed) = crate::core::tags::read_track_row(row.path.clone());
                 if failed {
-                    return Err("Wrote tags, but failed to re-read them".to_string());
+                    return Err(format!(
+                        "Wrote tags for index {i}, but failed to re-read them"
+                    ));
                 }
-                updated.push((idx, r));
+                out.push((i, r));
             }
 
-            Ok(updated)
+            Ok(out)
         }),
         Message::SaveFinishedBatch,
     )
@@ -81,16 +107,15 @@ pub(crate) fn save_finished(
     i: usize,
     result: Result<crate::core::types::TrackRow, String>,
 ) -> Task<Message> {
-    // legacy single-file message still supported
     state.saving = false;
 
     match result {
         Ok(new_row) => {
             if i < state.tracks.len() {
                 state.tracks[i] = new_row;
+                load_inspector_from_track(state);
             }
             state.inspector_dirty = false;
-            load_inspector_from_track(state);
             state.status = "Tags written to file.".to_string();
         }
         Err(e) => {
@@ -108,18 +133,21 @@ pub(crate) fn save_finished_batch(
     state.saving = false;
 
     match result {
-        Ok(updated) => {
-            for (i, row) in updated {
+        Ok(rows) => {
+            for (i, row) in rows {
                 if i < state.tracks.len() {
                     state.tracks[i] = row;
                 }
             }
-            state.inspector_dirty = false;
+
+            // Reload inspector from primary selection (whatever it currently is)
             load_inspector_from_track(state);
-            state.status = "Tags written to files.".to_string();
+
+            state.inspector_dirty = false;
+            state.status = "Batch tags written to files.".to_string();
         }
         Err(e) => {
-            state.status = format!("Save failed: {e}");
+            state.status = format!("Batch save failed: {e}");
         }
     }
 
@@ -131,190 +159,160 @@ pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
     Task::none()
 }
 
-/// Build the TrackRows to write by applying the inspector draft onto each selected row.
-///
-/// Semantics:
-/// - Standard fields are always eligible to apply.
-/// - Extended fields are only eligible if `state.show_extended == true`.
-/// - For batch editing:
-///     - If an inspector field is "< mixed metadata >", we DO NOT change that field on any target.
-///     - Otherwise, we apply the value to every target (including clearing it if blank).
-/// - Numeric fields:
-///     - "< mixed metadata >" => leave unchanged
-///     - blank => None (clears)
-///     - invalid => error
-fn build_rows_from_inspector(
+// -------------------------
+// Batch-aware row builder
+// -------------------------
+
+fn build_row_from_inspector_for_index(
     state: &Sonora,
-    targets: &[usize],
-) -> Result<Vec<(usize, crate::core::types::TrackRow)>, String> {
-    // Parse numeric inputs once (or decide they are keep/blank).
+    i: usize,
+) -> Result<crate::core::types::TrackRow, String> {
+    let mut out = state
+        .tracks
+        .get(i)
+        .cloned()
+        .ok_or_else(|| "Invalid selection (rescan?).".to_string())?;
+
+    // Parse numeric fields; BUT treat "<keep>" as "do not change this number"
     let mut errs: Vec<&'static str> = Vec::new();
 
-    let track_no = parse_num_u32(&state.inspector.track_no, "Track #", &mut errs, state)?;
-    let track_total = parse_num_u32(
+    let track_no = parse_u32_keep(
+        &state.inspector.track_no,
+        out.track_no,
+        "Track #",
+        &mut errs,
+    )?;
+    let track_total = parse_u32_keep(
         &state.inspector.track_total,
+        out.track_total,
         "Track total",
         &mut errs,
-        state,
     )?;
-    let disc_no = parse_num_u32(&state.inspector.disc_no, "Disc #", &mut errs, state)?;
-    let disc_total = parse_num_u32(&state.inspector.disc_total, "Disc total", &mut errs, state)?;
-    let year = parse_num_i32(&state.inspector.year, "Year", &mut errs, state)?;
+    let disc_no = parse_u32_keep(&state.inspector.disc_no, out.disc_no, "Disc #", &mut errs)?;
+    let disc_total = parse_u32_keep(
+        &state.inspector.disc_total,
+        out.disc_total,
+        "Disc total",
+        &mut errs,
+    )?;
+
+    let year = parse_i32_keep(&state.inspector.year, out.year, "Year", &mut errs)?;
+
+    // BPM is extended-only. If extended not shown, preserve existing.
     let bpm = if state.show_extended {
-        parse_num_u32(&state.inspector.bpm, "BPM", &mut errs, state)?
+        parse_u32_keep(&state.inspector.bpm, out.bpm, "BPM", &mut errs)?
     } else {
-        NumEditU32::Keep
+        out.bpm
     };
 
     if !errs.is_empty() {
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
     }
 
-    let mut out_rows: Vec<(usize, crate::core::types::TrackRow)> =
-        Vec::with_capacity(targets.len());
+    // -------------------------
+    // Standard (always applied)
+    // KEEP_SENTINEL means "leave this field as-is"
+    // -------------------------
+    apply_opt_keep(&mut out.title, &state.inspector.title);
+    apply_opt_keep(&mut out.artist, &state.inspector.artist);
+    apply_opt_keep(&mut out.album, &state.inspector.album);
+    apply_opt_keep(&mut out.album_artist, &state.inspector.album_artist);
+    apply_opt_keep(&mut out.composer, &state.inspector.composer);
 
-    for &i in targets {
-        let mut out = state
-            .tracks
-            .get(i)
-            .cloned()
-            .ok_or_else(|| "Invalid selection (rescan?).".to_string())?;
+    out.track_no = track_no;
+    out.track_total = track_total;
+    out.disc_no = disc_no;
+    out.disc_total = disc_total;
 
-        // -------------------------
-        // Standard (always eligible)
-        // -------------------------
-        apply_opt_string(&mut out.title, &state.inspector.title);
-        apply_opt_string(&mut out.artist, &state.inspector.artist);
-        apply_opt_string(&mut out.album, &state.inspector.album);
-        apply_opt_string(&mut out.album_artist, &state.inspector.album_artist);
-        apply_opt_string(&mut out.composer, &state.inspector.composer);
+    out.year = year;
+    apply_opt_keep(&mut out.genre, &state.inspector.genre);
 
-        apply_num_u32(&mut out.track_no, track_no);
-        apply_num_u32(&mut out.track_total, track_total);
-        apply_num_u32(&mut out.disc_no, disc_no);
-        apply_num_u32(&mut out.disc_total, disc_total);
-        apply_num_i32(&mut out.year, year);
+    apply_opt_keep(&mut out.grouping, &state.inspector.grouping);
+    apply_opt_keep(&mut out.comment, &state.inspector.comment);
+    apply_opt_keep(&mut out.lyrics, &state.inspector.lyrics);
+    apply_opt_keep(&mut out.lyricist, &state.inspector.lyricist);
 
-        apply_opt_string(&mut out.genre, &state.inspector.genre);
+    // -------------------------
+    // Extended (only if visible)
+    // -------------------------
+    if state.show_extended {
+        apply_opt_keep(&mut out.date, &state.inspector.date);
 
-        apply_opt_string(&mut out.grouping, &state.inspector.grouping);
-        apply_opt_string(&mut out.comment, &state.inspector.comment);
-        apply_opt_string(&mut out.lyrics, &state.inspector.lyrics);
-        apply_opt_string(&mut out.lyricist, &state.inspector.lyricist);
+        apply_opt_keep(&mut out.conductor, &state.inspector.conductor);
+        apply_opt_keep(&mut out.remixer, &state.inspector.remixer);
+        apply_opt_keep(&mut out.publisher, &state.inspector.publisher);
+        apply_opt_keep(&mut out.subtitle, &state.inspector.subtitle);
 
-        // -------------------------
-        // Extended (only if visible)
-        // -------------------------
-        if state.show_extended {
-            apply_opt_string(&mut out.date, &state.inspector.date);
-
-            apply_opt_string(&mut out.conductor, &state.inspector.conductor);
-            apply_opt_string(&mut out.remixer, &state.inspector.remixer);
-            apply_opt_string(&mut out.publisher, &state.inspector.publisher);
-            apply_opt_string(&mut out.subtitle, &state.inspector.subtitle);
-
-            apply_num_u32(&mut out.bpm, bpm);
-
-            apply_opt_string(&mut out.key, &state.inspector.key);
-            apply_opt_string(&mut out.mood, &state.inspector.mood);
-            apply_opt_string(&mut out.language, &state.inspector.language);
-            apply_opt_string(&mut out.isrc, &state.inspector.isrc);
-            apply_opt_string(&mut out.encoder_settings, &state.inspector.encoder_settings);
-            apply_opt_string(&mut out.encoded_by, &state.inspector.encoded_by);
-            apply_opt_string(&mut out.copyright, &state.inspector.copyright);
-        }
-
-        out_rows.push((i, out));
+        out.bpm = bpm;
+        apply_opt_keep(&mut out.key, &state.inspector.key);
+        apply_opt_keep(&mut out.mood, &state.inspector.mood);
+        apply_opt_keep(&mut out.language, &state.inspector.language);
+        apply_opt_keep(&mut out.isrc, &state.inspector.isrc);
+        apply_opt_keep(&mut out.encoder_settings, &state.inspector.encoder_settings);
+        apply_opt_keep(&mut out.encoded_by, &state.inspector.encoded_by);
+        apply_opt_keep(&mut out.copyright, &state.inspector.copyright);
     }
 
-    Ok(out_rows)
+    Ok(out)
 }
 
-// --------------------
-// "< mixed metadata >" helpers
-// --------------------
+/// Applies a text input to an Option<String> field.
+/// - If input is "<keep>" => do nothing
+/// - Else if trimmed empty => set None (delete tag)
+/// - Else => set Some(trimmed)
+fn apply_opt_keep(dst: &mut Option<String>, input: &str) {
+    let t = input.trim();
 
-fn is_keep(s: &str) -> bool {
-    s.trim() == MIXED_SENTINEL
-}
-
-fn clean_opt(s: &str) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    }
-}
-
-/// Apply a string input to an Option<String> field:
-/// - "< mixed metadata >" => do nothing
-/// - otherwise => set to trimmed string or None if blank
-fn apply_opt_string(dst: &mut Option<String>, input: &str) {
-    if is_keep(input) {
+    if t == KEEP_SENTINEL {
         return;
     }
-    *dst = clean_opt(input);
-}
-
-#[derive(Clone, Copy)]
-enum NumEditU32 {
-    Keep,
-    Set(Option<u32>),
-}
-
-#[derive(Clone, Copy)]
-enum NumEditI32 {
-    Keep,
-    Set(Option<i32>),
-}
-
-fn apply_num_u32(dst: &mut Option<u32>, edit: NumEditU32) {
-    match edit {
-        NumEditU32::Keep => {}
-        NumEditU32::Set(v) => *dst = v,
+    if t.is_empty() {
+        *dst = None;
+    } else {
+        *dst = Some(t.to_string());
     }
 }
 
-fn apply_num_i32(dst: &mut Option<i32>, edit: NumEditI32) {
-    match edit {
-        NumEditI32::Keep => {}
-        NumEditI32::Set(v) => *dst = v,
-    }
-}
-
-fn parse_num_u32(
+fn parse_u32_keep(
     input: &str,
+    current: Option<u32>,
     label: &'static str,
     errs: &mut Vec<&'static str>,
-    _state: &Sonora,
-) -> Result<NumEditU32, String> {
-    if is_keep(input) {
-        return Ok(NumEditU32::Keep);
+) -> Result<Option<u32>, String> {
+    let t = input.trim();
+    if t == KEEP_SENTINEL {
+        return Ok(current);
     }
-    match parse_optional_u32(input) {
-        Ok(v) => Ok(NumEditU32::Set(v)),
-        Err(_) => {
-            errs.push(label);
-            Ok(NumEditU32::Keep)
-        }
+    if t.is_empty() {
+        return Ok(None);
     }
+
+    let v = parse_optional_u32(t)
+        .inspect_err(|_| errs.push(label))
+        .ok()
+        .flatten();
+
+    Ok(v)
 }
 
-fn parse_num_i32(
+fn parse_i32_keep(
     input: &str,
+    current: Option<i32>,
     label: &'static str,
     errs: &mut Vec<&'static str>,
-    _state: &Sonora,
-) -> Result<NumEditI32, String> {
-    if is_keep(input) {
-        return Ok(NumEditI32::Keep);
+) -> Result<Option<i32>, String> {
+    let t = input.trim();
+    if t == KEEP_SENTINEL {
+        return Ok(current);
     }
-    match parse_optional_i32(input) {
-        Ok(v) => Ok(NumEditI32::Set(v)),
-        Err(_) => {
-            errs.push(label);
-            Ok(NumEditI32::Keep)
-        }
+    if t.is_empty() {
+        return Ok(None);
     }
+
+    let v = parse_optional_i32(t)
+        .inspect_err(|_| errs.push(label))
+        .ok()
+        .flatten();
+
+    Ok(v)
 }
