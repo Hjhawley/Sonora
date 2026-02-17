@@ -1,27 +1,20 @@
 //! Sonora GUI prototype
 //!
 //! Current behavior
-//! - User adds one or more folder roots.
-//! - "Scan Library" walks roots for '.mp3', reads ID3 into 'TrackRow'.
-//! - Library is displayed as either:
-//!   - Track View: flat list of tracks
-//!   - Album View: grouped by (artist, album), with expandable albums
-//! - Selecting a track populates the Inspector form.
-//! - Save edits to disk
+//! - User adds one or more library root folders.
+//! - "Scan Library" walks roots for `.mp3` files and reads ID3 tags into `TrackRow`.
+//! - Library can be viewed as:
+//!   - Track View: flat list
+//!   - Album View: grouped by (album artist, album) with expandable album rows
+//! - Selecting a track loads an Inspector (draft fields).
+//! - "Save edits" writes the edited ID3 tags back to that single file, then re-reads it.
 //!
-//! Not yet implemented
-//! - Persistent DB/cache
+//! Future behavior
 //! - Audio playback
-//!
-//! Architecture constraints
-//! - UI layer calls 'core::*' for scanning/tag reading.
-//! - UI does not perform filesystem IO except validating user-entered root paths.
-//!
-//! Concurrency model
-//! - Scanning the disk can be slow.
-//! - So we run scan work on a separate thread.
-//! - When it finishes, it sends the results back as a 'Message::ScanFinished(...)'
-//!   so 'update()' can safely apply the result.
+//! - Persistent cache / DB
+//! - Multi-file batch editing
+
+#![forbid(unsafe_code)]
 
 mod core;
 mod gui;
