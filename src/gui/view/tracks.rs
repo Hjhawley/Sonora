@@ -38,8 +38,17 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     let mut col = column![header].spacing(TRACK_LIST_SPACING);
 
     for (i, t) in state.tracks.iter().enumerate() {
-        let selected = state.selected_track == Some(i);
-        let marker = if selected { "▶" } else { "" };
+        let is_primary = state.selected_track == Some(i);
+        let is_selected = state.selected_tracks.contains(&i);
+
+        // Primary selection gets ▶. Other selected rows get ●.
+        let marker = if is_primary {
+            "▶"
+        } else if is_selected {
+            "●"
+        } else {
+            ""
+        };
 
         let track_no = t.track_no.map(|n| n.to_string()).unwrap_or_default();
         let title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));

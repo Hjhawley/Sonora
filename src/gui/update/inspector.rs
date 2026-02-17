@@ -59,6 +59,8 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
     }
 }
 
+/// Load inspector fields from the primary selected track.
+/// (Batch/mixed support comes next; for now this restores the working single-track behavior.)
 pub(crate) fn load_inspector_from_track(state: &mut Sonora) {
     let Some(i) = state.selected_track else {
         clear_inspector(state);
@@ -70,6 +72,9 @@ pub(crate) fn load_inspector_from_track(state: &mut Sonora) {
     }
 
     let t = &state.tracks[i];
+
+    // clear mixed flags for now (we'll compute these when batch aggregation is implemented)
+    state.inspector_mixed.clear();
 
     // Standard (visible by default)
     state.inspector.title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
@@ -113,4 +118,5 @@ pub(crate) fn load_inspector_from_track(state: &mut Sonora) {
 pub(crate) fn clear_inspector(state: &mut Sonora) {
     state.inspector = Default::default();
     state.inspector_dirty = false;
+    state.inspector_mixed.clear();
 }

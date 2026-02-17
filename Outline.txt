@@ -103,14 +103,14 @@ Key Workflows
 Library Import:
 - User selects folder
 - Core scans files
-- Tags read → DB upsert
+- Tags read -> DB upsert
 - UI updates library view
 
 Tag Editing:
 - User edits fields
 - Create TagEdit
 - Generate PlannedOp (preview)
-- User confirms → commit → write tags
+- User confirms -> commit -> write tags
 - Undo data recorded
 
 Playback:

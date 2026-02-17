@@ -155,8 +155,16 @@ fn build_album_detail(
         let artist = t.artist.clone().unwrap_or_else(|| "Unknown".into());
         let dur = fmt_duration(t.duration_ms);
 
-        let selected = state.selected_track == Some(i);
-        let marker = if selected { "▶" } else { "" };
+        let is_primary = state.selected_track == Some(i);
+        let is_selected = state.selected_tracks.contains(&i);
+
+        let marker = if is_primary {
+            "▶"
+        } else if is_selected {
+            "●"
+        } else {
+            ""
+        };
 
         let row_cells = row![
             text(marker).size(ROW_TEXT).width(Length::Fixed(24.0)),

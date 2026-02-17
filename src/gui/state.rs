@@ -1,12 +1,16 @@
 //! GUI state + messages.
 //! Pure data definitions used by update.rs + view.rs.
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use crate::core::types::TrackRow;
 
 /// Dev convenience: if user didn’t add roots, scan /test
 pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
+
+/// What the inspector shows when selected files disagree.
+pub(crate) const KEEP_SENTINEL: &str = "<keep>";
 
 /// Albums vs Tracks list mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,7 +68,7 @@ pub(crate) struct InspectorDraft {
 
 /// Identifies which inspector field changed.
 /// Used to collapse many Message::EditX variants into one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum InspectorField {
     // Standard (visible by default)
     Title,
@@ -117,12 +121,23 @@ pub(crate) struct Sonora {
     // UI
     pub view_mode: ViewMode,
     pub selected_album: Option<AlbumKey>,
+
+    /// Multi-select support: all selected track indices.
+    pub selected_tracks: BTreeSet<usize>,
+
+    /// The “primary” selection (used for inspector header / focus).
     pub selected_track: Option<usize>,
+
+    /// Used later for shift-range selection (anchor). Safe to keep now.
+    pub last_clicked_track: Option<usize>,
 
     // Inspector
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
     pub saving: bool,
+
+    /// Which inspector fields are currently “mixed” across the selection.
+    pub inspector_mixed: BTreeMap<InspectorField, bool>,
 
     // UI toggles
     pub show_extended: bool,
@@ -141,11 +156,15 @@ impl Default for Sonora {
 
             view_mode: ViewMode::Tracks,
             selected_album: None,
+
+            selected_tracks: BTreeSet::new(),
             selected_track: None,
+            last_clicked_track: None,
 
             inspector: InspectorDraft::default(),
             inspector_dirty: false,
             saving: false,
+            inspector_mixed: BTreeMap::new(),
 
             show_extended: false,
         }
@@ -176,5 +195,6 @@ pub(crate) enum Message {
     // Actions
     SaveInspectorToFile,
     SaveFinished(usize, Result<TrackRow, String>),
+    SaveFinishedBatch(Result<Vec<(usize, TrackRow)>, String>),
     RevertInspector,
 }

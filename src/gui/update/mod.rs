@@ -37,6 +37,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         // Save
         Message::SaveInspectorToFile => save::save_inspector_to_file(state),
         Message::SaveFinished(i, result) => save::save_finished(state, i, result),
+        Message::SaveFinishedBatch(result) => save::save_finished_batch(state, result),
         Message::RevertInspector => save::revert_inspector(state),
     }
 }

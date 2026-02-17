@@ -1,21 +1,91 @@
 //! Right panel: metadata inspector/editor.
 
+use iced::Alignment;
 use iced::Length;
-use iced::widget::{button, checkbox, column, container, row, scrollable, text};
+use iced::widget::{Column, Row};
+use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
 
-use super::super::state::{InspectorField as Field, Message, Sonora};
-use super::widgets::{field_row, fmt_duration, num_pair_row};
+use super::super::state::{InspectorField as Field, KEEP_SENTINEL, Message, Sonora};
+use super::widgets::fmt_duration;
+
+const LABEL_W: f32 = 110.0;
+
+/// Field row that appends " (mixed)" to the label when mixed.
+/// (No Text::opacity in your iced.)
+fn field_row_mixed<'a>(
+    label: &'a str,
+    value: &'a str,
+    mixed: bool,
+    on_input: impl Fn(String) -> Message + 'a,
+) -> Row<'a, Message> {
+    let label = if mixed {
+        format!("{label} (mixed)")
+    } else {
+        label.to_string()
+    };
+
+    row![
+        text(label).width(Length::Fixed(LABEL_W)),
+        text_input("", value).on_input(on_input).width(Length::Fill),
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center)
+}
+
+/// Numeric pair row with " (mixed)" on the label if either side is mixed.
+fn num_pair_row_mixed<'a>(
+    label: &'a str,
+    left: &'a str,
+    left_mixed: bool,
+    left_on: impl Fn(String) -> Message + 'a,
+    right: &'a str,
+    right_mixed: bool,
+    right_on: impl Fn(String) -> Message + 'a,
+) -> Row<'a, Message> {
+    let label = if left_mixed || right_mixed {
+        format!("{label} (mixed)")
+    } else {
+        label.to_string()
+    };
+
+    row![
+        text(label).width(Length::Fixed(LABEL_W)),
+        text_input("", left)
+            .on_input(left_on)
+            .width(Length::Fixed(70.0)),
+        text("/"),
+        text_input("", right)
+            .on_input(right_on)
+            .width(Length::Fixed(70.0)),
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center)
+}
+
+fn is_mixed(state: &Sonora, field: Field) -> bool {
+    state.inspector_mixed.get(&field).copied().unwrap_or(false)
+}
 
 pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
-    let Some(i) = state.selected_track else {
+    // If nothing selected, show empty editor prompt.
+    if state.selected_tracks.is_empty() && state.selected_track.is_none() {
         return container(
             column![
                 text("Metadata editor").size(18),
-                text("Select a track (center panel)."),
+                text("Select one or more tracks (center panel)."),
             ]
             .spacing(8),
         )
         .padding(12);
+    }
+
+    // Primary index for the header/path: prefer selected_track, else first selected_tracks.
+    let primary_idx = state
+        .selected_track
+        .or_else(|| state.selected_tracks.iter().next().copied());
+
+    let Some(i) = primary_idx else {
+        return container(text("No selection.")).padding(12);
     };
 
     if i >= state.tracks.len() {
@@ -25,9 +95,16 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     let t = &state.tracks[i];
     let path_line = format!("{}", t.path.display());
 
+    let sel_count = if !state.selected_tracks.is_empty() {
+        state.selected_tracks.len()
+    } else {
+        1
+    };
+
     let top = column![
         text("Metadata editor").size(18),
-        text("Path").size(12),
+        text(format!("Selected: {sel_count}")).size(12),
+        text("Path (primary)").size(12),
         text(path_line).size(12),
         text(format!(
             "Artwork: {} | Len: {} | Rating: {} | Plays: {} | Compilation: {}",
@@ -47,55 +124,91 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     ]
     .spacing(6);
 
-    // Standard (visible by default)
-    let core = column![
-        field_row("Title", &state.inspector.title, |s| {
-            Message::InspectorChanged(Field::Title, s)
-        }),
-        field_row("Artist", &state.inspector.artist, |s| {
-            Message::InspectorChanged(Field::Artist, s)
-        }),
-        field_row("Album", &state.inspector.album, |s| {
-            Message::InspectorChanged(Field::Album, s)
-        }),
-        field_row("Album Artist", &state.inspector.album_artist, |s| {
-            Message::InspectorChanged(Field::AlbumArtist, s)
-        }),
-        field_row("Composer", &state.inspector.composer, |s| {
-            Message::InspectorChanged(Field::Composer, s)
-        }),
-        num_pair_row(
+    let core: Column<'_, Message> = column![
+        field_row_mixed(
+            "Title",
+            &state.inspector.title,
+            is_mixed(state, Field::Title) && state.inspector.title == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Title, s)
+        ),
+        field_row_mixed(
+            "Artist",
+            &state.inspector.artist,
+            is_mixed(state, Field::Artist) && state.inspector.artist == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Artist, s)
+        ),
+        field_row_mixed(
+            "Album",
+            &state.inspector.album,
+            is_mixed(state, Field::Album) && state.inspector.album == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Album, s)
+        ),
+        field_row_mixed(
+            "Album Artist",
+            &state.inspector.album_artist,
+            is_mixed(state, Field::AlbumArtist) && state.inspector.album_artist == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::AlbumArtist, s)
+        ),
+        field_row_mixed(
+            "Composer",
+            &state.inspector.composer,
+            is_mixed(state, Field::Composer) && state.inspector.composer == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Composer, s)
+        ),
+        num_pair_row_mixed(
             "Track",
             &state.inspector.track_no,
+            is_mixed(state, Field::TrackNo) && state.inspector.track_no == KEEP_SENTINEL,
             |s| Message::InspectorChanged(Field::TrackNo, s),
             &state.inspector.track_total,
+            is_mixed(state, Field::TrackTotal) && state.inspector.track_total == KEEP_SENTINEL,
             |s| Message::InspectorChanged(Field::TrackTotal, s),
         ),
-        num_pair_row(
+        num_pair_row_mixed(
             "Disc",
             &state.inspector.disc_no,
+            is_mixed(state, Field::DiscNo) && state.inspector.disc_no == KEEP_SENTINEL,
             |s| Message::InspectorChanged(Field::DiscNo, s),
             &state.inspector.disc_total,
+            is_mixed(state, Field::DiscTotal) && state.inspector.disc_total == KEEP_SENTINEL,
             |s| Message::InspectorChanged(Field::DiscTotal, s),
         ),
-        field_row("Year", &state.inspector.year, |s| {
-            Message::InspectorChanged(Field::Year, s)
-        }),
-        field_row("Genre", &state.inspector.genre, |s| {
-            Message::InspectorChanged(Field::Genre, s)
-        }),
-        field_row("Grouping", &state.inspector.grouping, |s| {
-            Message::InspectorChanged(Field::Grouping, s)
-        }),
-        field_row("Comment", &state.inspector.comment, |s| {
-            Message::InspectorChanged(Field::Comment, s)
-        }),
-        field_row("Lyrics", &state.inspector.lyrics, |s| {
-            Message::InspectorChanged(Field::Lyrics, s)
-        }),
-        field_row("Lyricist", &state.inspector.lyricist, |s| {
-            Message::InspectorChanged(Field::Lyricist, s)
-        }),
+        field_row_mixed(
+            "Year",
+            &state.inspector.year,
+            is_mixed(state, Field::Year) && state.inspector.year == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Year, s)
+        ),
+        field_row_mixed(
+            "Genre",
+            &state.inspector.genre,
+            is_mixed(state, Field::Genre) && state.inspector.genre == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Genre, s)
+        ),
+        field_row_mixed(
+            "Grouping",
+            &state.inspector.grouping,
+            is_mixed(state, Field::Grouping) && state.inspector.grouping == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Grouping, s)
+        ),
+        field_row_mixed(
+            "Comment",
+            &state.inspector.comment,
+            is_mixed(state, Field::Comment) && state.inspector.comment == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Comment, s)
+        ),
+        field_row_mixed(
+            "Lyrics",
+            &state.inspector.lyrics,
+            is_mixed(state, Field::Lyrics) && state.inspector.lyrics == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Lyrics, s)
+        ),
+        field_row_mixed(
+            "Lyricist",
+            &state.inspector.lyricist,
+            is_mixed(state, Field::Lyricist) && state.inspector.lyricist == KEEP_SENTINEL,
+            |s| Message::InspectorChanged(Field::Lyricist, s)
+        ),
     ]
     .spacing(8);
 
@@ -103,48 +216,87 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
         .label("Show more tags")
         .on_toggle(Message::ToggleExtended);
 
-    // Extended (toggleable)
-    let extended = if state.show_extended {
+    let extended: Column<'_, Message> = if state.show_extended {
         column![
-            field_row("Date", &state.inspector.date, |s| {
-                Message::InspectorChanged(Field::Date, s)
-            }),
-            field_row("Conductor", &state.inspector.conductor, |s| {
-                Message::InspectorChanged(Field::Conductor, s)
-            }),
-            field_row("Remixer", &state.inspector.remixer, |s| {
-                Message::InspectorChanged(Field::Remixer, s)
-            }),
-            field_row("Publisher", &state.inspector.publisher, |s| {
-                Message::InspectorChanged(Field::Publisher, s)
-            }),
-            field_row("Subtitle", &state.inspector.subtitle, |s| {
-                Message::InspectorChanged(Field::Subtitle, s)
-            }),
-            field_row("BPM", &state.inspector.bpm, |s| {
-                Message::InspectorChanged(Field::Bpm, s)
-            }),
-            field_row("Key", &state.inspector.key, |s| {
-                Message::InspectorChanged(Field::Key, s)
-            }),
-            field_row("Mood", &state.inspector.mood, |s| {
-                Message::InspectorChanged(Field::Mood, s)
-            }),
-            field_row("Language", &state.inspector.language, |s| {
-                Message::InspectorChanged(Field::Language, s)
-            }),
-            field_row("ISRC", &state.inspector.isrc, |s| {
-                Message::InspectorChanged(Field::Isrc, s)
-            }),
-            field_row("Encoder", &state.inspector.encoder_settings, |s| {
-                Message::InspectorChanged(Field::EncoderSettings, s)
-            }),
-            field_row("Encoded by", &state.inspector.encoded_by, |s| {
-                Message::InspectorChanged(Field::EncodedBy, s)
-            }),
-            field_row("Copyright", &state.inspector.copyright, |s| {
-                Message::InspectorChanged(Field::Copyright, s)
-            }),
+            field_row_mixed(
+                "Date",
+                &state.inspector.date,
+                is_mixed(state, Field::Date) && state.inspector.date == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Date, s)
+            ),
+            field_row_mixed(
+                "Conductor",
+                &state.inspector.conductor,
+                is_mixed(state, Field::Conductor) && state.inspector.conductor == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Conductor, s)
+            ),
+            field_row_mixed(
+                "Remixer",
+                &state.inspector.remixer,
+                is_mixed(state, Field::Remixer) && state.inspector.remixer == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Remixer, s)
+            ),
+            field_row_mixed(
+                "Publisher",
+                &state.inspector.publisher,
+                is_mixed(state, Field::Publisher) && state.inspector.publisher == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Publisher, s)
+            ),
+            field_row_mixed(
+                "Subtitle",
+                &state.inspector.subtitle,
+                is_mixed(state, Field::Subtitle) && state.inspector.subtitle == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Subtitle, s)
+            ),
+            field_row_mixed(
+                "BPM",
+                &state.inspector.bpm,
+                is_mixed(state, Field::Bpm) && state.inspector.bpm == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Bpm, s)
+            ),
+            field_row_mixed(
+                "Key",
+                &state.inspector.key,
+                is_mixed(state, Field::Key) && state.inspector.key == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Key, s)
+            ),
+            field_row_mixed(
+                "Mood",
+                &state.inspector.mood,
+                is_mixed(state, Field::Mood) && state.inspector.mood == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Mood, s)
+            ),
+            field_row_mixed(
+                "Language",
+                &state.inspector.language,
+                is_mixed(state, Field::Language) && state.inspector.language == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Language, s)
+            ),
+            field_row_mixed(
+                "ISRC",
+                &state.inspector.isrc,
+                is_mixed(state, Field::Isrc) && state.inspector.isrc == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Isrc, s)
+            ),
+            field_row_mixed(
+                "Encoder",
+                &state.inspector.encoder_settings,
+                is_mixed(state, Field::EncoderSettings)
+                    && state.inspector.encoder_settings == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::EncoderSettings, s)
+            ),
+            field_row_mixed(
+                "Encoded by",
+                &state.inspector.encoded_by,
+                is_mixed(state, Field::EncodedBy) && state.inspector.encoded_by == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::EncodedBy, s)
+            ),
+            field_row_mixed(
+                "Copyright",
+                &state.inspector.copyright,
+                is_mixed(state, Field::Copyright) && state.inspector.copyright == KEEP_SENTINEL,
+                |s| Message::InspectorChanged(Field::Copyright, s)
+            ),
         ]
         .spacing(8)
     } else {
