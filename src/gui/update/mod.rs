@@ -28,6 +28,9 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SelectAlbum(key) => selection::select_album(state, key),
         Message::SelectTrack(i) => selection::select_track(state, i),
 
+        // Cover
+        Message::CoverLoaded(i, handle) => selection::cover_loaded(state, i, handle),
+
         // Inspector
         Message::ToggleExtended(v) => inspector::toggle_extended(state, v),
         Message::InspectorChanged(field, value) => {

@@ -10,7 +10,7 @@ use super::constants::{
     ALBUM_LIST_H, ALBUM_LIST_SPACING, ALBUM_ROW_COVER, ALBUM_ROW_H, COVER_BIG, ROW_TEXT,
     TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
-use super::widgets::{cover_placeholder, fmt_duration};
+use super::widgets::{cover_thumb, fmt_duration};
 
 pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
     let mut groups: BTreeMap<AlbumKey, Vec<usize>> = BTreeMap::new();
@@ -37,9 +37,14 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
     }
 
     let selected_key: Option<AlbumKey> = state.selected_album.clone();
-    let albums: Vec<(AlbumKey, usize)> = groups.iter().map(|(k, v)| (k.clone(), v.len())).collect();
 
-    let list = build_album_list(selected_key.clone(), albums);
+    // For list display: (key, track_count, representative_track_index)
+    let albums: Vec<(AlbumKey, usize, usize)> = groups
+        .iter()
+        .map(|(k, v)| (k.clone(), v.len(), *v.first().unwrap_or(&0)))
+        .collect();
+
+    let list = build_album_list(state, selected_key.clone(), albums);
 
     let selected_payload: Option<(AlbumKey, Vec<usize>)> = state
         .selected_album
@@ -57,12 +62,13 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
 }
 
 fn build_album_list(
+    state: &Sonora,
     selected: Option<AlbumKey>,
-    albums: Vec<(AlbumKey, usize)>,
+    albums: Vec<(AlbumKey, usize, usize)>,
 ) -> iced::widget::Scrollable<'static, Message> {
     let mut col: Column<'static, Message> = column![].spacing(ALBUM_LIST_SPACING);
 
-    for (key, count) in albums {
+    for (key, count, rep_idx) in albums {
         let is_selected = selected.as_ref() == Some(&key);
         let marker = if is_selected { "●" } else { "" };
 
@@ -70,8 +76,10 @@ fn build_album_list(
         let artist_line = key.album_artist.clone();
         let count_line = format!("{count} tracks");
 
+        let cover = cover_thumb(state.cover_cache.get(&rep_idx), ALBUM_ROW_COVER);
+
         let row_cells = row![
-            cover_placeholder(ALBUM_ROW_COVER),
+            cover,
             column![text(title_line).size(14), text(artist_line).size(12)]
                 .spacing(2)
                 .width(Length::Fill),
@@ -122,15 +130,19 @@ fn build_album_detail(
             ))
     });
 
-    let first = &state.tracks[idxs[0]];
+    let first_idx = idxs[0];
+    let first = &state.tracks[first_idx];
+
     let year = first
         .year
         .map(|y| y.to_string())
         .unwrap_or_else(|| "-".into());
     let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
+    let big_cover = cover_thumb(state.cover_cache.get(&first_idx), COVER_BIG);
+
     let header = row![
-        cover_placeholder(COVER_BIG),
+        big_cover,
         column![
             text(key.album.clone()).size(26),
             text(key.album_artist.clone()).size(18),

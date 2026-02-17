@@ -118,6 +118,9 @@ pub(crate) struct Sonora {
     // Library
     pub tracks: Vec<TrackRow>,
 
+    /// Cache: track index -> decoded cover handle (for quick UI rendering)
+    pub cover_cache: BTreeMap<usize, iced::widget::image::Handle>,
+
     // UI
     pub view_mode: ViewMode,
     pub selected_album: Option<AlbumKey>,
@@ -153,6 +156,7 @@ impl Default for Sonora {
             roots: Vec::new(),
 
             tracks: Vec::new(),
+            cover_cache: BTreeMap::new(),
 
             view_mode: ViewMode::Tracks,
             selected_album: None,
@@ -187,6 +191,9 @@ pub(crate) enum Message {
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
     SelectTrack(usize),
+
+    // Cover art
+    CoverLoaded(usize, Option<iced::widget::image::Handle>),
 
     // Inspector edits
     ToggleExtended(bool),

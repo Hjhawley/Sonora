@@ -1,8 +1,8 @@
 [package]
 name = "sonora"
-version = "0.6.0"
+version = "0.6.1"
 edition = "2024"
 
 [dependencies]
-iced = "0.14.0"
+iced = { version = "0.14", features = ["image"] }
 id3 = "1.16.3"

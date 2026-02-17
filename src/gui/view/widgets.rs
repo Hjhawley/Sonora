@@ -1,7 +1,7 @@
 //! Reusable small widgets/helpers used across view modules.
 
-use iced::widget::{Column, column, container, row, text, text_input};
-use iced::{Alignment, Length};
+use iced::widget::{column, container, image, row, text, text_input};
+use iced::{Alignment, Element, Length};
 
 use super::super::state::Message;
 use super::constants::LABEL_W;
@@ -24,6 +24,23 @@ pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, M
     .height(Length::Fixed(size))
     .center_x(Length::Fill)
     .center_y(Length::Fill)
+}
+
+/// If `handle` exists, show it; otherwise show the placeholder.
+/// Returns an Element so callers can embed it in `row![]` easily.
+pub(crate) fn cover_thumb(
+    handle: Option<&iced::widget::image::Handle>,
+    size: f32,
+) -> Element<'static, Message> {
+    match handle {
+        Some(h) => container(image(h.clone()))
+            .width(Length::Fixed(size))
+            .height(Length::Fixed(size))
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into(),
+        None => cover_placeholder(size).into(),
+    }
 }
 
 pub(crate) fn field_row<'a>(

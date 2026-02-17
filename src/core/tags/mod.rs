@@ -4,6 +4,7 @@
 //! - [`read_track_row`] reads an MP3 into a [`TrackRow`] (non-fatal on tag read failure).
 //! - [`write_track_row`] writes selected fields back to disk.
 
+mod art;
 mod read;
 mod util;
 mod write;
