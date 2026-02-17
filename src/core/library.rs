@@ -7,60 +7,96 @@
 
 use std::path::{Path, PathBuf};
 
-/// Recursively scan a directory tree and return all '.mp3' file paths.
-/// - 'root: &Path' means "borrow a path" (we don't take ownership, we just look at it)
-/// - 'Result<Vec<PathBuf>, String>' means:
-///    - Ok(Vec<PathBuf>) = success; here's our list of file paths
-///    - Err(String) = failure; here's an error message we can show to the user
-///
-/// Failure states:
-/// - permissions (Windows "Access denied")
-/// - folder doesn't exist
-/// - removable drive disconnected
+/// Recursively scan a directory tree and return all `.mp3` file paths.
 pub fn scan_mp3s(root: &Path) -> Result<Vec<PathBuf>, String> {
-    // We'll push matches into this Vec as we find them.
-    let mut out = Vec::new();
+    if !root.is_dir() {
+        return Err(format!("Not a directory: {}", root.display()));
+    }
 
-    // 'walk_dir' does the recursive work
-    // '?' means:
-    // "If walk_dir returns Err(...), stop immediately and return that Err upward."
-    walk_dir(root, &mut out)?;
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        let entries: std::fs::ReadDir = match std::fs::read_dir(&dir) {
+            Ok(it) => it,
+            Err(e) => {
+                if is_nonfatal_walk_error(&e) {
+                    continue;
+                }
+                return Err(format!("{}: {e}", dir.display()));
+            }
+        };
+
+        for entry_res in entries {
+            let entry: std::fs::DirEntry = match entry_res {
+                Ok(e) => e,
+                Err(e) => {
+                    if is_nonfatal_walk_error(&e) {
+                        continue;
+                    }
+                    return Err(format!("{}: {e}", dir.display()));
+                }
+            };
+
+            let path: PathBuf = entry.path();
+
+            // Prefer entry.file_type(): does not follow symlinks.
+            let ft: std::fs::FileType = match entry.file_type() {
+                Ok(ft) => ft,
+                Err(e) => {
+                    if is_nonfatal_walk_error(&e) {
+                        continue;
+                    }
+                    return Err(format!("{}: {e}", path.display()));
+                }
+            };
+
+            if ft.is_dir() {
+                stack.push(path);
+                continue;
+            }
+
+            // If it's a symlink, follow it ONLY to decide if it's a file we should include.
+            // We do not traverse symlinked directories.
+            if ft.is_symlink() {
+                match std::fs::metadata(&path) {
+                    Ok(md) => {
+                        let md: std::fs::Metadata = md;
+                        if md.is_file() && is_mp3(&path) {
+                            out.push(path);
+                        }
+                    }
+                    Err(e) => {
+                        if is_nonfatal_walk_error(&e) {
+                            continue;
+                        }
+                        return Err(format!("{}: {e}", path.display()));
+                    }
+                }
+                continue;
+            }
+
+            if ft.is_file() && is_mp3(&path) {
+                out.push(path);
+            }
+        }
+    }
 
     Ok(out)
 }
 
-/// Recursive helper: walks ONE directory and pushes matching files into 'out'.
-/// - 'out: &mut Vec<PathBuf>' means:
-///   "Here's the same list; please modify it by pushing into it."
-fn walk_dir(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
-    // read_dir gives an iterator of entries in this folder.
-    // This can fail if we can't read the directory.
-    let entries = std::fs::read_dir(dir).map_err(|e| format!("{dir:?}: {e}"))?;
-
-    for entry in entries {
-        // Each 'entry' is a Result<DirEntry, Error> so we unwrap it safely.
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-
-        if path.is_dir() {
-            // Folder → recurse into it (depth-first).
-            walk_dir(&path, out)?;
-        } else if is_mp3(&path) {
-            // File + mp3 extension → keep it.
-            out.push(path);
-        }
-    }
-
-    Ok(())
+/// Treat these as "normal" during scans (skip and keep going).
+fn is_nonfatal_walk_error(e: &std::io::Error) -> bool {
+    matches!(
+        e.kind(),
+        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
+    )
 }
 
-/// True if the file extension is '.mp3' (case-insensitive).
+/// True if the file extension is `.mp3` (case-insensitive).
 fn is_mp3(path: &Path) -> bool {
     path.extension()
-        // extension() returns Option<OsStr> (it might not exist)
         .and_then(|s| s.to_str())
-        // to_str() returns Option<&str> (it might not be valid UTF-8)
         .map(|ext| ext.eq_ignore_ascii_case("mp3"))
-        // if anything failed above, default to "false"
         .unwrap_or(false)
 }

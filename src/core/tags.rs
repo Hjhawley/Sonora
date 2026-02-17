@@ -117,11 +117,14 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
         genre: text_frame(tag, "TCON"),
 
         // Common extended tags
+        grouping: text_frame(tag, "TIT1"),
+        comment,
+        lyrics,
         lyricist: text_frame(tag, "TEXT"),
+
         conductor: text_frame(tag, "TPE3"),
         remixer: text_frame(tag, "TPE4"),
         publisher: text_frame(tag, "TPUB"),
-        grouping: text_frame(tag, "TIT1"),
         subtitle: text_frame(tag, "TIT3"),
         bpm: text_frame(tag, "TBPM").and_then(|s| s.trim().parse::<u32>().ok()),
         key: text_frame(tag, "TKEY"),
@@ -131,10 +134,7 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
         encoder_settings: text_frame(tag, "TSSE"),
         encoded_by: text_frame(tag, "TENC"),
         copyright: text_frame(tag, "TCOP"),
-
         artwork_count,
-        comment,
-        lyrics,
 
         // Sort tags
         title_sort: text_frame(tag, "TSOT"),
@@ -175,11 +175,13 @@ fn empty_row(path: PathBuf) -> TrackRow {
         date: None,
         genre: None,
 
+        grouping: None,
+        comment: None,
+        lyrics: None,
         lyricist: None,
         conductor: None,
         remixer: None,
         publisher: None,
-        grouping: None,
         subtitle: None,
         bpm: None,
         key: None,
@@ -191,8 +193,6 @@ fn empty_row(path: PathBuf) -> TrackRow {
         copyright: None,
 
         artwork_count: 0,
-        comment: None,
-        lyrics: None,
 
         title_sort: None,
         artist_sort: None,
@@ -462,11 +462,39 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
 
     // extended fields
     if write_extended {
+        set_text_opt(&mut tag, "TIT1", &row.grouping);
+        // Comment (COMM): replace with a single "eng" comment
+        match row.comment.as_deref().map(str::trim) {
+            Some(s) if !s.is_empty() => {
+                let _ = tag.remove("COMM");
+                let _ = tag.add_frame(Comment {
+                    lang: "eng".to_string(),
+                    description: "".to_string(),
+                    text: s.to_string(),
+                });
+            }
+            _ => {
+                let _ = tag.remove("COMM");
+            }
+        }
+        // Lyrics (USLT): replace with a single "eng" lyrics frame for MVP
+        match row.lyrics.as_deref().map(str::trim) {
+            Some(s) if !s.is_empty() => {
+                let _ = tag.remove("USLT");
+                let _ = tag.add_frame(Lyrics {
+                    lang: "eng".to_string(),
+                    description: "".to_string(),
+                    text: s.to_string(),
+                });
+            }
+            _ => {
+                let _ = tag.remove("USLT");
+            }
+        }
         set_text_opt(&mut tag, "TEXT", &row.lyricist);
         set_text_opt(&mut tag, "TPE3", &row.conductor);
         set_text_opt(&mut tag, "TPE4", &row.remixer);
         set_text_opt(&mut tag, "TPUB", &row.publisher);
-        set_text_opt(&mut tag, "TIT1", &row.grouping);
         set_text_opt(&mut tag, "TIT3", &row.subtitle);
 
         match row.bpm {
@@ -483,36 +511,6 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
         set_text_opt(&mut tag, "TSSE", &row.encoder_settings);
         set_text_opt(&mut tag, "TENC", &row.encoded_by);
         set_text_opt(&mut tag, "TCOP", &row.copyright);
-
-        // Comment (COMM): replace with a single "eng" comment
-        match row.comment.as_deref().map(str::trim) {
-            Some(s) if !s.is_empty() => {
-                let _ = tag.remove("COMM");
-                let _ = tag.add_frame(Comment {
-                    lang: "eng".to_string(),
-                    description: "".to_string(),
-                    text: s.to_string(),
-                });
-            }
-            _ => {
-                let _ = tag.remove("COMM");
-            }
-        }
-
-        // Lyrics (USLT): replace with a single "eng" lyrics frame for MVP
-        match row.lyrics.as_deref().map(str::trim) {
-            Some(s) if !s.is_empty() => {
-                let _ = tag.remove("USLT");
-                let _ = tag.add_frame(Lyrics {
-                    lang: "eng".to_string(),
-                    description: "".to_string(),
-                    text: s.to_string(),
-                });
-            }
-            _ => {
-                let _ = tag.remove("USLT");
-            }
-        }
     }
 
     // Write back to file (choose v2.4 consistently for now)

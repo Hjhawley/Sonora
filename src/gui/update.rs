@@ -225,6 +225,21 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
 
         // Inspector typing (extended)
+        Message::EditGrouping(s) => {
+            state.inspector.grouping = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditComment(s) => {
+            state.inspector.comment = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
+        Message::EditLyrics(s) => {
+            state.inspector.lyrics = s;
+            state.inspector_dirty = true;
+            Task::none()
+        }
         Message::EditLyricist(s) => {
             state.inspector.lyricist = s;
             state.inspector_dirty = true;
@@ -242,11 +257,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
         Message::EditPublisher(s) => {
             state.inspector.publisher = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditGrouping(s) => {
-            state.inspector.grouping = s;
             state.inspector_dirty = true;
             Task::none()
         }
@@ -292,16 +302,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
         Message::EditCopyright(s) => {
             state.inspector.copyright = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditComment(s) => {
-            state.inspector.comment = s;
-            state.inspector_dirty = true;
-            Task::none()
-        }
-        Message::EditLyrics(s) => {
-            state.inspector.lyrics = s;
             state.inspector_dirty = true;
             Task::none()
         }
@@ -465,11 +465,13 @@ fn build_row_from_inspector(state: &Sonora, i: usize) -> Result<TrackRow, String
 
     // Extended (only if user is looking at them — otherwise keep existing)
     if state.show_extended {
+        out.grouping = clean_optional_string(&state.inspector.grouping);
+        out.comment = clean_optional_string(&state.inspector.comment);
+        out.lyrics = clean_optional_string(&state.inspector.lyrics);
         out.lyricist = clean_optional_string(&state.inspector.lyricist);
         out.conductor = clean_optional_string(&state.inspector.conductor);
         out.remixer = clean_optional_string(&state.inspector.remixer);
         out.publisher = clean_optional_string(&state.inspector.publisher);
-        out.grouping = clean_optional_string(&state.inspector.grouping);
         out.subtitle = clean_optional_string(&state.inspector.subtitle);
         out.bpm = bpm;
         out.key = clean_optional_string(&state.inspector.key);
@@ -479,8 +481,6 @@ fn build_row_from_inspector(state: &Sonora, i: usize) -> Result<TrackRow, String
         out.encoder_settings = clean_optional_string(&state.inspector.encoder_settings);
         out.encoded_by = clean_optional_string(&state.inspector.encoded_by);
         out.copyright = clean_optional_string(&state.inspector.copyright);
-        out.comment = clean_optional_string(&state.inspector.comment);
-        out.lyrics = clean_optional_string(&state.inspector.lyrics);
     }
 
     Ok(out)
@@ -516,11 +516,13 @@ fn load_inspector_from_track(state: &mut Sonora) {
     state.inspector.genre = t.genre.clone().unwrap_or_default();
 
     // Extended
+    state.inspector.grouping = t.grouping.clone().unwrap_or_default();
+    state.inspector.comment = t.comment.clone().unwrap_or_default();
+    state.inspector.lyrics = t.lyrics.clone().unwrap_or_default();
     state.inspector.lyricist = t.lyricist.clone().unwrap_or_default();
     state.inspector.conductor = t.conductor.clone().unwrap_or_default();
     state.inspector.remixer = t.remixer.clone().unwrap_or_default();
     state.inspector.publisher = t.publisher.clone().unwrap_or_default();
-    state.inspector.grouping = t.grouping.clone().unwrap_or_default();
     state.inspector.subtitle = t.subtitle.clone().unwrap_or_default();
     state.inspector.bpm = t.bpm.map(|n| n.to_string()).unwrap_or_default();
     state.inspector.key = t.key.clone().unwrap_or_default();
@@ -530,8 +532,6 @@ fn load_inspector_from_track(state: &mut Sonora) {
     state.inspector.encoder_settings = t.encoder_settings.clone().unwrap_or_default();
     state.inspector.encoded_by = t.encoded_by.clone().unwrap_or_default();
     state.inspector.copyright = t.copyright.clone().unwrap_or_default();
-    state.inspector.comment = t.comment.clone().unwrap_or_default();
-    state.inspector.lyrics = t.lyrics.clone().unwrap_or_default();
 
     state.inspector_dirty = false;
 }

@@ -516,6 +516,9 @@ fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message>
     let mut extended = column![];
     if state.show_extended {
         extended = column![
+            field_row("Grouping", &state.inspector.grouping, Message::EditGrouping),
+            field_row("Comment", &state.inspector.comment, Message::EditComment),
+            field_row("Lyrics", &state.inspector.lyrics, Message::EditLyrics),
             field_row("Lyricist", &state.inspector.lyricist, Message::EditLyricist),
             field_row(
                 "Conductor",
@@ -528,7 +531,6 @@ fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message>
                 &state.inspector.publisher,
                 Message::EditPublisher
             ),
-            field_row("Grouping", &state.inspector.grouping, Message::EditGrouping),
             field_row("Subtitle", &state.inspector.subtitle, Message::EditSubtitle),
             field_row("BPM", &state.inspector.bpm, Message::EditBpm),
             field_row("Key", &state.inspector.key, Message::EditKey),
@@ -550,8 +552,6 @@ fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message>
                 &state.inspector.copyright,
                 Message::EditCopyright
             ),
-            field_row("Comment", &state.inspector.comment, Message::EditComment),
-            field_row("Lyrics", &state.inspector.lyrics, Message::EditLyrics),
         ]
         .spacing(8);
     }

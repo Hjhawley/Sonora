@@ -68,6 +68,17 @@ pub struct TrackRow {
     // ------------------------------------------------------------
     // "Common extended" tags (hidden behind toggles)
     // ------------------------------------------------------------
+    /// Grouping / content group (ID3: TIT1)
+    pub grouping: Option<String>,
+
+    /// A short comment (ID3: COMM).
+    /// If multiple comments exist, we keep the first one.
+    pub comment: Option<String>,
+
+    /// Unsynced lyrics (ID3: USLT).
+    /// If multiple lyrics frames exist, we keep the first one.
+    pub lyrics: Option<String>,
+
     /// Lyricist / text writer (ID3: TEXT)
     pub lyricist: Option<String>,
 
@@ -79,9 +90,6 @@ pub struct TrackRow {
 
     /// Publisher / label (ID3: TPUB)
     pub publisher: Option<String>,
-
-    /// Grouping / content group (ID3: TIT1)
-    pub grouping: Option<String>,
 
     /// Subtitle / description refinement (ID3: TIT3)
     pub subtitle: Option<String>,
@@ -113,14 +121,6 @@ pub struct TrackRow {
     /// Album artwork count (ID3: APIC/PIC frames).
     /// Store a count (not the bytes) to keep `TrackRow` lightweight.
     pub artwork_count: u32,
-
-    /// A short comment (ID3: COMM).
-    /// If multiple comments exist, we keep the first one.
-    pub comment: Option<String>,
-
-    /// Unsynced lyrics (ID3: USLT).
-    /// If multiple lyrics frames exist, we keep the first one.
-    pub lyrics: Option<String>,
 
     // ------------------------------------------------------------
     // Sorting tags (nice for UI ordering / "sort by" correctness)

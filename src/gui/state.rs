@@ -48,11 +48,13 @@ pub(crate) struct InspectorDraft {
     pub genre: String,
 
     // Extended (toggleable)
+    pub grouping: String,
+    pub comment: String,
+    pub lyrics: String,
     pub lyricist: String,
     pub conductor: String,
     pub remixer: String,
     pub publisher: String,
-    pub grouping: String,
     pub subtitle: String,
     pub bpm: String,
     pub key: String,
@@ -62,9 +64,6 @@ pub(crate) struct InspectorDraft {
     pub encoder_settings: String,
     pub encoded_by: String,
     pub copyright: String,
-
-    pub comment: String,
-    pub lyrics: String,
 }
 
 /// App state
@@ -153,11 +152,13 @@ pub(crate) enum Message {
     // Inspector edits (extended)
     ToggleExtended(bool),
 
+    EditGrouping(String),
+    EditComment(String),
+    EditLyrics(String),
     EditLyricist(String),
     EditConductor(String),
     EditRemixer(String),
     EditPublisher(String),
-    EditGrouping(String),
     EditSubtitle(String),
     EditBpm(String),
     EditKey(String),
@@ -167,8 +168,6 @@ pub(crate) enum Message {
     EditEncoderSettings(String),
     EditEncodedBy(String),
     EditCopyright(String),
-    EditComment(String),
-    EditLyrics(String),
 
     // Actions
     SaveInspectorToFile,
