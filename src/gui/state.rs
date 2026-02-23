@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
+use crate::core::playback::{PlaybackController, PlayerEvent};
 use crate::core::types::TrackRow;
 
 /// Dev convenience: if user didn’t add roots, scan /test
@@ -121,6 +122,26 @@ pub(crate) struct Sonora {
     /// Cache: track index -> decoded cover handle (for quick UI rendering)
     pub cover_cache: BTreeMap<usize, iced::widget::image::Handle>,
 
+    // --------------------
+    // Playback (core handle + UI state)
+    // --------------------
+    /// Core playback controller (channel sender wrapper). No rodio types in GUI.
+    pub playback: Option<PlaybackController>,
+
+    /// Track index currently “now playing” (into `tracks`)
+    pub now_playing: Option<usize>,
+
+    pub is_playing: bool,
+
+    /// Playback position in milliseconds (UI progress bar)
+    pub position_ms: u64,
+
+    /// Duration in milliseconds (if known)
+    pub duration_ms: Option<u64>,
+
+    /// 0.0..=1.0
+    pub volume: f32,
+
     // UI
     pub view_mode: ViewMode,
     pub selected_album: Option<AlbumKey>,
@@ -158,6 +179,13 @@ impl Default for Sonora {
             tracks: Vec::new(),
             cover_cache: BTreeMap::new(),
 
+            playback: None,
+            now_playing: None,
+            is_playing: false,
+            position_ms: 0,
+            duration_ms: None,
+            volume: 1.0,
+
             view_mode: ViewMode::Tracks,
             selected_album: None,
 
@@ -194,6 +222,28 @@ pub(crate) enum Message {
 
     // Cover art
     CoverLoaded(usize, Option<iced::widget::image::Handle>),
+
+    // --------------------
+    // Playback controls (from UI)
+    // --------------------
+    /// Play the currently selected track (or do nothing if none).
+    PlaySelected,
+
+    /// Convenience: play a specific track index.
+    PlayTrack(usize),
+
+    TogglePlayPause,
+    Next,
+    Prev,
+
+    /// Slider emits seconds/ms-ish as float; you decide interpretation in update/playback.rs.
+    SeekTo(f32),
+
+    /// 0.0..=1.0
+    SetVolume(f32),
+
+    // Playback events flowing from the engine via Subscription
+    PlaybackEvent(PlayerEvent),
 
     // Inspector edits
     ToggleExtended(bool),

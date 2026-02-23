@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 iced = { version = "0.14", features = ["image"] }
 id3 = "1.16.3"
+rodio = "0.21.1"

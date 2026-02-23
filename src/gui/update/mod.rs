@@ -7,6 +7,7 @@ use super::state::{Message, Sonora};
 
 mod helpers;
 mod inspector;
+mod playback;
 mod roots;
 mod save;
 mod scan;
@@ -30,6 +31,18 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         // Cover
         Message::CoverLoaded(i, handle) => selection::cover_loaded(state, i, handle),
+
+        // Playback (UI -> commands)
+        Message::PlaySelected => playback::play_selected(state),
+        Message::PlayTrack(i) => playback::play_track(state, i),
+        Message::TogglePlayPause => playback::toggle_play_pause(state),
+        Message::Next => playback::next(state),
+        Message::Prev => playback::prev(state),
+        Message::SeekTo(ratio) => playback::seek(state, ratio),
+        Message::SetVolume(vol) => playback::set_volume(state, vol),
+
+        // Playback (engine -> UI)
+        Message::PlaybackEvent(ev) => playback::handle_event(state, ev),
 
         // Inspector
         Message::ToggleExtended(v) => inspector::toggle_extended(state, v),

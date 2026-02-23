@@ -15,7 +15,7 @@ use super::state::{Message, Sonora};
 use constants::{EDITOR_W, PLAYBACK_H, SIDEBAR_W};
 
 pub(crate) fn view(state: &Sonora) -> Column<'_, Message> {
-    let playback = widgets::playback_bar().height(Length::Fixed(PLAYBACK_H));
+    let playback = widgets::playback_bar(state).height(Length::Fixed(PLAYBACK_H));
 
     let sidebar = sidebar::build_sidebar(state).width(Length::Fixed(SIDEBAR_W));
     let main = center::build_center_panel(state).width(Length::Fill);
