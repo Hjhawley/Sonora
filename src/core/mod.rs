@@ -8,6 +8,7 @@
 pub mod library;
 pub mod tags;
 pub mod types;
+pub mod playback;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
