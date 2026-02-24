@@ -1,9 +1,10 @@
+//! gui/update/selection.rs
 use iced::Task;
 use std::path::PathBuf;
 
 use super::super::state::{AlbumKey, Message, Sonora, ViewMode};
-use super::helpers::spawn_blocking;
 use super::inspector::{clear_inspector, load_inspector_from_track};
+use super::util::spawn_blocking;
 
 pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message> {
     state.view_mode = mode;
@@ -129,22 +130,8 @@ fn maybe_load_cover_for_track(state: &mut Sonora, index: usize) -> Task<Message>
 /// Reads the first embedded ID3 picture (APIC/PIC) and returns an Iced Handle.
 /// If no embedded art exists (or read fails), returns None.
 fn load_cover_handle_from_path(path: &std::path::Path) -> Option<iced::widget::image::Handle> {
-    use id3::Tag;
-    use id3::frame::Content;
-
-    let tag = Tag::read_from_path(path).ok()?;
-
-    for f in tag.frames() {
-        if f.id() != "APIC" && f.id() != "PIC" {
-            continue;
-        }
-        if let Content::Picture(p) = f.content() {
-            // Iced 0.14: from_bytes (not from_memory)
-            return Some(iced::widget::image::Handle::from_bytes(p.data.clone()));
-        }
-    }
-
-    None
+    let (bytes, _mime) = crate::core::tags::read_embedded_art(path).ok()??;
+    Some(iced::widget::image::Handle::from_bytes(bytes))
 }
 
 // --------------------

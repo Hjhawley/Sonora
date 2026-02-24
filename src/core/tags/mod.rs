@@ -12,3 +12,4 @@ mod write;
 
 pub use read::read_track_row;
 pub use write::write_track_row;
+pub use art::read_embedded_art;

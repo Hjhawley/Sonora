@@ -1,3 +1,4 @@
+//! gui/update/roots.rs
 use iced::Task;
 use std::path::{Path, PathBuf};
 

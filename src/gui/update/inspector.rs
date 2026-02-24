@@ -1,3 +1,4 @@
+//! gui/update/inspector.rs
 use iced::Task;
 
 use super::super::state::{InspectorField, Message, Sonora};

@@ -6,7 +6,7 @@ use iced::Task;
 
 use super::state::{Message, Sonora};
 
-mod helpers;
+mod util;
 mod inspector;
 mod playback;
 mod roots;

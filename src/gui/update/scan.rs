@@ -1,10 +1,11 @@
+//! gui/update/scan.rs
 use iced::Task;
 use std::path::PathBuf;
 
 use crate::core;
 
 use super::super::state::{Message, Sonora, TEST_ROOT};
-use super::helpers::spawn_blocking;
+use super::util::spawn_blocking;
 use super::selection::clear_selection_and_inspector;
 
 pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
