@@ -70,7 +70,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     .spacing(6);
 
     let col = column![
-        text("Sonora").size(20),
         text(&state.status).size(12),
         scan_btn,
         view_toggle,
