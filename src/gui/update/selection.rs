@@ -107,9 +107,7 @@ pub(crate) fn cover_loaded(
     Task::none()
 }
 
-// --------------------
 // Helpers
-// --------------------
 
 fn maybe_load_cover_for_track(state: &mut Sonora, index: usize) -> Task<Message> {
     if index >= state.tracks.len() {
@@ -134,9 +132,7 @@ fn load_cover_handle_from_path(path: &std::path::Path) -> Option<iced::widget::i
     Some(iced::widget::image::Handle::from_bytes(bytes))
 }
 
-// --------------------
 // Helpers (state mutation)
-// --------------------
 
 pub(crate) fn clear_selection_and_inspector(state: &mut Sonora) {
     state.selected_track = None;
