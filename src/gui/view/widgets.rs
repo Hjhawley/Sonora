@@ -106,14 +106,13 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let dur = state.duration_ms.unwrap_or(0);
     let seek_enabled = dur > 0;
 
-    // slider needs a sane range; if we don't know duration yet, freeze it at 0..=1
-    let (seek_min, seek_max, seek_val) = if seek_enabled {
-        (0.0f32, dur as f32, pos.min(dur) as f32)
+    let seek_val = if seek_enabled {
+        (pos as f32) / (dur as f32)
     } else {
-        (0.0f32, 1.0f32, 0.0f32)
+        0.0
     };
 
-    let seek = slider(seek_min..=seek_max, seek_val, Message::SeekTo).width(Length::Fill);
+    let seek = slider(0.0..=1.0, seek_val, Message::SeekTo).width(Length::Fill);
 
     let time_text = if seek_enabled {
         format!("{} / {}", fmt_duration_u64(pos), fmt_duration_u64(dur))
