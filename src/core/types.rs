@@ -1,5 +1,5 @@
 //! core/types.rs
-//! 
+//!
 //! Core data types shared between core logic and the UI.
 //! - No GUI code
 //! - No filesystem walking
@@ -27,9 +27,7 @@ pub struct TrackRow {
     /// 'TrackRow' represents one audio file and its metadata
     pub path: PathBuf,
 
-    // ------------------------------------------------------------
     // "Core" tags (the ones we want visible by default in UI)
-    // ------------------------------------------------------------
     /// Song title (ID3: TIT2)
     pub title: Option<String>,
 
@@ -67,9 +65,7 @@ pub struct TrackRow {
     /// Genre (ID3: TCON)
     pub genre: Option<String>,
 
-    // ------------------------------------------------------------
     // "Common extended" tags (hidden behind toggles)
-    // ------------------------------------------------------------
     /// Grouping / content group (ID3: TIT1)
     pub grouping: Option<String>,
 
@@ -124,9 +120,7 @@ pub struct TrackRow {
     /// Store a count (not the bytes) to keep `TrackRow` lightweight.
     pub artwork_count: u32,
 
-    // ------------------------------------------------------------
     // Sorting tags (nice for UI ordering / "sort by" correctness)
-    // ------------------------------------------------------------
     /// Title sort (ID3: TSOT)
     pub title_sort: Option<String>,
 
@@ -139,9 +133,7 @@ pub struct TrackRow {
     /// Album artist sort (ID3: TSO2)
     pub album_artist_sort: Option<String>,
 
-    // ------------------------------------------------------------
     // "Library / stats" frames (not always present, but useful later)
-    // ------------------------------------------------------------
     /// Duration in milliseconds if present (ID3: TLEN).
     /// Note: many libraries do NOT store this reliably.
     pub duration_ms: Option<u32>,
@@ -155,9 +147,7 @@ pub struct TrackRow {
     /// Compilation flag (varies in the wild: TCMP or TXXX:COMPILATION).
     pub compilation: Option<bool>,
 
-    // ------------------------------------------------------------
     // "Escape hatches": keep unknown/extra tags without redesign
-    // ------------------------------------------------------------
     /// User-defined text frames (ID3: TXXX).
     /// Key = description, Value = value.
     pub user_text: BTreeMap<String, String>,

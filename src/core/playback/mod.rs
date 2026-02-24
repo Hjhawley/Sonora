@@ -27,8 +27,8 @@ pub enum PlayerCommand {
     Pause,
     Resume,
     Stop,
-    Seek(u64),      // ms
-    SetVolume(f32), // 0.0..=1.0
+    Seek(u64),
+    SetVolume(f32),
     Shutdown,
 }
 
