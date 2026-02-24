@@ -1,3 +1,4 @@
+//! gui/view/sidebar.rs
 //! Left sidebar (scan, view toggles, roots list, playlists).
 
 use iced::Length;
@@ -6,6 +7,8 @@ use iced::widget::{button, column, container, row, scrollable, text, text_input}
 use super::super::state::{Message, Sonora, ViewMode};
 
 pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
+    let busy = state.scanning || state.saving;
+
     let scan_btn = if state.scanning {
         button("Scanning...")
     } else {
@@ -31,7 +34,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         .on_submit(Message::AddRootPressed)
         .width(Length::Fill);
 
-    let add_btn = if state.scanning {
+    let add_btn = if busy {
         button("Add")
     } else {
         button("Add").on_press(Message::AddRootPressed)
@@ -41,13 +44,20 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
 
     let mut roots_list = column![];
     for (i, p) in state.roots.iter().enumerate() {
-        let remove_btn = if state.scanning {
+        let remove_btn = if busy {
             button("×")
         } else {
             button("×").on_press(Message::RemoveRoot(i))
         };
 
-        roots_list = roots_list.push(row![text(p.display().to_string()), remove_btn].spacing(8));
+        // Keep long paths from exploding the layout.
+        let path_txt = text(p.display().to_string()).size(12).width(Length::Fill);
+
+        roots_list = roots_list.push(
+            row![path_txt, remove_btn]
+                .spacing(8)
+                .align_y(iced::Alignment::Center),
+        );
     }
     let roots_panel = scrollable(roots_list.spacing(6)).height(Length::Fixed(160.0));
 
