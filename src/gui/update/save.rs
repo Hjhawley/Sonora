@@ -3,8 +3,8 @@ use iced::Task;
 
 use super::super::state::{KEEP_SENTINEL, Message, Sonora};
 use super::super::util::{parse_optional_i32, parse_optional_u32};
-use super::util::spawn_blocking;
 use super::inspector::load_inspector_from_track;
+use super::util::spawn_blocking;
 
 pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
     if state.scanning || state.saving {
@@ -17,8 +17,6 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
     }
 
     // Determine which indices we are saving to.
-    // - If selected_tracks has anything, use it
-    // - Else fall back to selected_track
     let mut indices: Vec<usize> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
     } else if let Some(i) = state.selected_track {
@@ -35,14 +33,23 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    // Validate + build rows to write
+    // -------------------------
+    // Safety: if batch saving, auto-KEEP fields that still match primary track
+    // (prevents “album select all” from overwriting everything by accident)
+    // -------------------------
+    let is_batch = indices.len() > 1;
+    let primary_idx = state.selected_track;
+    let primary_row = primary_idx.and_then(|i| state.tracks.get(i));
+
+    // Build rows to write
     let mut rows_to_write = Vec::with_capacity(indices.len());
     for &i in &indices {
         if i >= state.tracks.len() {
             state.status = "Invalid selection (rescan?).".to_string();
             return Task::none();
         }
-        match build_row_from_inspector_for_index(state, i) {
+
+        match build_row_from_inspector_for_index(state, i, is_batch, primary_row) {
             Ok(r) => rows_to_write.push((i, r)),
             Err(e) => {
                 state.status = e;
@@ -60,7 +67,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
 
     let write_extended = state.show_extended;
 
-    // Single-file path: keep your old message shape (SaveFinished)
+    // Single-file path
     if rows_to_write.len() == 1 {
         let (i, row_to_write) = rows_to_write.remove(0);
 
@@ -79,7 +86,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         );
     }
 
-    // Batch path: write all, re-read all, return Vec<(idx, TrackRow)>
+    // Batch path
     Task::perform(
         spawn_blocking(move || {
             let mut out: Vec<(usize, crate::core::types::TrackRow)> = Vec::new();
@@ -141,7 +148,6 @@ pub(crate) fn save_finished_batch(
                 }
             }
 
-            // Reload inspector from primary selection (whatever it currently is)
             load_inspector_from_track(state);
 
             state.inspector_dirty = false;
@@ -167,6 +173,8 @@ pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
 fn build_row_from_inspector_for_index(
     state: &Sonora,
     i: usize,
+    is_batch: bool,
+    primary_row: Option<&crate::core::types::TrackRow>,
 ) -> Result<crate::core::types::TrackRow, String> {
     let mut out = state
         .tracks
@@ -174,7 +182,7 @@ fn build_row_from_inspector_for_index(
         .cloned()
         .ok_or_else(|| "Invalid selection (rescan?).".to_string())?;
 
-    // Parse numeric fields; BUT treat "<keep>" as "do not change this number"
+    // Numeric fields: treat "<keep>" as "do not change this number"
     let mut errs: Vec<&'static str> = Vec::new();
 
     let track_no = parse_u32_keep(
@@ -199,7 +207,6 @@ fn build_row_from_inspector_for_index(
 
     let year = parse_i32_keep(&state.inspector.year, out.year, "Year", &mut errs)?;
 
-    // BPM is extended-only. If extended not shown, preserve existing.
     let bpm = if state.show_extended {
         parse_u32_keep(&state.inspector.bpm, out.bpm, "BPM", &mut errs)?
     } else {
@@ -210,15 +217,39 @@ fn build_row_from_inspector_for_index(
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
     }
 
-    // -------------------------
-    // Standard (always applied)
-    // KEEP_SENTINEL means "leave this field as-is"
-    // -------------------------
-    apply_opt_keep(&mut out.title, &state.inspector.title);
-    apply_opt_keep(&mut out.artist, &state.inspector.artist);
-    apply_opt_keep(&mut out.album, &state.inspector.album);
-    apply_opt_keep(&mut out.album_artist, &state.inspector.album_artist);
-    apply_opt_keep(&mut out.composer, &state.inspector.composer);
+    // Text fields: safety for batch mode
+    let primary = primary_row;
+
+    apply_opt_keep_batch(
+        &mut out.title,
+        &state.inspector.title,
+        is_batch,
+        primary.and_then(|p| p.title.as_deref()),
+    );
+    apply_opt_keep_batch(
+        &mut out.artist,
+        &state.inspector.artist,
+        is_batch,
+        primary.and_then(|p| p.artist.as_deref()),
+    );
+    apply_opt_keep_batch(
+        &mut out.album,
+        &state.inspector.album,
+        is_batch,
+        primary.and_then(|p| p.album.as_deref()),
+    );
+    apply_opt_keep_batch(
+        &mut out.album_artist,
+        &state.inspector.album_artist,
+        is_batch,
+        primary.and_then(|p| p.album_artist.as_deref()),
+    );
+    apply_opt_keep_batch(
+        &mut out.composer,
+        &state.inspector.composer,
+        is_batch,
+        primary.and_then(|p| p.composer.as_deref()),
+    );
 
     out.track_no = track_no;
     out.track_total = track_total;
@@ -226,32 +257,114 @@ fn build_row_from_inspector_for_index(
     out.disc_total = disc_total;
 
     out.year = year;
-    apply_opt_keep(&mut out.genre, &state.inspector.genre);
+    apply_opt_keep_batch(
+        &mut out.genre,
+        &state.inspector.genre,
+        is_batch,
+        primary.and_then(|p| p.genre.as_deref()),
+    );
 
-    apply_opt_keep(&mut out.grouping, &state.inspector.grouping);
-    apply_opt_keep(&mut out.comment, &state.inspector.comment);
-    apply_opt_keep(&mut out.lyrics, &state.inspector.lyrics);
-    apply_opt_keep(&mut out.lyricist, &state.inspector.lyricist);
+    apply_opt_keep_batch(
+        &mut out.grouping,
+        &state.inspector.grouping,
+        is_batch,
+        primary.and_then(|p| p.grouping.as_deref()),
+    );
+    apply_opt_keep_batch(
+        &mut out.comment,
+        &state.inspector.comment,
+        is_batch,
+        primary.and_then(|p| p.comment.as_deref()),
+    );
+    apply_opt_keep_batch(
+        &mut out.lyrics,
+        &state.inspector.lyrics,
+        is_batch,
+        primary.and_then(|p| p.lyrics.as_deref()),
+    );
+    apply_opt_keep_batch(
+        &mut out.lyricist,
+        &state.inspector.lyricist,
+        is_batch,
+        primary.and_then(|p| p.lyricist.as_deref()),
+    );
 
-    // -------------------------
-    // Extended (only if visible)
-    // -------------------------
     if state.show_extended {
-        apply_opt_keep(&mut out.date, &state.inspector.date);
+        apply_opt_keep_batch(
+            &mut out.date,
+            &state.inspector.date,
+            is_batch,
+            primary.and_then(|p| p.date.as_deref()),
+        );
 
-        apply_opt_keep(&mut out.conductor, &state.inspector.conductor);
-        apply_opt_keep(&mut out.remixer, &state.inspector.remixer);
-        apply_opt_keep(&mut out.publisher, &state.inspector.publisher);
-        apply_opt_keep(&mut out.subtitle, &state.inspector.subtitle);
+        apply_opt_keep_batch(
+            &mut out.conductor,
+            &state.inspector.conductor,
+            is_batch,
+            primary.and_then(|p| p.conductor.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.remixer,
+            &state.inspector.remixer,
+            is_batch,
+            primary.and_then(|p| p.remixer.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.publisher,
+            &state.inspector.publisher,
+            is_batch,
+            primary.and_then(|p| p.publisher.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.subtitle,
+            &state.inspector.subtitle,
+            is_batch,
+            primary.and_then(|p| p.subtitle.as_deref()),
+        );
 
         out.bpm = bpm;
-        apply_opt_keep(&mut out.key, &state.inspector.key);
-        apply_opt_keep(&mut out.mood, &state.inspector.mood);
-        apply_opt_keep(&mut out.language, &state.inspector.language);
-        apply_opt_keep(&mut out.isrc, &state.inspector.isrc);
-        apply_opt_keep(&mut out.encoder_settings, &state.inspector.encoder_settings);
-        apply_opt_keep(&mut out.encoded_by, &state.inspector.encoded_by);
-        apply_opt_keep(&mut out.copyright, &state.inspector.copyright);
+        apply_opt_keep_batch(
+            &mut out.key,
+            &state.inspector.key,
+            is_batch,
+            primary.and_then(|p| p.key.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.mood,
+            &state.inspector.mood,
+            is_batch,
+            primary.and_then(|p| p.mood.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.language,
+            &state.inspector.language,
+            is_batch,
+            primary.and_then(|p| p.language.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.isrc,
+            &state.inspector.isrc,
+            is_batch,
+            primary.and_then(|p| p.isrc.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.encoder_settings,
+            &state.inspector.encoder_settings,
+            is_batch,
+            primary.and_then(|p| p.encoder_settings.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.encoded_by,
+            &state.inspector.encoded_by,
+            is_batch,
+            primary.and_then(|p| p.encoded_by.as_deref()),
+        );
+        apply_opt_keep_batch(
+            &mut out.copyright,
+            &state.inspector.copyright,
+            is_batch,
+            primary.and_then(|p| p.copyright.as_deref()),
+        );
     }
 
     Ok(out)
@@ -259,14 +372,33 @@ fn build_row_from_inspector_for_index(
 
 /// Applies a text input to an Option<String> field.
 /// - If input is "<keep>" => do nothing
+/// - Else if batch mode and input matches the primary track's original value => do nothing
 /// - Else if trimmed empty => set None (delete tag)
 /// - Else => set Some(trimmed)
-fn apply_opt_keep(dst: &mut Option<String>, input: &str) {
+fn apply_opt_keep_batch(
+    dst: &mut Option<String>,
+    input: &str,
+    is_batch: bool,
+    primary_value: Option<&str>,
+) {
     let t = input.trim();
 
     if t == KEEP_SENTINEL {
         return;
     }
+
+    if is_batch {
+        if let Some(pv) = primary_value {
+            if t == pv.trim() {
+                // User likely did not intend to overwrite all; treat as KEEP.
+                return;
+            }
+        } else if t.is_empty() {
+            // Primary had None; empty would still mean "delete".
+            // Fall through and delete if user explicitly left it empty.
+        }
+    }
+
     if t.is_empty() {
         *dst = None;
     } else {
