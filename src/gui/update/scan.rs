@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use crate::core;
 
 use super::super::state::{Message, Sonora, TEST_ROOT};
-use super::util::spawn_blocking;
 use super::selection::clear_selection_and_inspector;
+use super::util::spawn_blocking;
 
 pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     if state.scanning || state.saving {
@@ -14,11 +14,12 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     }
 
     state.scanning = true;
-    state.tracks.clear();
     state.status = "Scanning...".to_string();
+
+    // Selection becomes invalid once new results arrive, but keeping tracks visible
+    // during scan is nicer UX (and avoids an empty UI if scan fails).
     clear_selection_and_inspector(state);
 
-    // If user hasn't added roots, scan ./test
     let roots_to_scan: Vec<PathBuf> = if state.roots.is_empty() {
         vec![PathBuf::from(TEST_ROOT)]
     } else {
@@ -57,8 +58,8 @@ pub(crate) fn scan_finished(
             clear_selection_and_inspector(state);
         }
         Err(e) => {
-            state.status = format!("Error: {e}");
-            state.tracks.clear();
+            // Keep previous tracks; just report error.
+            state.status = format!("Scan error: {e}");
             clear_selection_and_inspector(state);
         }
     }
