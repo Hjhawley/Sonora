@@ -1,12 +1,5 @@
 //! core/playback/mod.rs
 //! Sonora playback core module.
-//!
-//! Core-only: NO iced imports, NO GUI state imports.
-//!
-//! Provides:
-//! - PlaybackController: GUI holds this and sends PlayerCommand
-//! - PlayerEvent: engine emits these back to GUI
-//! - start_playback(): spawns the playback thread and returns (controller, event_rx)
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -63,7 +56,14 @@ pub fn start_playback() -> (PlaybackController, Receiver<PlayerEvent>) {
     let (event_tx, event_rx) = mpsc::channel::<PlayerEvent>();
 
     thread::spawn(move || {
-        let mut engine = PlaybackEngine::new(event_tx);
+        let mut engine = match PlaybackEngine::new(event_tx.clone()) {
+            Ok(e) => e,
+            Err(msg) => {
+                let _ = event_tx.send(PlayerEvent::Error(msg));
+                return;
+            }
+        };
+
         engine.run(command_rx);
     });
 

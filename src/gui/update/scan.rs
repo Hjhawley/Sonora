@@ -39,7 +39,7 @@ pub(crate) fn scan_finished(
     state.scanning = false;
 
     match result {
-        Ok((mut rows, tag_failures)) => {
+        Ok((rows, tag_failures)) => {
             state.status = if tag_failures == 0 {
                 format!("Loaded {} tracks", rows.len())
             } else {

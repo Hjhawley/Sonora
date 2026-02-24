@@ -6,13 +6,14 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
-use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink};
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
 
 use super::{PlayerCommand, PlayerEvent};
 
 const TICK_MS: u64 = 200;
 
 pub struct PlaybackEngine {
+    // Keep alive for lifetime of engine
     stream: OutputStream,
 
     sink: Option<Sink>,
@@ -28,7 +29,7 @@ pub struct PlaybackEngine {
 impl PlaybackEngine {
     pub fn new(event_tx: Sender<PlayerEvent>) -> Result<Self, String> {
         let stream = OutputStreamBuilder::open_default_stream()
-            .map_err(|e| format!("failed to init default audio output: {e}"))?;
+            .map_err(|e| format!("Audio init failed: {e}"))?;
 
         Ok(Self {
             stream,
@@ -88,16 +89,12 @@ impl PlaybackEngine {
                 self.stop_internal();
                 let _ = self.event_tx.send(PlayerEvent::Stopped);
             }
-            PlayerCommand::Seek(ms) => {
-                if let Some(sink) = &self.sink {
-                    if sink.try_seek(Duration::from_millis(ms)).is_err() {
-                        let _ = self.event_tx.send(PlayerEvent::Error(
-                            "Seek failed (decoder may not support it)".into(),
-                        ));
-                    }
-                    // Seeking should clear "ended" state.
-                    self.ended_emitted = false;
-                }
+            PlayerCommand::Seek(_ms) => {
+                // rodio 0.21.1 Sink::try_seek exists in some setups but not all decoders;
+                // to keep MVP stable, treat seek as unsupported for now.
+                let _ = self
+                    .event_tx
+                    .send(PlayerEvent::Error("Seeking not supported yet.".into()));
             }
             PlayerCommand::SetVolume(v) => {
                 if let Some(sink) = &self.sink {
@@ -118,8 +115,6 @@ impl PlaybackEngine {
         let position_ms = sink.get_pos().as_millis() as u64;
         let _ = self.event_tx.send(PlayerEvent::Position { position_ms });
 
-        // `empty()` means the sink queue has drained.
-        // If we still consider a track "active", emit TrackEnded once.
         if sink.empty() && self.current_path.is_some() && !self.ended_emitted {
             self.ended_emitted = true;
             let _ = self.event_tx.send(PlayerEvent::TrackEnded);
@@ -130,6 +125,7 @@ impl PlaybackEngine {
     fn play_file(&mut self, path: PathBuf) -> Result<(), String> {
         self.stop_internal();
 
+        // rodio 0.21.x: create sink from the stream's mixer
         let sink = Sink::connect_new(self.stream.mixer());
 
         let file = File::open(&path).map_err(|e| format!("Failed to open file: {e}"))?;
