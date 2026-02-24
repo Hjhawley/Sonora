@@ -40,8 +40,6 @@ pub(crate) fn scan_finished(
 
     match result {
         Ok((mut rows, tag_failures)) => {
-            rows.sort_by(|a, b| a.path.cmp(&b.path));
-
             state.status = if tag_failures == 0 {
                 format!("Loaded {} tracks", rows.len())
             } else {

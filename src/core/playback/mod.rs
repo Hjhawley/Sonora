@@ -1,3 +1,4 @@
+//! core/playback/mod.rs
 //! Sonora playback core module.
 //!
 //! Core-only: NO iced imports, NO GUI state imports.
