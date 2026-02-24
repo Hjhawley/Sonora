@@ -32,6 +32,9 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SelectAlbum(key) => selection::select_album(state, key),
         Message::SelectTrack(i) => selection::select_track(state, i),
 
+        // Play without changing selection
+        Message::ActivateTrack(i) => playback::play_track(state, i),
+
         // Cover
         Message::CoverLoaded(i, handle) => selection::cover_loaded(state, i, handle),
 

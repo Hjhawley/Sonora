@@ -65,6 +65,7 @@ pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
 
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
+    // Playback should not hijack selection.
     state.now_playing = Some(index);
     state.is_playing = true;
     state.position_ms = 0;
@@ -136,10 +137,12 @@ pub(crate) fn stop(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn next(_state: &mut Sonora) -> Task<Message> {
+    // Queue not implemented yet.
     Task::none()
 }
 
 pub(crate) fn prev(_state: &mut Sonora) -> Task<Message> {
+    // Queue not implemented yet.
     Task::none()
 }
 

@@ -39,11 +39,15 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
     let mut col = column![header].spacing(TRACK_LIST_SPACING);
 
     for (i, t) in state.tracks.iter().enumerate() {
-        let is_primary = state.selected_track == Some(i);
+        // Selection (inspector)
         let is_selected = state.selected_tracks.contains(&i);
+        let is_primary_selected = state.selected_track == Some(i);
 
-        // Primary selection gets ▶. Other selected rows get ●.
-        let marker = if is_primary {
+        // Playback
+        let is_now_playing = state.now_playing == Some(i);
+
+        // ▶ means "now playing". ● means "selected".
+        let marker = if is_now_playing {
             "▶"
         } else if is_selected {
             "●"
@@ -80,13 +84,21 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         .spacing(10)
         .align_y(Alignment::Center);
 
+        // - First click selects (shows inspector)
+        // - Clicking an already-selected row plays it
+        let msg = if is_primary_selected {
+            Message::ActivateTrack(i)
+        } else {
+            Message::SelectTrack(i)
+        };
+
         let row_widget = mouse_area(
             container(row_cells)
                 .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
                 .height(Length::Fixed(TRACK_ROW_H))
                 .width(Length::Fill),
         )
-        .on_press(Message::SelectTrack(i));
+        .on_press(msg);
 
         col = col.push(row_widget);
     }

@@ -132,6 +132,7 @@ pub(crate) struct Sonora {
     /// RefCell gives us interior mutability without infecting the whole app with Mutex.
     pub playback_events: Option<RefCell<Receiver<PlayerEvent>>>,
 
+    /// Track index currently “now playing” (into `tracks`)
     pub now_playing: Option<usize>,
     pub is_playing: bool,
     pub position_ms: u64,
@@ -215,7 +216,12 @@ pub(crate) enum Message {
     // View + selection
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
+
+    /// Select/highlight a track (updates inspector). Never starts playback.
     SelectTrack(usize),
+
+    /// "Activate" a track (play it). Does not change selection.
+    ActivateTrack(usize),
 
     // Cover art
     CoverLoaded(usize, Option<iced::widget::image::Handle>),
