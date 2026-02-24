@@ -104,7 +104,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     let top = column![
         text("Metadata editor").size(18),
         text(format!("Selected: {sel_count}")).size(12),
-        text("Path (primary)").size(12),
+        text("File path").size(12),
         text(path_line).size(12),
         text(format!(
             "Artwork: {} | Len: {} | Rating: {} | Plays: {} | Compilation: {}",

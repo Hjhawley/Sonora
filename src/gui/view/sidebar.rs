@@ -26,7 +26,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
 
     let view_toggle = row![albums_btn, tracks_btn].spacing(8);
 
-    let root_input = text_input("Add folder path (ex: H:\\music)", &state.root_input)
+    let root_input = text_input("Add folder path", &state.root_input)
         .on_input(Message::RootInputChanged)
         .on_submit(Message::AddRootPressed)
         .width(Length::Fill);
