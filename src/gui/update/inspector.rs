@@ -1,7 +1,8 @@
 //! gui/update/inspector.rs
 use iced::Task;
+use std::collections::BTreeMap;
 
-use super::super::state::{InspectorField, Message, Sonora};
+use super::super::state::{InspectorField, KEEP_SENTINEL, Message, Sonora};
 use super::super::util::filename_stem;
 
 pub(crate) fn toggle_extended(state: &mut Sonora, v: bool) -> Task<Message> {
@@ -14,6 +15,12 @@ pub(crate) fn inspector_changed(
     field: InspectorField,
     value: String,
 ) -> Task<Message> {
+    // If a field is currently mixed, editing should replace the sentinel with the new value
+    // and clear the mixed flag for that field.
+    if value != KEEP_SENTINEL {
+        state.inspector_mixed.insert(field, false);
+    }
+
     set_inspector_field(state, field, value);
     state.inspector_dirty = true;
     Task::none()
@@ -60,64 +67,246 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
     }
 }
 
-/// Load inspector fields from the primary selected track.
-/// (Batch/mixed support comes next; for now this restores the working single-track behavior.)
-pub(crate) fn load_inspector_from_track(state: &mut Sonora) {
-    let Some(i) = state.selected_track else {
-        clear_inspector(state);
-        return;
-    };
-    if i >= state.tracks.len() {
-        clear_inspector(state);
-        return;
-    }
-
-    let t = &state.tracks[i];
-
-    // clear mixed flags for now (we'll compute these when batch aggregation is implemented)
-    state.inspector_mixed.clear();
-
-    // Standard (visible by default)
-    state.inspector.title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
-    state.inspector.artist = t.artist.clone().unwrap_or_default();
-    state.inspector.album = t.album.clone().unwrap_or_default();
-    state.inspector.album_artist = t.album_artist.clone().unwrap_or_default();
-    state.inspector.composer = t.composer.clone().unwrap_or_default();
-
-    state.inspector.track_no = t.track_no.map(|n| n.to_string()).unwrap_or_default();
-    state.inspector.track_total = t.track_total.map(|n| n.to_string()).unwrap_or_default();
-    state.inspector.disc_no = t.disc_no.map(|n| n.to_string()).unwrap_or_default();
-    state.inspector.disc_total = t.disc_total.map(|n| n.to_string()).unwrap_or_default();
-
-    state.inspector.year = t.year.map(|y| y.to_string()).unwrap_or_default();
-    state.inspector.genre = t.genre.clone().unwrap_or_default();
-
-    state.inspector.grouping = t.grouping.clone().unwrap_or_default();
-    state.inspector.comment = t.comment.clone().unwrap_or_default();
-    state.inspector.lyrics = t.lyrics.clone().unwrap_or_default();
-    state.inspector.lyricist = t.lyricist.clone().unwrap_or_default();
-
-    // Extended (toggleable)
-    state.inspector.date = t.date.clone().unwrap_or_default();
-    state.inspector.conductor = t.conductor.clone().unwrap_or_default();
-    state.inspector.remixer = t.remixer.clone().unwrap_or_default();
-    state.inspector.publisher = t.publisher.clone().unwrap_or_default();
-    state.inspector.subtitle = t.subtitle.clone().unwrap_or_default();
-
-    state.inspector.bpm = t.bpm.map(|n| n.to_string()).unwrap_or_default();
-    state.inspector.key = t.key.clone().unwrap_or_default();
-    state.inspector.mood = t.mood.clone().unwrap_or_default();
-    state.inspector.language = t.language.clone().unwrap_or_default();
-    state.inspector.isrc = t.isrc.clone().unwrap_or_default();
-    state.inspector.encoder_settings = t.encoder_settings.clone().unwrap_or_default();
-    state.inspector.encoded_by = t.encoded_by.clone().unwrap_or_default();
-    state.inspector.copyright = t.copyright.clone().unwrap_or_default();
-
-    state.inspector_dirty = false;
-}
-
 pub(crate) fn clear_inspector(state: &mut Sonora) {
     state.inspector = Default::default();
     state.inspector_dirty = false;
     state.inspector_mixed.clear();
+}
+
+/// Load inspector fields from the current selection.
+/// - Works for single-track and multi-track selection.
+/// - Writes KEEP_SENTINEL into fields that are mixed.
+/// - Clears extended fields (for now) to avoid stale values.
+pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
+    // Determine which indices are selected
+    let mut idxs: Vec<usize> = if !state.selected_tracks.is_empty() {
+        state.selected_tracks.iter().copied().collect()
+    } else if let Some(i) = state.selected_track {
+        vec![i]
+    } else {
+        clear_inspector(state);
+        return;
+    };
+
+    idxs.retain(|&i| i < state.tracks.len());
+    if idxs.is_empty() {
+        clear_inspector(state);
+        return;
+    }
+
+    // --- helpers ---
+    fn opt_str(v: &Option<String>) -> String {
+        v.clone().unwrap_or_default()
+    }
+    fn opt_u32(v: Option<u32>) -> String {
+        v.map(|n| n.to_string()).unwrap_or_default()
+    }
+    fn opt_year_i32(v: Option<i32>) -> String {
+        v.map(|y| y.to_string()).unwrap_or_default()
+    }
+
+    fn apply_field(
+        draft_slot: &mut String,
+        mixed_map: &mut BTreeMap<InspectorField, bool>,
+        field: InspectorField,
+        values: Vec<String>,
+    ) {
+        let first = values.first().cloned().unwrap_or_default();
+        let mixed = values.iter().any(|v| *v != first);
+
+        if mixed {
+            *draft_slot = KEEP_SENTINEL.to_string();
+            mixed_map.insert(field, true);
+        } else {
+            *draft_slot = first;
+            mixed_map.insert(field, false);
+        }
+    }
+
+    // Collect per-field strings for all selected tracks
+    let titles: Vec<String> = idxs
+        .iter()
+        .map(|&i| {
+            state.tracks[i]
+                .title
+                .clone()
+                .unwrap_or_else(|| filename_stem(&state.tracks[i].path))
+        })
+        .collect();
+
+    let artists: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].artist))
+        .collect();
+    let albums: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].album))
+        .collect();
+    let album_artists: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].album_artist))
+        .collect();
+    let composers: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].composer))
+        .collect();
+
+    let track_no: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_u32(state.tracks[i].track_no))
+        .collect();
+    let track_total: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_u32(state.tracks[i].track_total))
+        .collect();
+    let disc_no: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_u32(state.tracks[i].disc_no))
+        .collect();
+    let disc_total: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_u32(state.tracks[i].disc_total))
+        .collect();
+
+    let years: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_year_i32(state.tracks[i].year))
+        .collect();
+    let genres: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].genre))
+        .collect();
+
+    let grouping: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].grouping))
+        .collect();
+    let comment: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].comment))
+        .collect();
+    let lyrics: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].lyrics))
+        .collect();
+    let lyricist: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].lyricist))
+        .collect();
+
+    // Apply + compute mixed flags
+    let mut map_mixed: BTreeMap<InspectorField, bool> = BTreeMap::new();
+
+    apply_field(
+        &mut state.inspector.title,
+        &mut map_mixed,
+        InspectorField::Title,
+        titles,
+    );
+    apply_field(
+        &mut state.inspector.artist,
+        &mut map_mixed,
+        InspectorField::Artist,
+        artists,
+    );
+    apply_field(
+        &mut state.inspector.album,
+        &mut map_mixed,
+        InspectorField::Album,
+        albums,
+    );
+    apply_field(
+        &mut state.inspector.album_artist,
+        &mut map_mixed,
+        InspectorField::AlbumArtist,
+        album_artists,
+    );
+    apply_field(
+        &mut state.inspector.composer,
+        &mut map_mixed,
+        InspectorField::Composer,
+        composers,
+    );
+
+    apply_field(
+        &mut state.inspector.track_no,
+        &mut map_mixed,
+        InspectorField::TrackNo,
+        track_no,
+    );
+    apply_field(
+        &mut state.inspector.track_total,
+        &mut map_mixed,
+        InspectorField::TrackTotal,
+        track_total,
+    );
+    apply_field(
+        &mut state.inspector.disc_no,
+        &mut map_mixed,
+        InspectorField::DiscNo,
+        disc_no,
+    );
+    apply_field(
+        &mut state.inspector.disc_total,
+        &mut map_mixed,
+        InspectorField::DiscTotal,
+        disc_total,
+    );
+
+    apply_field(
+        &mut state.inspector.year,
+        &mut map_mixed,
+        InspectorField::Year,
+        years,
+    );
+    apply_field(
+        &mut state.inspector.genre,
+        &mut map_mixed,
+        InspectorField::Genre,
+        genres,
+    );
+
+    apply_field(
+        &mut state.inspector.grouping,
+        &mut map_mixed,
+        InspectorField::Grouping,
+        grouping,
+    );
+    apply_field(
+        &mut state.inspector.comment,
+        &mut map_mixed,
+        InspectorField::Comment,
+        comment,
+    );
+    apply_field(
+        &mut state.inspector.lyrics,
+        &mut map_mixed,
+        InspectorField::Lyrics,
+        lyrics,
+    );
+    apply_field(
+        &mut state.inspector.lyricist,
+        &mut map_mixed,
+        InspectorField::Lyricist,
+        lyricist,
+    );
+
+    state.inspector_mixed = map_mixed;
+
+    // Avoid stale extended values until you implement mixed/aggregation for them.
+    state.inspector.date.clear();
+    state.inspector.conductor.clear();
+    state.inspector.remixer.clear();
+    state.inspector.publisher.clear();
+    state.inspector.subtitle.clear();
+    state.inspector.bpm.clear();
+    state.inspector.key.clear();
+    state.inspector.mood.clear();
+    state.inspector.language.clear();
+    state.inspector.isrc.clear();
+    state.inspector.encoder_settings.clear();
+    state.inspector.encoded_by.clear();
+    state.inspector.copyright.clear();
+
+    state.inspector_dirty = false;
 }

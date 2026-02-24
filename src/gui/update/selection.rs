@@ -3,13 +3,12 @@ use iced::Task;
 use std::path::PathBuf;
 
 use super::super::state::{AlbumKey, Message, Sonora, ViewMode};
-use super::inspector::{clear_inspector, load_inspector_from_track};
+use super::inspector::{clear_inspector, load_inspector_from_selection};
 use super::util::spawn_blocking;
 
 pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message> {
     state.view_mode = mode;
 
-    // Switching views should feel predictable.
     state.selected_track = None;
     state.selected_tracks.clear();
     state.last_clicked_track = None;
@@ -41,18 +40,9 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     state.selected_tracks.clear();
 
     for (i, t) in state.tracks.iter().enumerate() {
-        let aa = t
-            .album_artist
-            .clone()
-            .or_else(|| t.artist.clone())
-            .unwrap_or_else(|| "Unknown Artist".to_string());
+        let k = album_key_for_track(t);
 
-        let album = t
-            .album
-            .clone()
-            .unwrap_or_else(|| "Unknown Album".to_string());
-
-        if aa == key.album_artist && album == key.album {
+        if k.album_artist == key.album_artist && k.album == key.album {
             state.selected_tracks.insert(i);
         }
     }
@@ -62,7 +52,8 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     state.last_clicked_track = state.selected_track;
 
     if state.selected_track.is_some() {
-        load_inspector_from_track(state);
+        // IMPORTANT: load from *selection*, not just track 1
+        load_inspector_from_selection(state);
     } else {
         clear_inspector(state);
         return Task::none();
@@ -78,8 +69,23 @@ pub(crate) fn select_track(state: &mut Sonora, index: usize) -> Task<Message> {
         return Task::none();
     }
 
-    // Clicking a track exits “album selects all” mode
-    state.selected_album = None;
+    // In Album view:
+    // - Clicking a track in the currently expanded album should NOT collapse the album.
+    // - Clicking a track outside that album (rare) can collapse it.
+    if state.view_mode == ViewMode::Albums {
+        let clicked_key = album_key_for_track(&state.tracks[index]);
+
+        let keep_album_open = state.selected_album.as_ref().is_some_and(|k| {
+            k.album_artist == clicked_key.album_artist && k.album == clicked_key.album
+        });
+
+        if !keep_album_open {
+            state.selected_album = None;
+        }
+    } else {
+        // In Track view, there’s no expanded album concept.
+        state.selected_album = None;
+    }
 
     // Plain click: replace selection with this single track
     state.selected_tracks.clear();
@@ -87,9 +93,9 @@ pub(crate) fn select_track(state: &mut Sonora, index: usize) -> Task<Message> {
     state.selected_track = Some(index);
     state.last_clicked_track = Some(index);
 
-    load_inspector_from_track(state);
+    // IMPORTANT: load from selection (works for 1 or N)
+    load_inspector_from_selection(state);
 
-    // Optional: also lazy-load cover for track view selections
     maybe_load_cover_for_track(state, index)
 }
 
@@ -101,13 +107,30 @@ pub(crate) fn cover_loaded(
     if let Some(h) = handle {
         state.cover_cache.insert(index, h);
     } else {
-        // No art found: ensure we don't keep a stale handle
         state.cover_cache.remove(&index);
     }
     Task::none()
 }
 
 // Helpers
+
+fn album_key_for_track(t: &crate::core::types::TrackRow) -> AlbumKey {
+    let album_artist = t
+        .album_artist
+        .clone()
+        .or_else(|| t.artist.clone())
+        .unwrap_or_else(|| "Unknown Artist".to_string());
+
+    let album = t
+        .album
+        .clone()
+        .unwrap_or_else(|| "Unknown Album".to_string());
+
+    AlbumKey {
+        album_artist,
+        album,
+    }
+}
 
 fn maybe_load_cover_for_track(state: &mut Sonora, index: usize) -> Task<Message> {
     if index >= state.tracks.len() {
@@ -125,14 +148,10 @@ fn maybe_load_cover_for_track(state: &mut Sonora, index: usize) -> Task<Message>
     )
 }
 
-/// Reads the first embedded ID3 picture (APIC/PIC) and returns an Iced Handle.
-/// If no embedded art exists (or read fails), returns None.
 fn load_cover_handle_from_path(path: &std::path::Path) -> Option<iced::widget::image::Handle> {
     let (bytes, _mime) = crate::core::tags::read_embedded_art(path).ok()??;
     Some(iced::widget::image::Handle::from_bytes(bytes))
 }
-
-// Helpers (state mutation)
 
 pub(crate) fn clear_selection_and_inspector(state: &mut Sonora) {
     state.selected_track = None;

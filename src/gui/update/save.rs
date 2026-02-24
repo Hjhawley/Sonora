@@ -3,7 +3,7 @@ use iced::Task;
 
 use super::super::state::{KEEP_SENTINEL, Message, Sonora};
 use super::super::util::{parse_optional_i32, parse_optional_u32};
-use super::inspector::load_inspector_from_track;
+use super::inspector::load_inspector_from_selection;
 use super::util::spawn_blocking;
 
 pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
@@ -121,7 +121,7 @@ pub(crate) fn save_finished(
         Ok(new_row) => {
             if i < state.tracks.len() {
                 state.tracks[i] = new_row;
-                load_inspector_from_track(state);
+                load_inspector_from_selection(state);
             }
             state.inspector_dirty = false;
             state.status = "Tags written to file.".to_string();
@@ -148,7 +148,7 @@ pub(crate) fn save_finished_batch(
                 }
             }
 
-            load_inspector_from_track(state);
+            load_inspector_from_selection(state);
 
             state.inspector_dirty = false;
             state.status = "Batch tags written to files.".to_string();
@@ -162,7 +162,7 @@ pub(crate) fn save_finished_batch(
 }
 
 pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
-    load_inspector_from_track(state);
+    load_inspector_from_selection(state);
     Task::none()
 }
 
