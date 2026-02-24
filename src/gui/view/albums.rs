@@ -1,3 +1,4 @@
+//! gui/view/albums.rs
 //! Album view (grouping + album list + detail).
 
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
@@ -39,9 +40,10 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
     let selected_key: Option<AlbumKey> = state.selected_album.clone();
 
     // For list display: (key, track_count, representative_track_index)
+    // IMPORTANT: do not invent a rep index (like 0) when an album has no tracks.
     let albums: Vec<(AlbumKey, usize, usize)> = groups
         .iter()
-        .map(|(k, v)| (k.clone(), v.len(), *v.first().unwrap_or(&0)))
+        .filter_map(|(k, v)| v.first().map(|&rep| (k.clone(), v.len(), rep)))
         .collect();
 
     let list = build_album_list(state, selected_key.clone(), albums);
@@ -70,9 +72,12 @@ fn build_album_list(
 
     for (key, count, rep_idx) in albums {
         let is_selected = selected.as_ref() == Some(&key);
-        let marker = if is_selected { "●" } else { "" };
 
-        let title_line = format!("{marker} {}", key.album);
+        let title_line = if is_selected {
+            format!("● {}", key.album)
+        } else {
+            key.album.clone()
+        };
         let artist_line = key.album_artist.clone();
         let count_line = format!("{count} tracks");
 
@@ -114,7 +119,16 @@ fn build_album_detail(
         return container(text("Album has no tracks (weird).")).padding(12);
     }
 
-    let mut idxs = track_idxs;
+    // Defensive: filter out any out-of-range indices (shouldn't happen, but avoids panics).
+    let mut idxs: Vec<usize> = track_idxs
+        .into_iter()
+        .filter(|&i| i < state.tracks.len())
+        .collect();
+
+    if idxs.is_empty() {
+        return container(text("Album tracks are out of range (rescan?).")).padding(12);
+    }
+
     idxs.sort_by(|&a, &b| {
         let ta = &state.tracks[a];
         let tb = &state.tracks[b];

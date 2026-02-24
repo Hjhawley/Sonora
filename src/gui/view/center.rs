@@ -1,3 +1,4 @@
+//! gui/view/center.rs
 //! Center panel router (tracks vs albums).
 
 use iced::widget::container;

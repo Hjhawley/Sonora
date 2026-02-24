@@ -1,8 +1,9 @@
+//! gui/view/mod.rs
 //! GUI renderer (reads state, produces widgets; no mutation).
 
 mod albums;
 mod center;
-mod constants;
+pub(crate) mod constants;
 mod inspector;
 mod sidebar;
 mod tracks;
