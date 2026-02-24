@@ -1,3 +1,5 @@
+//! gui/update/playback.rs
+//!
 //! GUI ↔ playback engine bridge.
 //!
 //! Translate GUI actions -> PlayerCommand
@@ -8,7 +10,27 @@
 use iced::Task;
 
 use super::super::state::{Message, Sonora};
-use crate::core::playback::{PlayerCommand, PlayerEvent};
+use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
+
+/// Ensure the playback engine is running.
+/// - If already initialized, does nothing.
+/// - If not, starts it and stores controller + event receiver.
+///
+/// NOTE: `start_playback()` currently cannot fail (it may `expect()` internally).
+/// Once you refactor it to return Result, this function becomes the natural place
+/// to surface a friendly error message.
+fn ensure_engine(state: &mut Sonora) {
+    if state.playback.is_some() {
+        return;
+    }
+
+    let (controller, events) = start_playback();
+    // Apply current UI volume immediately so first playback matches the slider.
+    controller.send(PlayerCommand::SetVolume(state.volume));
+
+    state.playback = Some(controller);
+    state.playback_events = Some(events);
+}
 
 pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
     let Some(i) = state.selected_track else {
@@ -19,8 +41,11 @@ pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
+    ensure_engine(state);
+
     let Some(controller) = &state.playback else {
-        state.status = "Playback engine not initialized (state.playback is None).".into();
+        // Defensive: should never happen unless ensure_engine changes.
+        state.status = "Playback engine failed to initialize.".into();
         return Task::none();
     };
 
@@ -61,8 +86,10 @@ pub(crate) fn toggle_play_pause(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn pause(state: &mut Sonora) -> Task<Message> {
+    ensure_engine(state);
+
     let Some(controller) = &state.playback else {
-        state.status = "Pause failed: playback engine not initialized.".into();
+        state.status = "Pause failed: playback engine failed to initialize.".into();
         return Task::none();
     };
 
@@ -73,16 +100,18 @@ pub(crate) fn pause(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn resume(state: &mut Sonora) -> Task<Message> {
-    let Some(controller) = &state.playback else {
-        state.status = "Resume failed: playback engine not initialized.".into();
-        return Task::none();
-    };
-
     // If nothing has ever been started, Resume will do nothing.
     // In that case, behave like "Play Selected".
     if state.now_playing.is_none() {
         return play_selected(state);
     }
+
+    ensure_engine(state);
+
+    let Some(controller) = &state.playback else {
+        state.status = "Resume failed: playback engine failed to initialize.".into();
+        return Task::none();
+    };
 
     controller.send(PlayerCommand::Resume);
     state.is_playing = true;
@@ -91,8 +120,10 @@ pub(crate) fn resume(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn stop(state: &mut Sonora) -> Task<Message> {
+    ensure_engine(state);
+
     let Some(controller) = &state.playback else {
-        state.status = "Stop failed: playback engine not initialized.".into();
+        state.status = "Stop failed: playback engine failed to initialize.".into();
         return Task::none();
     };
 
@@ -117,12 +148,14 @@ pub(crate) fn prev(_state: &mut Sonora) -> Task<Message> {
 
 /// Seek slider sends a ratio 0.0..=1.0 (see widgets.rs).
 pub(crate) fn seek(state: &mut Sonora, ratio: f32) -> Task<Message> {
-    let Some(controller) = &state.playback else {
+    // Seeking only makes sense when we already know duration.
+    let Some(dur_ms) = state.duration_ms else {
         return Task::none();
     };
 
-    let Some(dur_ms) = state.duration_ms else {
-        // Can't seek until we know duration
+    ensure_engine(state);
+
+    let Some(controller) = &state.playback else {
         return Task::none();
     };
 
@@ -142,9 +175,6 @@ pub(crate) fn set_volume(state: &mut Sonora, volume: f32) -> Task<Message> {
 
     if let Some(controller) = &state.playback {
         controller.send(PlayerCommand::SetVolume(volume));
-    } else {
-        // Still let the slider move even if engine isn't up.
-        state.status = "Volume set (engine not initialized yet).".into();
     }
 
     Task::none()

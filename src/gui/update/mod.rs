@@ -1,3 +1,4 @@
+//! gui/update/mod.rs
 //! Update logic (router).
 //! Mutates state in response to `Message` events.
 
