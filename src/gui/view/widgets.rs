@@ -1,5 +1,8 @@
 //! Reusable small widgets/helpers used across view modules.
 
+// Temporary: some widgets/helpers may not be referenced by every view yet.
+#![allow(dead_code)]
+
 use iced::widget::{button, column, container, image, row, slider, text, text_input};
 use iced::{Alignment, Element, Length};
 
@@ -95,36 +98,64 @@ pub(crate) fn num_pair_row<'a>(
 /// - volume: f32
 /// - now_playing: Option<usize>   (track index)
 pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Message> {
+    // Disable transport controls until playback engine exists.
+    let engine_ready = state.playback.is_some();
+
     let play_label = if state.is_playing { "Pause" } else { "Play" };
 
-    let prev_btn = button("⏮").on_press(Message::Prev);
-    let play_btn = button(play_label).on_press(Message::TogglePlayPause);
-    let next_btn = button("⏭").on_press(Message::Next);
+    let prev_btn = if engine_ready {
+        button("⏮").on_press(Message::Prev)
+    } else {
+        button("⏮")
+    };
 
-    // --- seek slider ---
+    let play_btn = if engine_ready {
+        button(play_label).on_press(Message::TogglePlayPause)
+    } else {
+        button(play_label)
+    };
+
+    let next_btn = if engine_ready {
+        button("⏭").on_press(Message::Next)
+    } else {
+        button("⏭")
+    };
+
+    // --- seek slider (ratio 0..=1) ---
     let pos = state.position_ms;
     let dur = state.duration_ms.unwrap_or(0);
-    let seek_enabled = dur > 0;
 
-    let seek_val = if seek_enabled {
-        (pos as f32) / (dur as f32)
+    let seek_enabled = engine_ready && dur > 0;
+
+    let seek_val = if dur > 0 {
+        (pos as f32 / dur as f32).clamp(0.0, 1.0)
     } else {
         0.0
     };
 
-    let seek = slider(0.0..=1.0, seek_val, Message::SeekTo).width(Length::Fill);
+    let seek = if seek_enabled {
+        slider(0.0..=1.0, seek_val, Message::SeekTo).width(Length::Fill)
+    } else {
+        // Show it, but keep it inert: no meaningful seeking until duration known / engine ready.
+        let frozen = seek_val;
+        slider(0.0..=1.0, frozen, move |_| Message::SeekTo(frozen)).width(Length::Fill)
+    };
 
-    let time_text = if seek_enabled {
+    let time_text = if dur > 0 {
         format!("{} / {}", fmt_duration_u64(pos), fmt_duration_u64(dur))
     } else {
-        // show position even if duration unknown
         format!("{} / -:--", fmt_duration_u64(pos))
     };
 
     // --- volume slider ---
-    // clamp for sanity; slider requires value within bounds
     let vol = state.volume.clamp(0.0, 1.0);
-    let vol_slider = slider(0.0..=1.0, vol, Message::SetVolume).width(Length::Fixed(140.0));
+
+    let vol_slider = if engine_ready {
+        slider(0.0..=1.0, vol, Message::SetVolume).width(Length::Fixed(140.0))
+    } else {
+        let frozen = vol;
+        slider(0.0..=1.0, frozen, move |_| Message::SetVolume(frozen)).width(Length::Fixed(140.0))
+    };
 
     // --- now playing label ---
     let now_playing = match state.now_playing.and_then(|i| state.tracks.get(i)) {

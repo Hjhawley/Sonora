@@ -1,6 +1,9 @@
 //! Small pure helper functions used by the GUI.
 //! - no UI widgets or state mutation
 
+// Temporary: during refactors, some helpers may not be used from the view yet.
+#![allow(dead_code)]
+
 use std::path::Path;
 
 use crate::core::types::TrackRow;

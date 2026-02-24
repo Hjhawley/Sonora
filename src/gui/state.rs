@@ -3,8 +3,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
+use std::sync::mpsc::Receiver;
 
-use crate::core::playback::{PlaybackController, PlayerEvent};
+use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::TrackRow;
 
 /// Dev convenience: if user didn’t add roots, scan /test
@@ -128,6 +129,9 @@ pub(crate) struct Sonora {
     /// Core playback controller (channel sender wrapper). No rodio types in GUI.
     pub playback: Option<PlaybackController>,
 
+    /// Receiver of engine events (wire into Subscription later).
+    pub playback_events: Option<Receiver<PlayerEvent>>,
+
     /// Track index currently “now playing” (into `tracks`)
     pub now_playing: Option<usize>,
 
@@ -169,6 +173,11 @@ pub(crate) struct Sonora {
 
 impl Default for Sonora {
     fn default() -> Self {
+        // Start playback thread immediately so the UI controls actually do something.
+        // NOTE: engine.rs currently `expect()`s if no audio device; if that’s a problem,
+        // we’ll refactor start_playback() to return Result.
+        let (playback_controller, playback_events) = start_playback();
+
         Self {
             status: "Add a folder, then Scan.".to_string(),
             scanning: false,
@@ -179,7 +188,9 @@ impl Default for Sonora {
             tracks: Vec::new(),
             cover_cache: BTreeMap::new(),
 
-            playback: None,
+            playback: Some(playback_controller),
+            playback_events: Some(playback_events),
+
             now_playing: None,
             is_playing: false,
             position_ms: 0,
@@ -236,7 +247,7 @@ pub(crate) enum Message {
     Next,
     Prev,
 
-    /// Slider emits seconds/ms-ish as float; you decide interpretation in update/playback.rs.
+    /// Slider emits ratio (0..=1) currently.
     SeekTo(f32),
 
     /// 0.0..=1.0

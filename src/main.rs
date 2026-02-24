@@ -1,4 +1,4 @@
-//! Sonora GUI prototype
+//! main.rs
 //!
 //! Current behavior
 //! - User adds one or more library root folders.
@@ -8,9 +8,9 @@
 //!   - Album View: grouped by (album artist, album) with expandable album rows
 //! - Selecting a track loads an Inspector (draft fields).
 //! - "Save edits" writes the edited ID3 tags back to that single file, then re-reads it.
+//! - Audio playback
 //!
 //! Future behavior
-//! - Audio playback
 //! - Persistent cache / DB
 //! - Multi-file batch editing
 

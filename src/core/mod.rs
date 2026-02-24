@@ -1,6 +1,6 @@
-//! Sonora core module (non-UI logic).
+//! core/mod.rs
 //!
-//! /core is the brain of the app:
+//! The brain of the app:
 //! - Walk the filesystem for audio files
 //! - Read/write tags
 //! - Return plain data structs for the GUI to render

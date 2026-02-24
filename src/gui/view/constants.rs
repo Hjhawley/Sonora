@@ -1,5 +1,8 @@
 //! View constants (layout/sizing).
 
+// Temporary: some views may not reference every constant yet.
+#![allow(dead_code)]
+
 pub(crate) const PLAYBACK_H: f32 = 76.0;
 
 pub(crate) const SIDEBAR_W: f32 = 260.0;

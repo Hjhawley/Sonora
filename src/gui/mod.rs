@@ -1,4 +1,4 @@
-//! GUI module (Iced)
+//! gui/mod.rs
 //!
 //! This folder contains ONLY frontend concerns:
 //! - app state ('Sonora')
