@@ -6,9 +6,9 @@
 //! - Return plain data structs for the GUI to render
 
 pub mod library;
+pub mod playback;
 pub mod tags;
 pub mod types;
-pub mod playback;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -26,32 +26,36 @@ use types::TrackRow;
 /// Dedupe:
 /// - If roots overlap, the same file path may appear multiple times.
 /// - We de-duplicate by full `PathBuf` so each file is processed at most once.
+///
+/// Ordering:
+/// - Returned rows are sorted by full path
 pub fn scan_and_read_roots(roots: &[PathBuf]) -> Result<(Vec<TrackRow>, usize), String> {
-    let mut rows: Vec<TrackRow> = Vec::new();
+    let mut seen: HashSet<PathBuf> = HashSet::with_capacity(1024);
+    let mut all_paths: Vec<PathBuf> = Vec::new();
+
+    // Gather unique paths
+    for root in roots {
+        let paths = library::scan_mp3s(root)?;
+        for path in paths {
+            if seen.insert(path.clone()) {
+                all_paths.push(path);
+            }
+        }
+    }
+
+    // Sort once, in core (GUI should never sort)
+    all_paths.sort();
+
+    // Read tags in that order
+    let mut rows: Vec<TrackRow> = Vec::with_capacity(all_paths.len());
     let mut tag_failures: usize = 0;
 
-    // Avoid duplicates when roots overlap.
-    // Note: capacity is a small optimization; total file count is unknown upfront.
-    let mut seen: HashSet<PathBuf> = HashSet::with_capacity(1024);
-
-    for root in roots {
-        // 1) Find all mp3 paths under this root folder.
-        let paths = library::scan_mp3s(root)?;
-
-        // 2) Read tags for each path and convert to TrackRow.
-        for path in paths {
-            // insert() returns false if it was already present.
-            if !seen.insert(path.clone()) {
-                continue; // skip duplicates
-            }
-
-            // Tag reading never aborts the whole scan.
-            let (row, failed) = tags::read_track_row(path);
-            if failed {
-                tag_failures += 1;
-            }
-            rows.push(row);
+    for path in all_paths {
+        let (row, failed) = tags::read_track_row(path);
+        if failed {
+            tag_failures += 1;
         }
+        rows.push(row);
     }
 
     Ok((rows, tag_failures))
