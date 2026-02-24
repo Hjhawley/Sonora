@@ -1,3 +1,4 @@
+//! core/playback/engine.rs
 //! Playback engine (rodio owner).
 //!
 //! Owns:
