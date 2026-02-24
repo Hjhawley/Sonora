@@ -1,35 +1,43 @@
 //! gui/update/playback.rs
-//!
-//! GUI ↔ playback engine bridge.
-//!
-//! Translate GUI actions -> PlayerCommand
-//! Translate PlayerEvent -> GUI state updates
-//!
-//! No rodio usage here.
+//! GUI ↔ playback engine bridge (NO rodio usage)
 
 use iced::Task;
 
 use super::super::state::{Message, Sonora};
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
 
-/// Ensure the playback engine is running.
-/// - If already initialized, does nothing.
-/// - If not, starts it and stores controller + event receiver.
-///
-/// NOTE: `start_playback()` currently cannot fail (it may `expect()` internally).
-/// Once you refactor it to return Result, this function becomes the natural place
-/// to surface a friendly error message.
 fn ensure_engine(state: &mut Sonora) {
-    if state.playback.is_some() {
+    if state.playback.is_some() && state.playback_events.is_some() {
         return;
     }
 
     let (controller, events) = start_playback();
-    // Apply current UI volume immediately so first playback matches the slider.
     controller.send(PlayerCommand::SetVolume(state.volume));
 
     state.playback = Some(controller);
-    state.playback_events = Some(events);
+    state.playback_events = Some(std::cell::RefCell::new(events));
+}
+
+pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
+    let Some(rx_cell) = state.playback_events.as_ref() else {
+        return Task::none();
+    };
+
+    // 1) Drain into a local vec while holding ONLY the receiver borrow.
+    let mut drained: Vec<PlayerEvent> = Vec::new();
+    {
+        let mut rx = rx_cell.borrow_mut();
+        while let Ok(ev) = rx.try_recv() {
+            drained.push(ev);
+        }
+    } // receiver borrow dropped here
+
+    // 2) Now freely mutate state.
+    for ev in drained {
+        let _ = handle_event(state, ev);
+    }
+
+    Task::none()
 }
 
 pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
@@ -44,7 +52,6 @@ pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
     ensure_engine(state);
 
     let Some(controller) = &state.playback else {
-        // Defensive: should never happen unless ensure_engine changes.
         state.status = "Playback engine failed to initialize.".into();
         return Task::none();
     };
@@ -56,10 +63,8 @@ pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
 
     let path = row.path.clone();
 
-    // Send command to engine
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
-    // Optimistic UI updates (engine will also confirm via Started/Error)
     state.now_playing = Some(index);
     state.is_playing = true;
     state.position_ms = 0;
@@ -70,14 +75,10 @@ pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
 }
 
 pub(crate) fn toggle_play_pause(state: &mut Sonora) -> Task<Message> {
-    // If we're actively playing, pause.
     if state.is_playing {
         return pause(state);
     }
 
-    // Not playing:
-    // - If we have a loaded "now playing" track, resume.
-    // - Otherwise, start playing the currently selected track.
     if state.now_playing.is_some() {
         resume(state)
     } else {
@@ -100,8 +101,6 @@ pub(crate) fn pause(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn resume(state: &mut Sonora) -> Task<Message> {
-    // If nothing has ever been started, Resume will do nothing.
-    // In that case, behave like "Play Selected".
     if state.now_playing.is_none() {
         return play_selected(state);
     }
@@ -137,18 +136,14 @@ pub(crate) fn stop(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn next(_state: &mut Sonora) -> Task<Message> {
-    // Queue not implemented yet.
     Task::none()
 }
 
 pub(crate) fn prev(_state: &mut Sonora) -> Task<Message> {
-    // Queue not implemented yet.
     Task::none()
 }
 
-/// Seek slider sends a ratio 0.0..=1.0 (see widgets.rs).
 pub(crate) fn seek(state: &mut Sonora, ratio: f32) -> Task<Message> {
-    // Seeking only makes sense when we already know duration.
     let Some(dur_ms) = state.duration_ms else {
         return Task::none();
     };
@@ -163,7 +158,6 @@ pub(crate) fn seek(state: &mut Sonora, ratio: f32) -> Task<Message> {
     let target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
 
     controller.send(PlayerCommand::Seek(target_ms));
-    // Optional optimistic update (engine will correct via Position ticks)
     state.position_ms = target_ms.min(dur_ms);
 
     Task::none()
@@ -188,31 +182,18 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             state.position_ms = 0;
             state.status = format!("Now playing: {}", path.display());
         }
-
-        PlayerEvent::Paused => {
-            state.is_playing = false;
-        }
-
-        PlayerEvent::Resumed => {
-            state.is_playing = true;
-        }
-
+        PlayerEvent::Paused => state.is_playing = false,
+        PlayerEvent::Resumed => state.is_playing = true,
         PlayerEvent::Stopped => {
             state.is_playing = false;
             state.position_ms = 0;
             state.duration_ms = None;
         }
-
-        PlayerEvent::Position { position_ms } => {
-            state.position_ms = position_ms;
-        }
-
+        PlayerEvent::Position { position_ms } => state.position_ms = position_ms,
         PlayerEvent::TrackEnded => {
             state.is_playing = false;
             state.position_ms = 0;
-            // keep duration_ms; it's still useful for UI until next track
         }
-
         PlayerEvent::Error(err) => {
             state.status = format!("Playback error: {err}");
             state.is_playing = false;

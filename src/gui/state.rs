@@ -3,6 +3,7 @@
 //! GUI state + messages.
 //! Pure data definitions used by update.rs + view.rs.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
@@ -71,10 +72,8 @@ pub(crate) struct InspectorDraft {
 }
 
 /// Identifies which inspector field changed.
-/// Used to collapse many Message::EditX variants into one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum InspectorField {
-    // Standard (visible by default)
     Title,
     Artist,
     Album,
@@ -94,7 +93,6 @@ pub(crate) enum InspectorField {
     Lyrics,
     Lyricist,
 
-    // Extended (toggleable)
     Date,
     Conductor,
     Remixer,
@@ -128,45 +126,29 @@ pub(crate) struct Sonora {
     // --------------------
     // Playback (core handle + UI state)
     // --------------------
-    /// Core playback controller (channel sender wrapper). No rodio types in GUI.
     pub playback: Option<PlaybackController>,
 
-    /// Receiver of engine events (wire into Subscription later).
-    pub playback_events: Option<Receiver<PlayerEvent>>,
+    /// Receiver of engine events (polled via TickPlayback).
+    /// RefCell gives us interior mutability without infecting the whole app with Mutex.
+    pub playback_events: Option<RefCell<Receiver<PlayerEvent>>>,
 
-    /// Track index currently “now playing” (into `tracks`)
     pub now_playing: Option<usize>,
-
     pub is_playing: bool,
-
-    /// Playback position in milliseconds (UI progress bar)
     pub position_ms: u64,
-
-    /// Duration in milliseconds (if known)
     pub duration_ms: Option<u64>,
-
-    /// 0.0..=1.0
     pub volume: f32,
 
     // UI
     pub view_mode: ViewMode,
     pub selected_album: Option<AlbumKey>,
-
-    /// Multi-select support: all selected track indices.
     pub selected_tracks: BTreeSet<usize>,
-
-    /// The “primary” selection (used for inspector header / focus).
     pub selected_track: Option<usize>,
-
-    /// Used later for shift-range selection (anchor). Safe to keep now.
     pub last_clicked_track: Option<usize>,
 
     // Inspector
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
     pub saving: bool,
-
-    /// Which inspector fields are currently “mixed” across the selection.
     pub inspector_mixed: BTreeMap<InspectorField, bool>,
 
     // UI toggles
@@ -188,7 +170,7 @@ impl Default for Sonora {
             cover_cache: BTreeMap::new(),
 
             playback: Some(playback_controller),
-            playback_events: Some(playback_events),
+            playback_events: Some(RefCell::new(playback_events)),
 
             now_playing: None,
             is_playing: false,
@@ -216,8 +198,10 @@ impl Default for Sonora {
 /// Message = “something happened”.
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
-    /// Explicit no-op (for disabled widgets that must still emit something)
     Noop,
+
+    /// Periodic tick to drain playback events.
+    TickPlayback,
 
     // Roots
     RootInputChanged(String),
@@ -245,7 +229,7 @@ pub(crate) enum Message {
     SeekTo(f32),
     SetVolume(f32),
 
-    // Playback events flowing from the engine via Subscription
+    // (optional path; still supported)
     PlaybackEvent(PlayerEvent),
 
     // Inspector edits

@@ -50,21 +50,21 @@ pub enum PlayerEvent {
 
 /// Spawns playback thread and returns:
 /// - PlaybackController (store in GUI state)
-/// - Receiver<PlayerEvent> (feed into an Iced Subscription later)
+/// - Receiver<PlayerEvent> (polled by GUI on a timer tick)
 pub fn start_playback() -> (PlaybackController, Receiver<PlayerEvent>) {
     let (command_tx, command_rx) = mpsc::channel::<PlayerCommand>();
     let (event_tx, event_rx) = mpsc::channel::<PlayerEvent>();
 
     thread::spawn(move || {
-        let mut engine = match PlaybackEngine::new(event_tx.clone()) {
-            Ok(e) => e,
-            Err(msg) => {
-                let _ = event_tx.send(PlayerEvent::Error(msg));
-                return;
-            }
-        };
+        // Keep a clone for init-failure reporting
+        let event_tx_fail = event_tx.clone();
 
-        engine.run(command_rx);
+        match PlaybackEngine::new(event_tx) {
+            Ok(mut engine) => engine.run(command_rx),
+            Err(e) => {
+                let _ = event_tx_fail.send(PlayerEvent::Error(e));
+            }
+        }
     });
 
     (PlaybackController { command_tx }, event_rx)

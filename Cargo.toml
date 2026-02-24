@@ -4,6 +4,6 @@ version = "0.6.1"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.14", features = ["image"] }
+iced = { version = "0.14", features = ["image", "tokio"] }
 id3 = "1.16.3"
 rodio = "0.21.1"

@@ -1,6 +1,4 @@
 //! gui/update/mod.rs
-//! Update logic (router).
-//! Mutates state in response to `Message` events.
 
 use iced::Task;
 
@@ -17,6 +15,8 @@ mod util;
 pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     match message {
         Message::Noop => Task::none(),
+
+        Message::TickPlayback => playback::drain_events(state),
 
         // Roots
         Message::RootInputChanged(s) => roots::root_input_changed(state, s),
@@ -44,7 +44,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SeekTo(ratio) => playback::seek(state, ratio),
         Message::SetVolume(vol) => playback::set_volume(state, vol),
 
-        // Playback (engine -> UI)
+        // Playback (optional path)
         Message::PlaybackEvent(ev) => playback::handle_event(state, ev),
 
         // Inspector
