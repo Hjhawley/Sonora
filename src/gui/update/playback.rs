@@ -136,14 +136,39 @@ pub(crate) fn stop(state: &mut Sonora) -> Task<Message> {
     Task::none()
 }
 
-pub(crate) fn next(_state: &mut Sonora) -> Task<Message> {
-    // Queue not implemented yet.
-    Task::none()
+pub(crate) fn next(state: &mut Sonora) -> Task<Message> {
+    if state.tracks.is_empty() {
+        return Task::none();
+    }
+
+    // Drive playback from now_playing; fall back to selection; else 0.
+    let cur = state.now_playing.or(state.selected_track).unwrap_or(0);
+
+    // Wrap at end
+    let next = if cur + 1 >= state.tracks.len() {
+        0
+    } else {
+        cur + 1
+    };
+
+    play_track(state, next)
 }
 
-pub(crate) fn prev(_state: &mut Sonora) -> Task<Message> {
-    // Queue not implemented yet.
-    Task::none()
+pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
+    if state.tracks.is_empty() {
+        return Task::none();
+    }
+
+    let cur = state.now_playing.or(state.selected_track).unwrap_or(0);
+
+    // Wrap at beginning
+    let prev = if cur == 0 {
+        state.tracks.len() - 1
+    } else {
+        cur - 1
+    };
+
+    play_track(state, prev)
 }
 
 pub(crate) fn seek(state: &mut Sonora, ratio: f32) -> Task<Message> {
@@ -199,7 +224,6 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
         }
         PlayerEvent::Error(err) => {
             state.status = format!("Playback error: {err}");
-            state.is_playing = false;
         }
     }
 

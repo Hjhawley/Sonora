@@ -89,12 +89,22 @@ impl PlaybackEngine {
                 self.stop_internal();
                 let _ = self.event_tx.send(PlayerEvent::Stopped);
             }
-            PlayerCommand::Seek(_ms) => {
-                // rodio 0.21.1 Sink::try_seek exists in some setups but not all decoders;
-                // to keep MVP stable, treat seek as unsupported for now.
-                let _ = self
-                    .event_tx
-                    .send(PlayerEvent::Error("Seeking not supported yet.".into()));
+            PlayerCommand::Seek(ms) => {
+                if let Some(sink) = &self.sink {
+                    if sink.try_seek(Duration::from_millis(ms)).is_err() {
+                        let _ = self.event_tx.send(PlayerEvent::Error(
+                            "Seek failed (decoder may not support it)".into(),
+                        ));
+                    } else {
+                        // Allow TrackEnded to fire again later after seeking.
+                        self.ended_emitted = false;
+
+                        // update UI immediately instead of waiting for next tick.
+                        let _ = self
+                            .event_tx
+                            .send(PlayerEvent::Position { position_ms: ms });
+                    }
+                }
             }
             PlayerCommand::SetVolume(v) => {
                 if let Some(sink) = &self.sink {
