@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
-use crate::core::playback::{PlaybackController, PlayerEvent};
+use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::TrackRow;
 
 /// Dev convenience: if user didn’t add roots, scan /test
@@ -129,10 +129,6 @@ pub(crate) struct Sonora {
     // Playback (core handle + UI state)
     // --------------------
     /// Core playback controller (channel sender wrapper). No rodio types in GUI.
-    ///
-    /// Lazy-initialized on first playback action so:
-    /// - the app can start even if no audio device exists
-    /// - we avoid startup cost if playback is never used
     pub playback: Option<PlaybackController>,
 
     /// Receiver of engine events (wire into Subscription later).
@@ -179,6 +175,8 @@ pub(crate) struct Sonora {
 
 impl Default for Sonora {
     fn default() -> Self {
+        let (playback_controller, playback_events) = start_playback();
+
         Self {
             status: "Add a folder, then Scan.".to_string(),
             scanning: false,
@@ -189,9 +187,8 @@ impl Default for Sonora {
             tracks: Vec::new(),
             cover_cache: BTreeMap::new(),
 
-            // Lazy init playback
-            playback: None,
-            playback_events: None,
+            playback: Some(playback_controller),
+            playback_events: Some(playback_events),
 
             now_playing: None,
             is_playing: false,
@@ -219,6 +216,9 @@ impl Default for Sonora {
 /// Message = “something happened”.
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
+    /// Explicit no-op (for disabled widgets that must still emit something)
+    Noop,
+
     // Roots
     RootInputChanged(String),
     AddRootPressed,
@@ -236,23 +236,13 @@ pub(crate) enum Message {
     // Cover art
     CoverLoaded(usize, Option<iced::widget::image::Handle>),
 
-    // --------------------
     // Playback controls (from UI)
-    // --------------------
-    /// Play the currently selected track (or do nothing if none).
     PlaySelected,
-
-    /// Convenience: play a specific track index.
     PlayTrack(usize),
-
     TogglePlayPause,
     Next,
     Prev,
-
-    /// Slider emits ratio (0..=1) currently.
     SeekTo(f32),
-
-    /// 0.0..=1.0
     SetVolume(f32),
 
     // Playback events flowing from the engine via Subscription

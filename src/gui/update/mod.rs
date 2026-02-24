@@ -6,16 +6,18 @@ use iced::Task;
 
 use super::state::{Message, Sonora};
 
-mod util;
 mod inspector;
 mod playback;
 mod roots;
 mod save;
 mod scan;
 mod selection;
+mod util;
 
 pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
     match message {
+        Message::Noop => Task::none(),
+
         // Roots
         Message::RootInputChanged(s) => roots::root_input_changed(state, s),
         Message::AddRootPressed => roots::add_root_pressed(state),

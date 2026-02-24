@@ -1,3 +1,4 @@
+//! gui/view/tracks.rs
 //! Track view (table list).
 
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};

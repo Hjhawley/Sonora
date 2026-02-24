@@ -1,6 +1,5 @@
-//! Reusable small widgets/helpers used across view modules.
-
-// Temporary: some widgets/helpers may not be referenced by every view yet.
+//! gui/view/widgets.rs
+//! Reusable helpers used across view modules.
 #![allow(dead_code)]
 
 use iced::widget::{button, column, container, image, row, slider, text, text_input};
@@ -88,17 +87,7 @@ pub(crate) fn num_pair_row<'a>(
 }
 
 /// Bottom playback bar.
-///
-/// Emits only Messages (no rodio, no decoding).
-///
-/// Requires these Sonora fields:
-/// - is_playing: bool
-/// - position_ms: u64
-/// - duration_ms: Option<u64>
-/// - volume: f32
-/// - now_playing: Option<usize>   (track index)
 pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Message> {
-    // Disable transport controls until playback engine exists.
     let engine_ready = state.playback.is_some();
 
     let play_label = if state.is_playing { "Pause" } else { "Play" };
@@ -136,9 +125,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let seek = if seek_enabled {
         slider(0.0..=1.0, seek_val, Message::SeekTo).width(Length::Fill)
     } else {
-        // Show it, but keep it inert: no meaningful seeking until duration known / engine ready.
-        let frozen = seek_val;
-        slider(0.0..=1.0, frozen, move |_| Message::SeekTo(frozen)).width(Length::Fill)
+        slider(0.0..=1.0, seek_val, |_| Message::Noop).width(Length::Fill)
     };
 
     let time_text = if dur > 0 {
@@ -153,8 +140,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let vol_slider = if engine_ready {
         slider(0.0..=1.0, vol, Message::SetVolume).width(Length::Fixed(140.0))
     } else {
-        let frozen = vol;
-        slider(0.0..=1.0, frozen, move |_| Message::SetVolume(frozen)).width(Length::Fixed(140.0))
+        slider(0.0..=1.0, vol, |_| Message::Noop).width(Length::Fixed(140.0))
     };
 
     // --- now playing label ---
@@ -168,11 +154,9 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     };
 
     let bar = row![
-        // left: transport
         row![prev_btn, play_btn, next_btn]
             .spacing(8)
             .align_y(Alignment::Center),
-        // middle: now playing + seek
         column![
             text(now_playing).size(14),
             row![seek, text(time_text).size(12)]
@@ -181,7 +165,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         ]
         .spacing(6)
         .width(Length::Fill),
-        // right: volume
         row![text("Vol").size(12), vol_slider]
             .spacing(8)
             .align_y(Alignment::Center),
