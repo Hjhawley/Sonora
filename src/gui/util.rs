@@ -5,6 +5,7 @@
 // Temporary: during refactors, some helpers may not be used from the view yet.
 #![allow(dead_code)]
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use crate::core::types::TrackRow;
@@ -20,20 +21,27 @@ pub(crate) fn filename_stem(path: &Path) -> String {
 
 /// Format TrackRow into a compact one-line label for Track View.
 pub(crate) fn format_track_one_line(t: &TrackRow) -> String {
-    let title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
-    let artist = t
-        .artist
-        .clone()
-        .unwrap_or_else(|| "Unknown Artist".to_string());
-    let album = t
-        .album
-        .clone()
-        .unwrap_or_else(|| "Unknown Album".to_string());
+    let title: Cow<'_, str> = match t.title.as_deref() {
+        Some(s) if !s.trim().is_empty() => Cow::Borrowed(s),
+        _ => Cow::Owned(filename_stem(&t.path)),
+    };
 
-    let track_no = t
-        .track_no
-        .map(|n| n.to_string())
-        .unwrap_or_else(|| "??".to_string());
+    let artist: &str = t
+        .artist
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("Unknown Artist");
+
+    let album: &str = t
+        .album
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("Unknown Album");
+
+    let track_no: Cow<'_, str> = match t.track_no {
+        Some(n) => Cow::Owned(n.to_string()),
+        None => Cow::Borrowed("??"),
+    };
 
     format!("#{track_no} — {artist} — {title} ({album})")
 }
