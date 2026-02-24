@@ -1,13 +1,4 @@
 //! core/playback/engine.rs
-//! Playback engine (rodio owner).
-//!
-//! Owns:
-//! - OutputStream (must stay alive)
-//! - Sink (per current track)
-//! - command loop + periodic position ticks
-//!
-//! Emits PlayerEvent back via a channel.
-//! No Iced imports.
 
 use std::fs::File;
 use std::io::BufReader;
@@ -15,38 +6,38 @@ use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
-use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
+use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink};
 
 use super::{PlayerCommand, PlayerEvent};
 
 const TICK_MS: u64 = 200;
 
 pub struct PlaybackEngine {
-    // Keep this alive for the lifetime of the engine!
     stream: OutputStream,
 
-    // Current playback
     sink: Option<Sink>,
     current_path: Option<PathBuf>,
     current_duration_ms: Option<u64>,
 
-    // Event channel
+    // Prevent duplicate TrackEnded events for the same track.
+    ended_emitted: bool,
+
     event_tx: Sender<PlayerEvent>,
 }
 
 impl PlaybackEngine {
-    pub fn new(event_tx: Sender<PlayerEvent>) -> Self {
-        // rodio 0.21.x: build/open the default output stream via OutputStreamBuilder
+    pub fn new(event_tx: Sender<PlayerEvent>) -> Result<Self, String> {
         let stream = OutputStreamBuilder::open_default_stream()
-            .expect("failed to init default audio output");
+            .map_err(|e| format!("failed to init default audio output: {e}"))?;
 
-        Self {
+        Ok(Self {
             stream,
             sink: None,
             current_path: None,
             current_duration_ms: None,
+            ended_emitted: false,
             event_tx,
-        }
+        })
     }
 
     pub fn run(&mut self, command_rx: Receiver<PlayerCommand>) {
@@ -104,6 +95,8 @@ impl PlaybackEngine {
                             "Seek failed (decoder may not support it)".into(),
                         ));
                     }
+                    // Seeking should clear "ended" state.
+                    self.ended_emitted = false;
                 }
             }
             PlayerCommand::SetVolume(v) => {
@@ -118,21 +111,25 @@ impl PlaybackEngine {
     }
 
     fn tick(&mut self) {
-        if let Some(sink) = &self.sink {
-            let position_ms = sink.get_pos().as_millis() as u64;
-            let _ = self.event_tx.send(PlayerEvent::Position { position_ms });
+        let Some(sink) = &self.sink else {
+            return;
+        };
 
-            if sink.empty() && self.current_path.is_some() {
-                let _ = self.event_tx.send(PlayerEvent::TrackEnded);
-                self.stop_internal();
-            }
+        let position_ms = sink.get_pos().as_millis() as u64;
+        let _ = self.event_tx.send(PlayerEvent::Position { position_ms });
+
+        // `empty()` means the sink queue has drained.
+        // If we still consider a track "active", emit TrackEnded once.
+        if sink.empty() && self.current_path.is_some() && !self.ended_emitted {
+            self.ended_emitted = true;
+            let _ = self.event_tx.send(PlayerEvent::TrackEnded);
+            self.stop_internal();
         }
     }
 
     fn play_file(&mut self, path: PathBuf) -> Result<(), String> {
         self.stop_internal();
 
-        // rodio 0.21.x: Sink is created from the stream's mixer
         let sink = Sink::connect_new(self.stream.mixer());
 
         let file = File::open(&path).map_err(|e| format!("Failed to open file: {e}"))?;
@@ -147,6 +144,7 @@ impl PlaybackEngine {
         self.current_duration_ms = duration_ms;
         self.current_path = Some(path.clone());
         self.sink = Some(sink);
+        self.ended_emitted = false;
 
         let _ = self
             .event_tx
@@ -161,5 +159,6 @@ impl PlaybackEngine {
         }
         self.current_path = None;
         self.current_duration_ms = None;
+        self.ended_emitted = false;
     }
 }
