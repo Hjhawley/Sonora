@@ -1,3 +1,4 @@
+//! gui/util.rs
 //! Small pure helper functions used by the GUI.
 //! - no UI widgets or state mutation
 

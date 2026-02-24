@@ -1,3 +1,5 @@
+//! gui/state.rs
+//!
 //! GUI state + messages.
 //! Pure data definitions used by update.rs + view.rs.
 
@@ -5,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
-use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
+use crate::core::playback::{PlaybackController, PlayerEvent};
 use crate::core::types::TrackRow;
 
 /// Dev convenience: if user didn’t add roots, scan /test
@@ -127,6 +129,10 @@ pub(crate) struct Sonora {
     // Playback (core handle + UI state)
     // --------------------
     /// Core playback controller (channel sender wrapper). No rodio types in GUI.
+    ///
+    /// Lazy-initialized on first playback action so:
+    /// - the app can start even if no audio device exists
+    /// - we avoid startup cost if playback is never used
     pub playback: Option<PlaybackController>,
 
     /// Receiver of engine events (wire into Subscription later).
@@ -173,11 +179,6 @@ pub(crate) struct Sonora {
 
 impl Default for Sonora {
     fn default() -> Self {
-        // Start playback thread immediately so the UI controls actually do something.
-        // NOTE: engine.rs currently `expect()`s if no audio device; if that’s a problem,
-        // we’ll refactor start_playback() to return Result.
-        let (playback_controller, playback_events) = start_playback();
-
         Self {
             status: "Add a folder, then Scan.".to_string(),
             scanning: false,
@@ -188,8 +189,9 @@ impl Default for Sonora {
             tracks: Vec::new(),
             cover_cache: BTreeMap::new(),
 
-            playback: Some(playback_controller),
-            playback_events: Some(playback_events),
+            // Lazy init playback
+            playback: None,
+            playback_events: None,
 
             now_playing: None,
             is_playing: false,
