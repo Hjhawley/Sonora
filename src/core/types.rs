@@ -1,3 +1,5 @@
+//! core/types.rs
+//! 
 //! Core data types shared between core logic and the UI.
 //! - No GUI code
 //! - No filesystem walking

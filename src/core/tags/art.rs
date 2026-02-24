@@ -1,3 +1,5 @@
+//! core/tags/art.rs
+//! Read/write embedded album art (APIC/PIC) from an MP3 using the id3 crate.
 use std::path::Path;
 
 use id3::Tag;

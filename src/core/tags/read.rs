@@ -1,3 +1,4 @@
+//! core/tags/read.rs
 //! Read ID3 tags from an MP3 and convert them into a `TrackRow`.
 
 use std::collections::{BTreeMap, HashSet};

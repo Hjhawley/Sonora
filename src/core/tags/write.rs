@@ -1,3 +1,4 @@
+//! core/tags/write.rs
 //! Write selected ID3 tags back to an MP3, based on a `TrackRow`.
 
 use id3::frame::{Comment, Lyrics};

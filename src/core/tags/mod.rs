@@ -1,5 +1,6 @@
+//! core/tags/mod.rs
+//! 
 //! ID3 tag read/write utilities.
-//!
 //! Public API:
 //! - [`read_track_row`] reads an MP3 into a [`TrackRow`] (non-fatal on tag read failure).
 //! - [`write_track_row`] writes selected fields back to disk.

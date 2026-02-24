@@ -1,3 +1,4 @@
+//! core/tags/util.rs
 //! Small parsing helpers shared by tag reading/writing.
 
 /// Parse strings like:

@@ -1,3 +1,5 @@
+//! core/library.rs
+//! 
 //! Filesystem scanning utilities (read-only)
 //! - Walks folders recursively (visits subfolders too)
 //! - Collects files that end in '.mp3'
@@ -82,6 +84,7 @@ pub fn scan_mp3s(root: &Path) -> Result<Vec<PathBuf>, String> {
         }
     }
 
+    out.sort();
     Ok(out)
 }
 
