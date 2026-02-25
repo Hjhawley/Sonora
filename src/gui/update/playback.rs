@@ -1,5 +1,5 @@
 //! gui/update/playback.rs
-//! GUI ↔ playback engine bridge (NO rodio usage)
+//! bridge between GUI and playback engine
 
 use iced::Task;
 
@@ -26,7 +26,7 @@ pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
     // 1) Drain into a local vec while holding ONLY the receiver borrow.
     let mut drained: Vec<PlayerEvent> = Vec::new();
     {
-        let mut rx = rx_cell.borrow_mut();
+        let rx = rx_cell.borrow_mut();
         while let Ok(ev) = rx.try_recv() {
             drained.push(ev);
         }
@@ -186,6 +186,7 @@ pub(crate) fn seek(state: &mut Sonora, ratio: f32) -> Task<Message> {
     let target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
 
     controller.send(PlayerCommand::Seek(target_ms));
+    // Optimistic UI update; engine will confirm via Started/Position.
     state.position_ms = target_ms.min(dur_ms);
 
     Task::none()
@@ -204,10 +205,14 @@ pub(crate) fn set_volume(state: &mut Sonora, volume: f32) -> Task<Message> {
 
 pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Message> {
     match event {
-        PlayerEvent::Started { path, duration_ms } => {
+        PlayerEvent::Started {
+            path,
+            duration_ms,
+            start_ms,
+        } => {
             state.is_playing = true;
             state.duration_ms = duration_ms;
-            state.position_ms = 0;
+            state.position_ms = start_ms; // <-- don't smash seeks back to 0
             state.status = format!("Now playing: {}", path.display());
         }
         PlayerEvent::Paused => state.is_playing = false,

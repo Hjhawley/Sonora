@@ -1,13 +1,12 @@
 //! core/playback/engine.rs
 
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
 use std::time::Duration;
 
-use rodio::{Decoder, OutputStream, OutputStreamBuilder, Sink, Source};
+use rodio::{OutputStream, OutputStreamBuilder, Sink};
 
+use super::decoder::open_source_at_ms;
 use super::{PlayerCommand, PlayerEvent};
 
 const TICK_MS: u64 = 200;
@@ -19,6 +18,12 @@ pub struct PlaybackEngine {
     sink: Option<Sink>,
     current_path: Option<PathBuf>,
     current_duration_ms: Option<u64>,
+
+    // UI position = base_position_ms + sink.get_pos()
+    base_position_ms: u64,
+
+    // Track current volume so seek/play can apply it to new sinks
+    volume: f32,
 
     // Prevent duplicate TrackEnded events for the same track.
     ended_emitted: bool,
@@ -36,6 +41,8 @@ impl PlaybackEngine {
             sink: None,
             current_path: None,
             current_duration_ms: None,
+            base_position_ms: 0,
+            volume: 1.0,
             ended_emitted: false,
             event_tx,
         })
@@ -69,7 +76,7 @@ impl PlaybackEngine {
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
         match cmd {
             PlayerCommand::PlayFile(path) => {
-                if let Err(e) = self.play_file(path) {
+                if let Err(e) = self.play_file_at(path, 0, true) {
                     let _ = self.event_tx.send(PlayerEvent::Error(e));
                 }
             }
@@ -90,25 +97,26 @@ impl PlaybackEngine {
                 let _ = self.event_tx.send(PlayerEvent::Stopped);
             }
             PlayerCommand::Seek(ms) => {
-                if let Some(sink) = &self.sink {
-                    if sink.try_seek(Duration::from_millis(ms)).is_err() {
-                        let _ = self.event_tx.send(PlayerEvent::Error(
-                            "Seek failed (decoder may not support it)".into(),
-                        ));
-                    } else {
-                        // Allow TrackEnded to fire again later after seeking.
-                        self.ended_emitted = false;
+                let Some(path) = self.current_path.clone() else {
+                    return false;
+                };
 
-                        // update UI immediately instead of waiting for next tick.
-                        let _ = self
-                            .event_tx
-                            .send(PlayerEvent::Position { position_ms: ms });
-                    }
+                // Preserve paused/playing state across seek.
+                let resume_playing = self.sink.as_ref().map(|s| !s.is_paused()).unwrap_or(true);
+
+                if let Err(e) = self.play_file_at(path, ms, resume_playing) {
+                    let _ = self.event_tx.send(PlayerEvent::Error(e));
+                } else {
+                    // Immediate UI feedback (optional; tick will also catch up).
+                    let _ = self
+                        .event_tx
+                        .send(PlayerEvent::Position { position_ms: ms });
                 }
             }
             PlayerCommand::SetVolume(v) => {
+                self.volume = v.clamp(0.0, 1.0);
                 if let Some(sink) = &self.sink {
-                    sink.set_volume(v.clamp(0.0, 1.0));
+                    sink.set_volume(self.volume);
                 }
             }
             PlayerCommand::Shutdown => return true,
@@ -122,7 +130,7 @@ impl PlaybackEngine {
             return;
         };
 
-        let position_ms = sink.get_pos().as_millis() as u64;
+        let position_ms = self.base_position_ms + sink.get_pos().as_millis() as u64;
         let _ = self.event_tx.send(PlayerEvent::Position { position_ms });
 
         if sink.empty() && self.current_path.is_some() && !self.ended_emitted {
@@ -132,29 +140,39 @@ impl PlaybackEngine {
         }
     }
 
-    fn play_file(&mut self, path: PathBuf) -> Result<(), String> {
+    fn play_file_at(
+        &mut self,
+        path: PathBuf,
+        start_ms: u64,
+        resume_playing: bool,
+    ) -> Result<(), String> {
         self.stop_internal();
 
-        // rodio 0.21.x: create sink from the stream's mixer
         let sink = Sink::connect_new(self.stream.mixer());
+        sink.set_volume(self.volume);
 
-        let file = File::open(&path).map_err(|e| format!("Failed to open file: {e}"))?;
-        let reader = BufReader::new(file);
+        let (src, duration_ms) = open_source_at_ms(&path, start_ms)?;
 
-        let decoder = Decoder::new(reader).map_err(|e| format!("Decode failed: {e}"))?;
-        let duration_ms = decoder.total_duration().map(|d| d.as_millis() as u64);
+        sink.append(src);
 
-        sink.append(decoder);
-        sink.play();
+        if resume_playing {
+            sink.play();
+        } else {
+            sink.pause();
+        }
 
         self.current_duration_ms = duration_ms;
         self.current_path = Some(path.clone());
         self.sink = Some(sink);
+
+        self.base_position_ms = start_ms;
         self.ended_emitted = false;
 
-        let _ = self
-            .event_tx
-            .send(PlayerEvent::Started { path, duration_ms });
+        let _ = self.event_tx.send(PlayerEvent::Started {
+            path,
+            duration_ms,
+            start_ms,
+        });
 
         Ok(())
     }
@@ -165,6 +183,7 @@ impl PlaybackEngine {
         }
         self.current_path = None;
         self.current_duration_ms = None;
+        self.base_position_ms = 0;
         self.ended_emitted = false;
     }
 }

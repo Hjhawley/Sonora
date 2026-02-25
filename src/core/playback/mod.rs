@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 
+mod decoder;
 mod engine;
 
 pub use engine::PlaybackEngine;
@@ -37,6 +38,8 @@ pub enum PlayerEvent {
     Started {
         path: PathBuf,
         duration_ms: Option<u64>,
+        /// The position the engine started from (0 normally, nonzero when seeking)
+        start_ms: u64,
     },
     Paused,
     Resumed,

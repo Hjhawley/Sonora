@@ -7,3 +7,6 @@ edition = "2024"
 iced = { version = "0.14", features = ["image", "tokio"] }
 id3 = "1.16.3"
 rodio = "0.21.1"
+
+# Symphonia: demux + decode + seek
+symphonia = { version = "0.5.5", features = ["mp3", "flac", "wav", "ogg", "vorbis", "aac", "isomp4"] }
