@@ -1,5 +1,9 @@
 //! core/playback/decoder.rs
 //! Audio decoding utilities (Symphonia) -> rodio::Source.
+//!
+//! Robust seeking strategy:
+//! 1) Try Symphonia demuxer seek (coarse, timestamp-based).
+//! 2) If seek undershoots (or fails), decode-skip the remaining delta.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -45,64 +49,119 @@ pub fn open_source_at_ms(
         .ok_or_else(|| "No supported audio track found.".to_string())?;
 
     let track_id = track.id;
-
-    // Clone codec params so we can seek (mutable borrow of format) without borrow conflicts.
     let codec_params = track.codec_params.clone();
+    let time_base = codec_params.time_base;
 
-    // Duration: prefer time_base + n_frames if available.
     let duration_ms = duration_from_params(codec_params.time_base, codec_params.n_frames);
 
-    // Build decoder (may be recreated after seek).
     let mut decoder = symphonia::default::get_codecs()
         .make(&codec_params, &DecoderOptions::default())
         .map_err(|e| format!("Decoder init failed: {e}"))?;
 
-    // If requested, seek before we start decoding.
+    // If requested, seek before decoding. If we undershoot, we’ll decode-skip.
+    let mut skip_ms: u64 = 0;
+
     if start_ms > 0 {
-        let time = Time::from(Duration::from_millis(start_ms));
-        let seek_to = SeekTo::Time {
-            time,
-            track_id: Some(track_id),
-        };
+        let requested_time = Time::from(Duration::from_millis(start_ms));
 
-        format
-            .seek(SeekMode::Accurate, seek_to)
-            .map_err(|e| format!("Seek failed: {e}"))?;
+        if let Some(tb) = time_base {
+            let required_ts = tb.calc_timestamp(requested_time);
 
-        // After seek, safest is to reset decoder state by recreating it.
-        decoder = symphonia::default::get_codecs()
-            .make(&codec_params, &DecoderOptions::default())
-            .map_err(|e| format!("Decoder re-init failed after seek: {e}"))?;
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[DECODER] request start_ms={} => required_ts={} (time_base={:?})",
+                start_ms, required_ts, tb
+            );
+
+            match format.seek(
+                SeekMode::Coarse,
+                SeekTo::TimeStamp {
+                    ts: required_ts,
+                    track_id, // <-- symphonia 0.5.5 expects u32 here
+                },
+            ) {
+                Ok(seeked) => {
+                    let actual_time = tb.calc_time(seeked.actual_ts);
+                    let actual_ms = time_to_ms(actual_time);
+
+                    #[cfg(debug_assertions)]
+                    eprintln!(
+                        "[DECODER] seek ok: required_ts={} actual_ts={} => actual_ms={} (requested_ms={})",
+                        seeked.required_ts, seeked.actual_ts, actual_ms, start_ms
+                    );
+
+                    // If coarse seek lands before requested time, decode-skip remainder.
+                    skip_ms = start_ms.saturating_sub(actual_ms);
+
+                    // Recreate decoder after seek for clean state.
+                    decoder = symphonia::default::get_codecs()
+                        .make(&codec_params, &DecoderOptions::default())
+                        .map_err(|e| format!("Decoder re-init failed after seek: {e}"))?;
+                }
+                Err(e) => {
+                    #[cfg(debug_assertions)]
+                    eprintln!("[DECODER] seek failed, will decode-skip: {e}");
+                    skip_ms = start_ms;
+                }
+            }
+        } else {
+            #[cfg(debug_assertions)]
+            eprintln!("[DECODER] no time_base; trying time seek else decode-skip");
+
+            match format.seek(
+                SeekMode::Coarse,
+                SeekTo::Time {
+                    time: requested_time,
+                    track_id: Some(track_id), // <-- symphonia 0.5.5 expects Option<u32>
+                },
+            ) {
+                Ok(_seeked) => {
+                    decoder = symphonia::default::get_codecs()
+                        .make(&codec_params, &DecoderOptions::default())
+                        .map_err(|e| format!("Decoder re-init failed after seek: {e}"))?;
+                    skip_ms = 0;
+                }
+                Err(e) => {
+                    #[cfg(debug_assertions)]
+                    eprintln!("[DECODER] time seek failed, decode-skip: {e}");
+                    skip_ms = start_ms;
+                }
+            }
+        }
     }
 
-    let src = SymphoniaSource::new(path.to_path_buf(), format, decoder, track_id)?;
+    let src = SymphoniaSource::new(path.to_path_buf(), format, decoder, track_id, skip_ms)?;
     Ok((src, duration_ms))
 }
 
 fn duration_from_params(time_base: Option<TimeBase>, n_frames: Option<u64>) -> Option<u64> {
     let tb = time_base?;
     let frames = n_frames?;
-
     let t = tb.calc_time(frames);
-    // Time is { seconds: u64, frac: f64 } in symphonia 0.5.x.
-    let ms = (t.seconds as f64 * 1000.0) + (t.frac * 1000.0);
-    Some(ms.round() as u64)
+    Some(time_to_ms(t))
 }
 
-/// A streaming rodio Source backed by Symphonia.
+fn time_to_ms(t: Time) -> u64 {
+    let ms = (t.seconds as f64 * 1000.0) + (t.frac * 1000.0);
+    ms.round() as u64
+}
+
 pub struct SymphoniaSource {
-    _path: PathBuf, // kept for debugging
+    _path: PathBuf,
     format: Box<dyn FormatReader>,
     decoder: Box<dyn Decoder>,
     track_id: u32,
 
-    // Output format for rodio
     sample_rate: u32,
     channels: u16,
 
-    // Interleaved f32 samples ready to be yielded
     out: Vec<f32>,
     out_pos: usize,
+
+    // Decode-skip support (remaining interleaved samples to skip)
+    skip_ms: u64,
+    skip_samples_remaining: u64,
+    skip_initialized: bool,
 
     ended: bool,
 }
@@ -113,6 +172,7 @@ impl SymphoniaSource {
         format: Box<dyn FormatReader>,
         decoder: Box<dyn Decoder>,
         track_id: u32,
+        skip_ms: u64,
     ) -> Result<Self, String> {
         let mut this = Self {
             _path: path,
@@ -123,6 +183,9 @@ impl SymphoniaSource {
             channels: 2,
             out: Vec::new(),
             out_pos: 0,
+            skip_ms,
+            skip_samples_remaining: 0,
+            skip_initialized: false,
             ended: false,
         };
 
@@ -130,6 +193,40 @@ impl SymphoniaSource {
         let _ = this.fill_out_buffer();
 
         Ok(this)
+    }
+
+    fn ensure_skip_initialized(&mut self) {
+        if self.skip_initialized {
+            return;
+        }
+        self.skip_initialized = true;
+
+        if self.skip_ms == 0 {
+            self.skip_samples_remaining = 0;
+            return;
+        }
+
+        let frames_to_skip =
+            ((self.skip_ms as f64) * (self.sample_rate as f64) / 1000.0).ceil() as u64;
+        self.skip_samples_remaining = frames_to_skip * self.channels as u64;
+
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "[DECODER] init decode-skip: skip_ms={} => frames={} => samples={}",
+            self.skip_ms, frames_to_skip, self.skip_samples_remaining
+        );
+    }
+
+    fn apply_skip_to_current_buffer(&mut self) {
+        if self.skip_samples_remaining == 0 {
+            return;
+        }
+
+        let available = self.out.len() as u64;
+        let skip_now = self.skip_samples_remaining.min(available) as usize;
+
+        self.out_pos = skip_now;
+        self.skip_samples_remaining -= skip_now as u64;
     }
 
     fn fill_out_buffer(&mut self) -> Result<(), String> {
@@ -158,56 +255,72 @@ impl SymphoniaSource {
                 continue;
             }
 
-            let decoded = match self.decoder.decode(&packet) {
-                Ok(d) => d,
-                Err(SymphoniaError::IoError(_)) => {
-                    self.ended = true;
-                    return Ok(());
-                }
-                Err(SymphoniaError::DecodeError(_)) => {
-                    // Corrupt packet; skip.
-                    continue;
-                }
-                Err(SymphoniaError::ResetRequired) => {
-                    self.decoder.reset();
-                    continue;
-                }
-                Err(e) => return Err(format!("Decode error: {e}")),
-            };
-
-            match decoded {
-                AudioBufferRef::F32(buf) => {
-                    // NOTE: buf is Cow<AudioBuffer<f32>>; methods are from Signal trait.
-                    self.sample_rate = buf.spec().rate;
-                    self.channels = buf.spec().channels.count() as u16;
-
-                    let frames = buf.frames();
-                    let chans = buf.spec().channels.count();
-
-                    self.out.reserve(frames * chans);
-                    for f in 0..frames {
-                        for c in 0..chans {
-                            self.out.push(buf.chan(c)[f]);
-                        }
+            // ---- IMPORTANT: keep decoded + its borrows inside this block ----
+            let (sr, ch, mut samples): (u32, u16, Vec<f32>) = {
+                let decoded = match self.decoder.decode(&packet) {
+                    Ok(d) => d,
+                    Err(SymphoniaError::IoError(_)) => {
+                        self.ended = true;
+                        return Ok(());
                     }
-                    return Ok(());
+                    Err(SymphoniaError::DecodeError(_)) => continue,
+                    Err(SymphoniaError::ResetRequired) => {
+                        self.decoder.reset();
+                        continue;
+                    }
+                    Err(e) => return Err(format!("Decode error: {e}")),
+                };
+
+                match decoded {
+                    AudioBufferRef::F32(buf) => {
+                        let sr = buf.spec().rate;
+                        let ch = buf.spec().channels.count() as u16;
+                        let frames = buf.frames();
+                        let chans = buf.spec().channels.count();
+
+                        let mut out = Vec::with_capacity(frames * chans);
+                        for f in 0..frames {
+                            for c in 0..chans {
+                                out.push(buf.chan(c)[f]);
+                            }
+                        }
+                        (sr, ch, out)
+                    }
+                    other => {
+                        let spec =
+                            SignalSpec::new(other.spec().rate, other.spec().channels.clone());
+                        let sr = spec.rate;
+                        let ch = spec.channels.count() as u16;
+
+                        let frames = other.frames();
+                        let chans = spec.channels.count();
+
+                        let mut sbuf = SampleBuffer::<f32>::new(frames as u64, spec);
+                        sbuf.copy_interleaved_ref(other);
+
+                        let mut out = Vec::with_capacity(frames * chans);
+                        out.extend_from_slice(sbuf.samples());
+                        (sr, ch, out)
+                    }
                 }
-                other => {
-                    let spec = SignalSpec::new(other.spec().rate, other.spec().channels.clone());
-                    self.sample_rate = spec.rate;
-                    self.channels = spec.channels.count() as u16;
+            };
+            // ---- decoded dropped here; decoder borrow released ----
 
-                    let frames = other.frames();
-                    let chans = spec.channels.count();
-
-                    let mut sbuf = SampleBuffer::<f32>::new(frames as u64, spec);
-                    sbuf.copy_interleaved_ref(other);
-
-                    self.out.reserve(frames * chans);
-                    self.out.extend_from_slice(sbuf.samples());
-                    return Ok(());
-                }
+            // If decoder hit EOF-ish via IoError above, end cleanly.
+            if samples.is_empty() {
+                self.ended = true;
+                return Ok(());
             }
+
+            self.sample_rate = sr;
+            self.channels = ch;
+
+            self.out.append(&mut samples);
+            self.out_pos = 0;
+
+            self.ensure_skip_initialized();
+            self.apply_skip_to_current_buffer();
+            return Ok(());
         }
     }
 }
@@ -224,7 +337,7 @@ impl Iterator for SymphoniaSource {
                 self.ended = true;
                 return None;
             }
-            if self.out.is_empty() && self.ended {
+            if self.out_pos >= self.out.len() && self.ended {
                 return None;
             }
         }
@@ -236,7 +349,6 @@ impl Iterator for SymphoniaSource {
 }
 
 impl Source for SymphoniaSource {
-    // rodio 0.21 uses current_span_len (not current_frame_len).
     fn current_span_len(&self) -> Option<usize> {
         None
     }

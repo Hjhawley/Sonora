@@ -76,27 +76,46 @@ impl PlaybackEngine {
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
         match cmd {
             PlayerCommand::PlayFile(path) => {
+                #[cfg(debug_assertions)]
+                eprintln!("[ENGINE] PlayFile {}", path.display());
+
                 if let Err(e) = self.play_file_at(path, 0, true) {
                     let _ = self.event_tx.send(PlayerEvent::Error(e));
                 }
             }
             PlayerCommand::Pause => {
+                #[cfg(debug_assertions)]
+                eprintln!("[ENGINE] Pause");
+
                 if let Some(sink) = &self.sink {
                     sink.pause();
                     let _ = self.event_tx.send(PlayerEvent::Paused);
                 }
             }
             PlayerCommand::Resume => {
+                #[cfg(debug_assertions)]
+                eprintln!("[ENGINE] Resume");
+
                 if let Some(sink) = &self.sink {
                     sink.play();
                     let _ = self.event_tx.send(PlayerEvent::Resumed);
                 }
             }
             PlayerCommand::Stop => {
+                #[cfg(debug_assertions)]
+                eprintln!("[ENGINE] Stop");
+
                 self.stop_internal();
                 let _ = self.event_tx.send(PlayerEvent::Stopped);
             }
             PlayerCommand::Seek(ms) => {
+                #[cfg(debug_assertions)]
+                eprintln!(
+                    "[ENGINE] Seek(ms={}) current_path={:?}",
+                    ms,
+                    self.current_path.as_ref().map(|p| p.display().to_string())
+                );
+
                 let Some(path) = self.current_path.clone() else {
                     return false;
                 };
@@ -115,11 +134,18 @@ impl PlaybackEngine {
             }
             PlayerCommand::SetVolume(v) => {
                 self.volume = v.clamp(0.0, 1.0);
+                #[cfg(debug_assertions)]
+                eprintln!("[ENGINE] SetVolume {}", self.volume);
+
                 if let Some(sink) = &self.sink {
                     sink.set_volume(self.volume);
                 }
             }
-            PlayerCommand::Shutdown => return true,
+            PlayerCommand::Shutdown => {
+                #[cfg(debug_assertions)]
+                eprintln!("[ENGINE] Shutdown");
+                return true;
+            }
         }
 
         false
@@ -151,6 +177,7 @@ impl PlaybackEngine {
         let sink = Sink::connect_new(self.stream.mixer());
         sink.set_volume(self.volume);
 
+        // decoder is responsible for seek + any fallback skipping.
         let (src, duration_ms) = open_source_at_ms(&path, start_ms)?;
 
         sink.append(src);
@@ -167,6 +194,14 @@ impl PlaybackEngine {
 
         self.base_position_ms = start_ms;
         self.ended_emitted = false;
+
+        #[cfg(debug_assertions)]
+        eprintln!(
+            "[ENGINE] Started path={} start_ms={} duration_ms={:?}",
+            path.display(),
+            start_ms,
+            duration_ms
+        );
 
         let _ = self.event_tx.send(PlayerEvent::Started {
             path,

@@ -1,5 +1,5 @@
 //! gui/update/playback.rs
-//! bridge between GUI and playback engine
+//! GUI ↔ playback engine bridge (NO rodio usage)
 
 use iced::Task;
 
@@ -23,16 +23,15 @@ pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     };
 
-    // 1) Drain into a local vec while holding ONLY the receiver borrow.
     let mut drained: Vec<PlayerEvent> = Vec::new();
     {
-        let rx = rx_cell.borrow_mut();
+        // Receiver::try_recv only needs &self, so borrow() is enough.
+        let rx = rx_cell.borrow();
         while let Ok(ev) = rx.try_recv() {
             drained.push(ev);
         }
-    } // receiver borrow dropped here
+    }
 
-    // 2) Now freely mutate state.
     for ev in drained {
         let _ = handle_event(state, ev);
     }
@@ -63,6 +62,9 @@ pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
 
     let path = row.path.clone();
 
+    #[cfg(debug_assertions)]
+    eprintln!("[GUI] PlayTrack index={} path={}", index, path.display());
+
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
     // Playback should not hijack selection.
@@ -70,6 +72,7 @@ pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
     state.is_playing = true;
     state.position_ms = 0;
     state.duration_ms = None;
+    state.seek_preview_ratio = None;
     state.status = format!("Playing: {}", path.display());
 
     Task::none()
@@ -132,6 +135,7 @@ pub(crate) fn stop(state: &mut Sonora) -> Task<Message> {
     state.is_playing = false;
     state.position_ms = 0;
     state.duration_ms = None;
+    state.seek_preview_ratio = None;
 
     Task::none()
 }
@@ -141,10 +145,7 @@ pub(crate) fn next(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    // Drive playback from now_playing; fall back to selection; else 0.
     let cur = state.now_playing.or(state.selected_track).unwrap_or(0);
-
-    // Wrap at end
     let next = if cur + 1 >= state.tracks.len() {
         0
     } else {
@@ -160,8 +161,6 @@ pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
     }
 
     let cur = state.now_playing.or(state.selected_track).unwrap_or(0);
-
-    // Wrap at beginning
     let prev = if cur == 0 {
         state.tracks.len() - 1
     } else {
@@ -171,8 +170,35 @@ pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
     play_track(state, prev)
 }
 
-pub(crate) fn seek(state: &mut Sonora, ratio: f32) -> Task<Message> {
+/// Seek slider changed: preview only (UI updates, no engine command).
+pub(crate) fn seek_preview(state: &mut Sonora, ratio: f32) -> Task<Message> {
     let Some(dur_ms) = state.duration_ms else {
+        return Task::none();
+    };
+
+    let ratio = ratio.clamp(0.0, 1.0);
+    state.seek_preview_ratio = Some(ratio);
+
+    let target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
+    state.position_ms = target_ms.min(dur_ms);
+
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[GUI] SeekPreview ratio={} dur_ms={} => preview_ms={}",
+        ratio, dur_ms, state.position_ms
+    );
+
+    Task::none()
+}
+
+/// Seek slider released: commit the last preview to the engine.
+pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
+    let Some(dur_ms) = state.duration_ms else {
+        state.seek_preview_ratio = None;
+        return Task::none();
+    };
+
+    let Some(ratio) = state.seek_preview_ratio.take() else {
         return Task::none();
     };
 
@@ -182,12 +208,23 @@ pub(crate) fn seek(state: &mut Sonora, ratio: f32) -> Task<Message> {
         return Task::none();
     };
 
-    let ratio = ratio.clamp(0.0, 1.0);
-    let target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
+    let mut target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
+
+    // Seeking to *exactly* the end tends to produce EOF weirdness; clamp slightly.
+    if target_ms >= dur_ms {
+        target_ms = dur_ms.saturating_sub(1);
+    }
+
+    #[cfg(debug_assertions)]
+    eprintln!(
+        "[GUI] SeekCommit ratio={} dur_ms={} => target_ms={}",
+        ratio, dur_ms, target_ms
+    );
 
     controller.send(PlayerCommand::Seek(target_ms));
+
     // Optimistic UI update; engine will confirm via Started/Position.
-    state.position_ms = target_ms.min(dur_ms);
+    state.position_ms = target_ms;
 
     Task::none()
 }
@@ -204,6 +241,24 @@ pub(crate) fn set_volume(state: &mut Sonora, volume: f32) -> Task<Message> {
 }
 
 pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Message> {
+    #[cfg(debug_assertions)]
+    match &event {
+        PlayerEvent::Started {
+            path,
+            duration_ms,
+            start_ms,
+        } => {
+            eprintln!(
+                "[GUI] Event Started path={} duration_ms={:?} start_ms={}",
+                path.display(),
+                duration_ms,
+                start_ms
+            );
+        }
+        PlayerEvent::Error(e) => eprintln!("[GUI] Event Error {}", e),
+        _ => {}
+    }
+
     match event {
         PlayerEvent::Started {
             path,
@@ -212,7 +267,8 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
         } => {
             state.is_playing = true;
             state.duration_ms = duration_ms;
-            state.position_ms = start_ms; // <-- don't smash seeks back to 0
+            state.position_ms = start_ms;
+            state.seek_preview_ratio = None;
             state.status = format!("Now playing: {}", path.display());
         }
         PlayerEvent::Paused => state.is_playing = false,
@@ -221,11 +277,18 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             state.is_playing = false;
             state.position_ms = 0;
             state.duration_ms = None;
+            state.seek_preview_ratio = None;
         }
-        PlayerEvent::Position { position_ms } => state.position_ms = position_ms,
+        PlayerEvent::Position { position_ms } => {
+            // If user is dragging the seek slider, don't fight them.
+            if state.seek_preview_ratio.is_none() {
+                state.position_ms = position_ms;
+            }
+        }
         PlayerEvent::TrackEnded => {
             state.is_playing = false;
             state.position_ms = 0;
+            state.seek_preview_ratio = None;
         }
         PlayerEvent::Error(err) => {
             state.status = format!("Playback error: {err}");

@@ -36,7 +36,6 @@ pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, M
 }
 
 /// If `handle` exists, show it; otherwise show the placeholder.
-/// Returns an Element so callers can embed it in `row![]` easily.
 pub(crate) fn cover_thumb(
     handle: Option<&iced::widget::image::Handle>,
     size: f32,
@@ -89,7 +88,6 @@ pub(crate) fn num_pair_row<'a>(
 /// Bottom playback bar.
 pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let engine_ready = state.playback.is_some();
-
     let play_label = if state.is_playing { "Pause" } else { "Play" };
 
     let prev_btn = if engine_ready {
@@ -110,22 +108,30 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         button("⏭")
     };
 
-    // --- seek slider (ratio 0..=1) ---
+    // --- seek slider ---
     let pos = state.position_ms;
     let dur = state.duration_ms.unwrap_or(0);
 
     let seek_enabled = engine_ready && dur > 0;
 
-    let seek_val = if dur > 0 {
+    let live_ratio = if dur > 0 {
         (pos as f32 / dur as f32).clamp(0.0, 1.0)
     } else {
         0.0
     };
 
+    // If the user is currently dragging, show their preview value.
+    let shown_ratio = state.seek_preview_ratio.unwrap_or(live_ratio);
+
     let seek = if seek_enabled {
-        slider(0.0..=1.0, seek_val, Message::SeekTo).width(Length::Fill)
+        slider(0.0..=1.0, shown_ratio, Message::SeekTo)
+            .step(0.001) // <-- CRITICAL: default step is 1.0 in iced 0.14
+            .on_release(Message::SeekCommit)
+            .width(Length::Fill)
     } else {
-        slider(0.0..=1.0, seek_val, |_| Message::Noop).width(Length::Fill)
+        slider(0.0..=1.0, shown_ratio, |_| Message::Noop)
+            .step(0.001)
+            .width(Length::Fill)
     };
 
     let time_text = if dur > 0 {
@@ -138,9 +144,13 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let vol = state.volume.clamp(0.0, 1.0);
 
     let vol_slider = if engine_ready {
-        slider(0.0..=1.0, vol, Message::SetVolume).width(Length::Fixed(140.0))
+        slider(0.0..=1.0, vol, Message::SetVolume)
+            .step(0.01) // <-- fixes “mute/unmute” behavior
+            .width(Length::Fixed(140.0))
     } else {
-        slider(0.0..=1.0, vol, |_| Message::Noop).width(Length::Fixed(140.0))
+        slider(0.0..=1.0, vol, |_| Message::Noop)
+            .step(0.01)
+            .width(Length::Fixed(140.0))
     };
 
     // --- now playing label ---

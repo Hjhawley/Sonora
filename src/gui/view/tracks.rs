@@ -84,10 +84,9 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         .spacing(10)
         .align_y(Alignment::Center);
 
-        // - First click selects (shows inspector)
-        // - Clicking an already-selected row plays it
+        // First click selects; clicking the already-selected row plays it.
         let msg = if is_primary_selected {
-            Message::ActivateTrack(i)
+            Message::PlayTrack(i)
         } else {
             Message::SelectTrack(i)
         };

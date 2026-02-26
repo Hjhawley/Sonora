@@ -1,4 +1,6 @@
 //! gui/update/mod.rs
+//! Update logic (router).
+//! Mutates state in response to `Message` events.
 
 use iced::Task;
 
@@ -32,19 +34,20 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SelectAlbum(key) => selection::select_album(state, key),
         Message::SelectTrack(i) => selection::select_track(state, i),
 
-        // Play without changing selection
-        Message::ActivateTrack(i) => playback::play_track(state, i),
-
         // Cover
         Message::CoverLoaded(i, handle) => selection::cover_loaded(state, i, handle),
 
-        // Playback (UI -> commands)
+        // Playback
         Message::PlaySelected => playback::play_selected(state),
         Message::PlayTrack(i) => playback::play_track(state, i),
         Message::TogglePlayPause => playback::toggle_play_pause(state),
         Message::Next => playback::next(state),
         Message::Prev => playback::prev(state),
-        Message::SeekTo(ratio) => playback::seek(state, ratio),
+
+        // Seek: preview vs commit
+        Message::SeekTo(ratio) => playback::seek_preview(state, ratio),
+        Message::SeekCommit => playback::seek_commit(state),
+
         Message::SetVolume(vol) => playback::set_volume(state, vol),
 
         // Playback (optional path)

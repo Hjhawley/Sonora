@@ -25,7 +25,6 @@ pub(crate) enum ViewMode {
 }
 
 /// Grouping key for Album View.
-/// We prefer ALBUM ARTIST (TPE2), with fallback handled in view.rs.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
     pub album_artist: String,
@@ -129,15 +128,17 @@ pub(crate) struct Sonora {
     pub playback: Option<PlaybackController>,
 
     /// Receiver of engine events (polled via TickPlayback).
-    /// RefCell gives us interior mutability without infecting the whole app with Mutex.
     pub playback_events: Option<RefCell<Receiver<PlayerEvent>>>,
 
-    /// Track index currently “now playing” (into `tracks`)
     pub now_playing: Option<usize>,
     pub is_playing: bool,
     pub position_ms: u64,
     pub duration_ms: Option<u64>,
     pub volume: f32,
+
+    /// While dragging the seek slider, keep a UI-only preview ratio here.
+    /// On release, we commit it (send PlayerCommand::Seek).
+    pub seek_preview_ratio: Option<f32>,
 
     // UI
     pub view_mode: ViewMode,
@@ -179,6 +180,8 @@ impl Default for Sonora {
             duration_ms: None,
             volume: 1.0,
 
+            seek_preview_ratio: None,
+
             view_mode: ViewMode::Tracks,
             selected_album: None,
 
@@ -216,12 +219,7 @@ pub(crate) enum Message {
     // View + selection
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
-
-    /// Select/highlight a track (updates inspector). Never starts playback.
     SelectTrack(usize),
-
-    /// "Activate" a track (play it). Does not change selection.
-    ActivateTrack(usize),
 
     // Cover art
     CoverLoaded(usize, Option<iced::widget::image::Handle>),
@@ -232,7 +230,13 @@ pub(crate) enum Message {
     TogglePlayPause,
     Next,
     Prev,
+
+    /// Seek slider changed (preview only; does NOT command the engine)
     SeekTo(f32),
+
+    /// Seek slider released (commit the seek)
+    SeekCommit,
+
     SetVolume(f32),
 
     // (optional path; still supported)
