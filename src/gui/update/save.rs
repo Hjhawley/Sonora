@@ -1,10 +1,25 @@
 //! gui/update/save.rs
+//!
+//! Turn the InspectorDraft into actual on-disk tag writes (single or batch).
+//!
+//! - Save targets are identified by `TrackId`, not `Vec` indices.
+//! - We still update `state.tracks` (display order Vec), but we locate rows by id.
+//!
+//! Safety features (kept):
+//! - If batch saving, auto-KEEP fields that still match the primary track’s original value
+//!   (prevents “album select all” from overwriting everything by accident).
+//!
+//! Intentional behavior:
+//! - We never mutate `state.tracks` until after a successful write + re-read.
+//! - On write failure, UI remains consistent with disk.
+
 use iced::Task;
 
 use super::super::state::{KEEP_SENTINEL, Message, Sonora};
 use super::super::util::{parse_optional_i32, parse_optional_u32};
 use super::inspector::load_inspector_from_selection;
 use super::util::spawn_blocking;
+use crate::core::types::{TrackId, TrackRow};
 
 pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
     if state.scanning || state.saving {
@@ -16,41 +31,36 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    // Determine which indices we are saving to.
-    let mut indices: Vec<usize> = if !state.selected_tracks.is_empty() {
+    // Determine which track IDs we are saving to.
+    let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
-    } else if let Some(i) = state.selected_track {
-        vec![i]
+    } else if let Some(id) = state.selected_track {
+        vec![id]
     } else {
         vec![]
     };
 
-    indices.sort_unstable();
-    indices.dedup();
+    ids.sort_unstable();
+    ids.dedup();
 
-    if indices.is_empty() {
+    if ids.is_empty() {
         state.status = "Select a track first.".to_string();
         return Task::none();
     }
 
-    // -------------------------
+    //
     // Safety: if batch saving, auto-KEEP fields that still match primary track
     // (prevents “album select all” from overwriting everything by accident)
-    // -------------------------
-    let is_batch = indices.len() > 1;
-    let primary_idx = state.selected_track;
-    let primary_row = primary_idx.and_then(|i| state.tracks.get(i));
+    //
+    let is_batch = ids.len() > 1;
+    let primary_id = state.selected_track;
+    let primary_row: Option<&TrackRow> = primary_id.and_then(|id| state.track_by_id(id));
 
     // Build rows to write
-    let mut rows_to_write = Vec::with_capacity(indices.len());
-    for &i in &indices {
-        if i >= state.tracks.len() {
-            state.status = "Invalid selection (rescan?).".to_string();
-            return Task::none();
-        }
-
-        match build_row_from_inspector_for_index(state, i, is_batch, primary_row) {
-            Ok(r) => rows_to_write.push((i, r)),
+    let mut rows_to_write: Vec<(TrackId, TrackRow)> = Vec::with_capacity(ids.len());
+    for &id in &ids {
+        match build_row_from_inspector_for_id(state, id, is_batch, primary_row) {
+            Ok(r) => rows_to_write.push((id, r)),
             Err(e) => {
                 state.status = e;
                 return Task::none();
@@ -59,49 +69,56 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
     }
 
     state.saving = true;
-    state.status = if indices.len() == 1 {
+    state.status = if ids.len() == 1 {
         "Writing tags to file...".to_string()
     } else {
-        format!("Writing tags to {} files...", indices.len())
+        format!("Writing tags to {} files...", ids.len())
     };
 
     let write_extended = state.show_extended;
 
     // Single-file path
     if rows_to_write.len() == 1 {
-        let (i, row_to_write) = rows_to_write.remove(0);
+        let (id, row_to_write) = rows_to_write.remove(0);
 
         return Task::perform(
             spawn_blocking(move || {
                 crate::core::tags::write_track_row(&row_to_write, write_extended).and_then(|_| {
-                    let (r, failed) = crate::core::tags::read_track_row(row_to_write.path.clone());
+                    let (mut r, failed) =
+                        crate::core::tags::read_track_row(row_to_write.path.clone());
                     if failed {
                         Err("Wrote tags, but failed to re-read them".to_string())
                     } else {
+                        // Preserve identity in the re-read row.
+                        r.id = row_to_write.id;
                         Ok(r)
                     }
                 })
             }),
-            move |res| Message::SaveFinished(i, res),
+            move |res| Message::SaveFinished(id, res),
         );
     }
 
     // Batch path
     Task::perform(
         spawn_blocking(move || {
-            let mut out: Vec<(usize, crate::core::types::TrackRow)> = Vec::new();
+            let mut out: Vec<(TrackId, TrackRow)> = Vec::new();
 
-            for (i, row) in rows_to_write {
+            for (id, row) in rows_to_write {
                 crate::core::tags::write_track_row(&row, write_extended)
-                    .map_err(|e| format!("Write failed for index {i}: {e}"))?;
+                    .map_err(|e| format!("Write failed for track {id}: {e}"))?;
 
-                let (r, failed) = crate::core::tags::read_track_row(row.path.clone());
+                let (mut r, failed) = crate::core::tags::read_track_row(row.path.clone());
                 if failed {
                     return Err(format!(
-                        "Wrote tags for index {i}, but failed to re-read them"
+                        "Wrote tags for track {id}, but failed to re-read them"
                     ));
                 }
-                out.push((i, r));
+
+                // Preserve identity in the re-read row.
+                r.id = row.id;
+
+                out.push((id, r));
             }
 
             Ok(out)
@@ -112,17 +129,23 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
 
 pub(crate) fn save_finished(
     state: &mut Sonora,
-    i: usize,
-    result: Result<crate::core::types::TrackRow, String>,
+    id: TrackId,
+    result: Result<TrackRow, String>,
 ) -> Task<Message> {
     state.saving = false;
 
     match result {
         Ok(new_row) => {
-            if i < state.tracks.len() {
-                state.tracks[i] = new_row;
+            if let Some(slot) = state.track_by_id_mut(id) {
+                *slot = new_row;
                 load_inspector_from_selection(state);
+            } else {
+                // Track vanished from current UI list (rescan?), but the write succeeded.
+                state.status = "Tags written, but selection changed (rescan?).".to_string();
+                state.inspector_dirty = false;
+                return Task::none();
             }
+
             state.inspector_dirty = false;
             state.status = "Tags written to file.".to_string();
         }
@@ -136,15 +159,15 @@ pub(crate) fn save_finished(
 
 pub(crate) fn save_finished_batch(
     state: &mut Sonora,
-    result: Result<Vec<(usize, crate::core::types::TrackRow)>, String>,
+    result: Result<Vec<(TrackId, TrackRow)>, String>,
 ) -> Task<Message> {
     state.saving = false;
 
     match result {
         Ok(rows) => {
-            for (i, row) in rows {
-                if i < state.tracks.len() {
-                    state.tracks[i] = row;
+            for (id, row) in rows {
+                if let Some(slot) = state.track_by_id_mut(id) {
+                    *slot = row;
                 }
             }
 
@@ -166,19 +189,18 @@ pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
     Task::none()
 }
 
-// -------------------------
+//
 // Batch-aware row builder
-// -------------------------
+//
 
-fn build_row_from_inspector_for_index(
+fn build_row_from_inspector_for_id(
     state: &Sonora,
-    i: usize,
+    id: TrackId,
     is_batch: bool,
-    primary_row: Option<&crate::core::types::TrackRow>,
-) -> Result<crate::core::types::TrackRow, String> {
+    primary_row: Option<&TrackRow>,
+) -> Result<TrackRow, String> {
     let mut out = state
-        .tracks
-        .get(i)
+        .track_by_id(id)
         .cloned()
         .ok_or_else(|| "Invalid selection (rescan?).".to_string())?;
 
@@ -370,11 +392,14 @@ fn build_row_from_inspector_for_index(
     Ok(out)
 }
 
-/// Applies a text input to an Option<String> field.
-/// - If input is "<keep>" => do nothing
-/// - Else if batch mode and input matches the primary track's original value => do nothing
-/// - Else if trimmed empty => set None (delete tag)
-/// - Else => set Some(trimmed)
+/// Applies a text input to an `Option<String>` field.
+///
+/// Rules:
+/// - If input is `<keep>` → do nothing
+/// - Else if batch mode and input matches the primary track's original value → do nothing
+///   (interprets “unchanged inspector default” as KEEP)
+/// - Else if trimmed empty → set `None` (delete tag)
+/// - Else → set `Some(trimmed)`
 fn apply_opt_keep_batch(
     dst: &mut Option<String>,
     input: &str,
@@ -390,13 +415,13 @@ fn apply_opt_keep_batch(
     if is_batch {
         if let Some(pv) = primary_value {
             if t == pv.trim() {
-                // User likely did not intend to overwrite all; treat as KEEP.
+                // User likely didn't intend to overwrite all; treat as KEEP.
                 return;
             }
-        } else if t.is_empty() {
-            // Primary had None; empty would still mean "delete".
-            // Fall through and delete if user explicitly left it empty.
         }
+        // If primary_value is None:
+        // - We do NOT auto-keep: user may be intentionally deleting/blanking.
+        // - So we fall through to the normal empty → None semantics.
     }
 
     if t.is_empty() {

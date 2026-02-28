@@ -1,5 +1,13 @@
 //! gui/view/albums.rs
 //! Album view (grouping + album list + detail).
+//!
+//! - Album grouping stores `TrackId` (stable), not Vec indices.
+//! - Cover cache is keyed by `TrackId`.
+//! - Track row click emits `Message::SelectTrack(track_id)`.
+//!
+//! Notes:
+//! - We still group from the current `state.tracks` Vec for display.
+//! - If a TrackRow has `id: None` (pre-DB), it is skipped to avoid broken messages.
 
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};
@@ -12,11 +20,14 @@ use super::constants::{
     TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
 use super::widgets::{cover_thumb, fmt_duration};
+use crate::core::types::TrackId;
 
 pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
-    let mut groups: BTreeMap<AlbumKey, Vec<usize>> = BTreeMap::new();
+    let mut groups: BTreeMap<AlbumKey, Vec<TrackId>> = BTreeMap::new();
 
-    for (i, t) in state.tracks.iter().enumerate() {
+    for t in state.tracks.iter() {
+        let Some(id) = t.id else { continue };
+
         let album_artist = t
             .album_artist
             .clone()
@@ -34,21 +45,21 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
                 album,
             })
             .or_default()
-            .push(i);
+            .push(id);
     }
 
     let selected_key: Option<AlbumKey> = state.selected_album.clone();
 
-    // For list display: (key, track_count, representative_track_index)
-    // IMPORTANT: do not invent a rep index (like 0) when an album has no tracks.
-    let albums: Vec<(AlbumKey, usize, usize)> = groups
+    // For list display: (key, track_count, representative_track_id)
+    // IMPORTANT: do not invent a rep id when an album has no tracks.
+    let albums: Vec<(AlbumKey, usize, TrackId)> = groups
         .iter()
-        .filter_map(|(k, v)| v.first().map(|&rep| (k.clone(), v.len(), rep)))
+        .filter_map(|(k, v)| v.first().copied().map(|rep| (k.clone(), v.len(), rep)))
         .collect();
 
     let list = build_album_list(state, selected_key.clone(), albums);
 
-    let selected_payload: Option<(AlbumKey, Vec<usize>)> = state
+    let selected_payload: Option<(AlbumKey, Vec<TrackId>)> = state
         .selected_album
         .as_ref()
         .and_then(|k| groups.get(k).map(|v| (k.clone(), v.clone())));
@@ -66,11 +77,11 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
 fn build_album_list(
     state: &Sonora,
     selected: Option<AlbumKey>,
-    albums: Vec<(AlbumKey, usize, usize)>,
+    albums: Vec<(AlbumKey, usize, TrackId)>,
 ) -> iced::widget::Scrollable<'static, Message> {
     let mut col: Column<'static, Message> = column![].spacing(ALBUM_LIST_SPACING);
 
-    for (key, count, rep_idx) in albums {
+    for (key, count, rep_id) in albums {
         let is_selected = selected.as_ref() == Some(&key);
 
         let title_line = if is_selected {
@@ -81,7 +92,7 @@ fn build_album_list(
         let artist_line = key.album_artist.clone();
         let count_line = format!("{count} tracks");
 
-        let cover = cover_thumb(state.cover_cache.get(&rep_idx), ALBUM_ROW_COVER);
+        let cover = cover_thumb(state.cover_cache.get(&rep_id), ALBUM_ROW_COVER);
 
         let row_cells = row![
             cover,
@@ -109,26 +120,27 @@ fn build_album_list(
 
 fn build_album_detail(
     state: &Sonora,
-    selected: Option<(AlbumKey, Vec<usize>)>,
+    selected: Option<(AlbumKey, Vec<TrackId>)>,
 ) -> iced::widget::Container<'_, Message> {
-    let Some((key, track_idxs)) = selected else {
+    let Some((key, track_ids)) = selected else {
         return container(text("Select an album to view tracks.")).padding(12);
     };
 
-    if track_idxs.is_empty() {
+    if track_ids.is_empty() {
         return container(text("Album has no tracks (weird).")).padding(12);
     }
 
-    // Defensive: filter out any out-of-range indices (shouldn't happen, but avoids panics).
-    let mut idxs: Vec<usize> = track_idxs
+    // Resolve ids → indices defensively (avoid panics if the list changed).
+    let mut idxs: Vec<usize> = track_ids
         .into_iter()
-        .filter(|&i| i < state.tracks.len())
+        .filter_map(|id| state.index_of_id(id))
         .collect();
 
     if idxs.is_empty() {
         return container(text("Album tracks are out of range (rescan?).")).padding(12);
     }
 
+    // Sort by (disc, track, title) for a sane album ordering.
     idxs.sort_by(|&a, &b| {
         let ta = &state.tracks[a];
         let tb = &state.tracks[b];
@@ -146,6 +158,7 @@ fn build_album_detail(
 
     let first_idx = idxs[0];
     let first = &state.tracks[first_idx];
+    let first_id = first.id;
 
     let year = first
         .year
@@ -153,7 +166,11 @@ fn build_album_detail(
         .unwrap_or_else(|| "-".into());
     let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
-    let big_cover = cover_thumb(state.cover_cache.get(&first_idx), COVER_BIG);
+    // Big cover: use the first track as the representative.
+    let big_cover = first_id
+        .and_then(|id| state.cover_cache.get(&id))
+        .map(|h| cover_thumb(Some(h), COVER_BIG))
+        .unwrap_or_else(|| cover_thumb(None, COVER_BIG));
 
     let header = row![
         big_cover,
@@ -173,6 +190,8 @@ fn build_album_detail(
 
     for &i in &idxs {
         let t = &state.tracks[i];
+        let Some(id) = t.id else { continue };
+
         let n = t
             .track_no
             .map(|n| n.to_string())
@@ -181,12 +200,16 @@ fn build_album_detail(
         let artist = t.artist.clone().unwrap_or_else(|| "Unknown".into());
         let dur = fmt_duration(t.duration_ms);
 
-        let is_primary = state.selected_track == Some(i);
-        let is_selected = state.selected_tracks.contains(&i);
+        let is_primary = state.selected_track == Some(id);
+        let is_selected = state.selected_tracks.contains(&id);
+        let is_now_playing = state.now_playing == Some(id);
 
-        let marker = if is_primary {
+        // Marker rules:
+        // - ▶ for now playing (strongest signal)
+        // - ● for selected (including the primary selection)
+        let marker = if is_now_playing {
             "▶"
-        } else if is_selected {
+        } else if is_selected || is_primary {
             "●"
         } else {
             ""
@@ -209,7 +232,7 @@ fn build_album_detail(
                 .height(Length::Fixed(TRACK_ROW_H))
                 .width(Length::Fill),
         )
-        .on_press(Message::SelectTrack(i));
+        .on_press(Message::SelectTrack(id));
 
         list = list.push(row_widget);
     }

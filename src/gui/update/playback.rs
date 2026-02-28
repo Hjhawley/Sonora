@@ -1,10 +1,18 @@
 //! gui/update/playback.rs
-//! GUI ↔ playback engine bridge (NO rodio usage)
+//! GUI-playback engine bridge
+//!
+//! - `now_playing` and selection are `TrackId`, not Vec indices.
+//! - `PlayTrack` accepts a `TrackId` and looks up the current row by id.
+//!
+//! Design goals:
+//! - GUI never touches rodio/symphonia directly.
+//! - All IO / timing is driven by the engine + TickPlayback polling.
 
 use iced::Task;
 
 use super::super::state::{Message, Sonora};
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
+use crate::core::types::TrackId;
 
 fn ensure_engine(state: &mut Sonora) {
     if state.playback.is_some() && state.playback_events.is_some() {
@@ -40,14 +48,14 @@ pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
-    let Some(i) = state.selected_track else {
+    let Some(id) = state.selected_track else {
         state.status = "No track selected.".into();
         return Task::none();
     };
-    play_track(state, i)
+    play_track(state, id)
 }
 
-pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
+pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     ensure_engine(state);
 
     let Some(controller) = &state.playback else {
@@ -55,20 +63,20 @@ pub(crate) fn play_track(state: &mut Sonora, index: usize) -> Task<Message> {
         return Task::none();
     };
 
-    let Some(row) = state.tracks.get(index) else {
-        state.status = "Play failed: track index out of range.".into();
+    let Some(row) = state.track_by_id(id) else {
+        state.status = "Play failed: selected track not found (rescan?).".into();
         return Task::none();
     };
 
     let path = row.path.clone();
 
     #[cfg(debug_assertions)]
-    eprintln!("[GUI] PlayTrack index={} path={}", index, path.display());
+    eprintln!("[GUI] PlayTrack id={} path={}", id, path.display());
 
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
     // Playback should not hijack selection.
-    state.now_playing = Some(index);
+    state.now_playing = Some(id);
     state.is_playing = true;
     state.position_ms = 0;
     state.duration_ms = None;
@@ -145,14 +153,31 @@ pub(crate) fn next(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    let cur = state.now_playing.or(state.selected_track).unwrap_or(0);
-    let next = if cur + 1 >= state.tracks.len() {
-        0
-    } else {
-        cur + 1
+    // Prefer "now playing", else selection, else first track.
+    let anchor_id = state
+        .now_playing
+        .or(state.selected_track)
+        .or_else(|| state.tracks.first().and_then(|t| t.id));
+
+    let Some(cur_id) = anchor_id else {
+        state.status = "No playable track found (missing ids?).".into();
+        return Task::none();
     };
 
-    play_track(state, next)
+    // Convert current id to index, then move by index in the current display order.
+    let cur_idx = state.index_of_id(cur_id).unwrap_or(0);
+    let next_idx = if cur_idx + 1 >= state.tracks.len() {
+        0
+    } else {
+        cur_idx + 1
+    };
+
+    let Some(next_id) = state.tracks.get(next_idx).and_then(|t| t.id) else {
+        state.status = "Next failed: track missing id.".into();
+        return Task::none();
+    };
+
+    play_track(state, next_id)
 }
 
 pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
@@ -160,14 +185,29 @@ pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    let cur = state.now_playing.or(state.selected_track).unwrap_or(0);
-    let prev = if cur == 0 {
-        state.tracks.len() - 1
-    } else {
-        cur - 1
+    let anchor_id = state
+        .now_playing
+        .or(state.selected_track)
+        .or_else(|| state.tracks.first().and_then(|t| t.id));
+
+    let Some(cur_id) = anchor_id else {
+        state.status = "No playable track found (missing ids?).".into();
+        return Task::none();
     };
 
-    play_track(state, prev)
+    let cur_idx = state.index_of_id(cur_id).unwrap_or(0);
+    let prev_idx = if cur_idx == 0 {
+        state.tracks.len() - 1
+    } else {
+        cur_idx - 1
+    };
+
+    let Some(prev_id) = state.tracks.get(prev_idx).and_then(|t| t.id) else {
+        state.status = "Prev failed: track missing id.".into();
+        return Task::none();
+    };
+
+    play_track(state, prev_id)
 }
 
 /// Seek slider changed: preview only (UI updates, no engine command).
@@ -265,6 +305,8 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             duration_ms,
             start_ms,
         } => {
+            // "Started" is the engine telling us it successfully began playback.
+            // We don't infer identity from path here yet.
             state.is_playing = true;
             state.duration_ms = duration_ms;
             state.position_ms = start_ms;

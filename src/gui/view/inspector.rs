@@ -1,15 +1,21 @@
 //! gui/view/inspector.rs
 //! Right panel: metadata inspector/editor.
+//!
+//! - Selection is TrackId-based.
+//! - We resolve id -> TrackRow on demand for display.
 
 use iced::Alignment;
 use iced::Length;
-use iced::widget::{Column, Row};
-use iced::widget::{button, checkbox, column, container, row, scrollable, text, text_input};
+use iced::widget::Row;
+use iced::widget::{
+    Column, button, checkbox, column, container, row, scrollable, text, text_input,
+};
 
 use super::super::state::{InspectorField as Field, Message, Sonora};
 use super::widgets::fmt_duration;
 
 use super::constants::LABEL_W;
+use crate::core::types::TrackId;
 
 /// Field row that appends " (mixed)" to the label when mixed.
 fn field_row_mixed<'a>(
@@ -79,18 +85,18 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
         .padding(12);
     }
 
-    // Primary index for the header/path: prefer selected_track, else first selected_tracks.
-    let primary_idx = state
+    // Primary id for the header/path: prefer selected_track, else first selected_tracks.
+    let primary_id: Option<TrackId> = state
         .selected_track
         .or_else(|| state.selected_tracks.iter().next().copied());
 
-    let Some(i) = primary_idx else {
+    let Some(id) = primary_id else {
         return container(text("No selection.")).padding(12);
     };
 
-    if i >= state.tracks.len() {
+    let Some(i) = state.index_of_id(id) else {
         return container(text("Invalid selection (rescan?).")).padding(12);
-    }
+    };
 
     let t = &state.tracks[i];
     let path_line = format!("{}", t.path.display());
@@ -124,26 +130,24 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     ]
     .spacing(6);
 
-    // IMPORTANT FIX:
-    // "mixed" label should reflect the selection, not whether the textbox currently equals "<keep>".
     let core: Column<'_, Message> = column![
         field_row_mixed(
             "Title",
             &state.inspector.title,
             is_mixed(state, Field::Title),
-            |s| { Message::InspectorChanged(Field::Title, s) }
+            |s| Message::InspectorChanged(Field::Title, s)
         ),
         field_row_mixed(
             "Artist",
             &state.inspector.artist,
             is_mixed(state, Field::Artist),
-            |s| { Message::InspectorChanged(Field::Artist, s) }
+            |s| Message::InspectorChanged(Field::Artist, s)
         ),
         field_row_mixed(
             "Album",
             &state.inspector.album,
             is_mixed(state, Field::Album),
-            |s| { Message::InspectorChanged(Field::Album, s) }
+            |s| Message::InspectorChanged(Field::Album, s)
         ),
         field_row_mixed(
             "Album Artist",
@@ -179,13 +183,13 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             "Year",
             &state.inspector.year,
             is_mixed(state, Field::Year),
-            |s| { Message::InspectorChanged(Field::Year, s) }
+            |s| Message::InspectorChanged(Field::Year, s)
         ),
         field_row_mixed(
             "Genre",
             &state.inspector.genre,
             is_mixed(state, Field::Genre),
-            |s| { Message::InspectorChanged(Field::Genre, s) }
+            |s| Message::InspectorChanged(Field::Genre, s)
         ),
         field_row_mixed(
             "Grouping",
@@ -214,8 +218,6 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     ]
     .spacing(8);
 
-    // If this checkbox constructor doesn't compile in your iced version,
-    // switch to: checkbox("Show more tags", state.show_extended).on_toggle(...)
     let toggle = checkbox(state.show_extended)
         .label("Show more tags")
         .on_toggle(Message::ToggleExtended);
@@ -226,7 +228,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
                 "Date",
                 &state.inspector.date,
                 is_mixed(state, Field::Date),
-                |s| { Message::InspectorChanged(Field::Date, s) }
+                |s| Message::InspectorChanged(Field::Date, s)
             ),
             field_row_mixed(
                 "Conductor",
@@ -256,13 +258,13 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
                 "BPM",
                 &state.inspector.bpm,
                 is_mixed(state, Field::Bpm),
-                |s| { Message::InspectorChanged(Field::Bpm, s) }
+                |s| Message::InspectorChanged(Field::Bpm, s)
             ),
             field_row_mixed(
                 "Key",
                 &state.inspector.key,
                 is_mixed(state, Field::Key),
-                |s| { Message::InspectorChanged(Field::Key, s) }
+                |s| Message::InspectorChanged(Field::Key, s)
             ),
             field_row_mixed(
                 "Mood",
@@ -280,7 +282,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
                 "ISRC",
                 &state.inspector.isrc,
                 is_mixed(state, Field::Isrc),
-                |s| { Message::InspectorChanged(Field::Isrc, s) }
+                |s| Message::InspectorChanged(Field::Isrc, s)
             ),
             field_row_mixed(
                 "Encoder",

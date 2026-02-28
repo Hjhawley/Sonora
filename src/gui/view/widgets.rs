@@ -154,7 +154,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     };
 
     // --- now playing label ---
-    let now_playing = match state.now_playing.and_then(|i| state.tracks.get(i)) {
+    let now_playing = match state.now_playing.and_then(|id| state.track_by_id(id)) {
         Some(t) => t
             .title
             .clone()

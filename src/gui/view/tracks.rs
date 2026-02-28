@@ -1,5 +1,8 @@
 //! gui/view/tracks.rs
 //! Track view (table list).
+//!
+//! - Row identity is `TrackId`, not `Vec` index.
+//! - We still iterate `state.tracks` in display order, but clicks emit messages by id.
 
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};
@@ -38,13 +41,17 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
 
     let mut col = column![header].spacing(TRACK_LIST_SPACING);
 
-    for (i, t) in state.tracks.iter().enumerate() {
+    for t in state.tracks.iter() {
+        let Some(id) = t.id else {
+            continue;
+        };
+
         // Selection (inspector)
-        let is_selected = state.selected_tracks.contains(&i);
-        let is_primary_selected = state.selected_track == Some(i);
+        let is_selected = state.selected_tracks.contains(&id);
+        let is_primary_selected = state.selected_track == Some(id);
 
         // Playback
-        let is_now_playing = state.now_playing == Some(i);
+        let is_now_playing = state.now_playing == Some(id);
 
         // ▶ means "now playing". ● means "selected".
         let marker = if is_now_playing {
@@ -86,9 +93,9 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
 
         // First click selects; clicking the already-selected row plays it.
         let msg = if is_primary_selected {
-            Message::PlayTrack(i)
+            Message::PlayTrack(id)
         } else {
-            Message::SelectTrack(i)
+            Message::SelectTrack(id)
         };
 
         let row_widget = mouse_area(

@@ -1,7 +1,17 @@
 //! gui/state.rs
 //!
-//! GUI state + messages.
-//! Pure data definitions used by update.rs + view.rs.
+//! GUI state + message vocabulary.
+//!
+//! This file is intentionally *data-only*:
+//! - no view code (rendering)
+//! - no update code (state transitions)
+//! - no blocking IO
+//!
+//! If you’re looking for “how things change”, that lives in `gui/update/*`.
+//! If you’re looking for “how things look”, that lives in `gui/view/*`.
+//!
+//! - **Selection, now playing, and cover cache are keyed by `TrackId`**
+//! - We still keep `tracks: Vec<TrackRow>` for display order, but we do NOT treat indices as identity.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -9,12 +19,16 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
-use crate::core::types::TrackRow;
+use crate::core::types::{TrackId, TrackRow};
 
-/// Dev convenience: if user didn’t add roots, scan /test
+/// Dev convenience: if user didn’t add roots, scan `/test`.
 pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 
 /// What the inspector shows when selected files disagree.
+///
+/// Semantics:
+/// - In multi-select, if values differ, the field becomes `<keep>`
+/// - On save, `<keep>` means “leave the file’s existing value as-is”
 pub(crate) const KEEP_SENTINEL: &str = "<keep>";
 
 /// Albums vs Tracks list mode.
@@ -25,13 +39,20 @@ pub(crate) enum ViewMode {
 }
 
 /// Grouping key for Album View.
+///
+/// Important: This is a *UI grouping key*, not a DB key.
+/// It’s derived from `TrackRow` values using your grouping rules.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
     pub album_artist: String,
     pub album: String,
 }
 
-/// Draft editable metadata (strings, so user can type anything).
+/// Draft editable metadata (strings so the user can type anything).
+///
+/// This is an edit buffer, not the source of truth.
+/// - Selection determines what we load into it.
+/// - Save builds a "desired TrackRow" per target from this draft.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
     // Standard (visible by default)
@@ -71,6 +92,8 @@ pub(crate) struct InspectorDraft {
 }
 
 /// Identifies which inspector field changed.
+///
+/// This is a stable identifier used by view → update messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum InspectorField {
     Title,
@@ -107,8 +130,14 @@ pub(crate) enum InspectorField {
     Copyright,
 }
 
-/// App state
+/// App state.
+///
+/// Notes:
+/// - `tracks` is display order; do not store identity as an index elsewhere.
+/// - `TrackId` may be missing (`None`) pre-DB; selection logic should be robust.
+///   (But once DB arrives, `None` should be treated as a bug.)
 pub(crate) struct Sonora {
+    // Status + lifecycle
     pub status: String,
     pub scanning: bool,
 
@@ -116,21 +145,24 @@ pub(crate) struct Sonora {
     pub root_input: String,
     pub roots: Vec<PathBuf>,
 
-    // Library
+    // Library (display order)
     pub tracks: Vec<TrackRow>,
 
-    /// Cache: track index -> decoded cover handle (for quick UI rendering)
-    pub cover_cache: BTreeMap<usize, iced::widget::image::Handle>,
+    /// Cache: `TrackId` → decoded cover image handle (for quick UI rendering).
+    ///
+    /// Why key by id?
+    /// - Vec indices shift on rescans/sorts
+    /// - id stays stable once DB arrives
+    pub cover_cache: BTreeMap<TrackId, iced::widget::image::Handle>,
 
-    // --------------------
     // Playback (core handle + UI state)
-    // --------------------
     pub playback: Option<PlaybackController>,
 
     /// Receiver of engine events (polled via TickPlayback).
     pub playback_events: Option<RefCell<Receiver<PlayerEvent>>>,
 
-    pub now_playing: Option<usize>,
+    /// Which track is currently loaded/playing (stable id, not index).
+    pub now_playing: Option<TrackId>,
     pub is_playing: bool,
     pub position_ms: u64,
     pub duration_ms: Option<u64>,
@@ -140,21 +172,49 @@ pub(crate) struct Sonora {
     /// On release, we commit it (send PlayerCommand::Seek).
     pub seek_preview_ratio: Option<f32>,
 
-    // UI
+    // Selection / navigation
     pub view_mode: ViewMode,
     pub selected_album: Option<AlbumKey>,
-    pub selected_tracks: BTreeSet<usize>,
-    pub selected_track: Option<usize>,
-    pub last_clicked_track: Option<usize>,
+
+    /// Multi-selection set of track ids (stable).
+    pub selected_tracks: BTreeSet<TrackId>,
+
+    /// Primary selection (stable id). Used as the "inspector anchor".
+    pub selected_track: Option<TrackId>,
+
+    /// For shift-click range selection (stable id).
+    pub last_clicked_track: Option<TrackId>,
 
     // Inspector
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
     pub saving: bool,
+
+    /// For each field: are selected tracks "mixed" for this value?
     pub inspector_mixed: BTreeMap<InspectorField, bool>,
 
     // UI toggles
     pub show_extended: bool,
+}
+
+impl Sonora {
+    /// Find the current display index for a given `TrackId`.
+    ///
+    /// This is a helper for bridging "stable identity" to "current ordering".
+    /// Use it sparingly; prefer operating on ids in update logic.
+    pub fn index_of_id(&self, id: TrackId) -> Option<usize> {
+        self.tracks.iter().position(|t| t.id == Some(id))
+    }
+
+    /// Get a reference to a track by id.
+    pub fn track_by_id(&self, id: TrackId) -> Option<&TrackRow> {
+        self.tracks.iter().find(|t| t.id == Some(id))
+    }
+
+    /// Get a mutable reference to a track by id.
+    pub fn track_by_id_mut(&mut self, id: TrackId) -> Option<&mut TrackRow> {
+        self.tracks.iter_mut().find(|t| t.id == Some(id))
+    }
 }
 
 impl Default for Sonora {
@@ -200,6 +260,8 @@ impl Default for Sonora {
 }
 
 /// Message = “something happened”.
+///
+/// GUI emits these from view code. Update code consumes them.
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Noop,
@@ -219,14 +281,19 @@ pub(crate) enum Message {
     // View + selection
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
-    SelectTrack(usize),
+
+    /// Select a track by stable id (not Vec index).
+    SelectTrack(TrackId),
 
     // Cover art
-    CoverLoaded(usize, Option<iced::widget::image::Handle>),
+    CoverLoaded(TrackId, Option<iced::widget::image::Handle>),
 
     // Playback controls (from UI)
     PlaySelected,
-    PlayTrack(usize),
+
+    /// Play a track by stable id (not Vec index).
+    PlayTrack(TrackId),
+
     TogglePlayPause,
     Next,
     Prev,
@@ -248,7 +315,12 @@ pub(crate) enum Message {
 
     // Actions
     SaveInspectorToFile,
-    SaveFinished(usize, Result<TrackRow, String>),
-    SaveFinishedBatch(Result<Vec<(usize, TrackRow)>, String>),
+
+    /// Save result for a single target track id.
+    SaveFinished(TrackId, Result<TrackRow, String>),
+
+    /// Save result for a batch.
+    SaveFinishedBatch(Result<Vec<(TrackId, TrackRow)>, String>),
+
     RevertInspector,
 }

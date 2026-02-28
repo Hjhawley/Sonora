@@ -1,5 +1,9 @@
 //! core/tags/read.rs
 //! Read ID3 tags from an MP3 and convert them into a `TrackRow`.
+//!
+//! - Tag reading does NOT assign identity.
+//! - `TrackRow.id` is set by the scanning/DB layer (temporary id now; DB id later).
+//! - So this module always returns `id: None`.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
@@ -52,6 +56,9 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
     let extra_text = collect_extra_text(tag);
 
     TrackRow {
+        // Identity is assigned by scan/DB layer, not tag read.
+        id: None,
+
         path,
 
         title: tag
@@ -117,6 +124,9 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
 
 fn empty_row(path: PathBuf) -> TrackRow {
     TrackRow {
+        // Identity is assigned by scan/DB layer, not tag read.
+        id: None,
+
         path,
 
         title: None,

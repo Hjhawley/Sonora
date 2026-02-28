@@ -1,10 +1,19 @@
 //! gui/update/selection.rs
+//!
+//! Selection + view-mode transitions.
+//!
+//! - All selection is keyed by `TrackId` (stable), not `Vec` indices.
+//! - We still *render* from `state.tracks: Vec<TrackRow>`, but we never store identity as an index.
+//!
+//! Cover art cache is also keyed by `TrackId`.
+
 use iced::Task;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use super::super::state::{AlbumKey, Message, Sonora, ViewMode};
 use super::inspector::{clear_inspector, load_inspector_from_selection};
 use super::util::spawn_blocking;
+use crate::core::types::{TrackId, TrackRow};
 
 pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message> {
     state.view_mode = mode;
@@ -25,13 +34,7 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
 
     // Toggle collapse
     if state.selected_album.as_ref() == Some(&key) {
-        state.selected_album = None;
-
-        state.selected_track = None;
-        state.selected_tracks.clear();
-        state.last_clicked_track = None;
-
-        clear_inspector(state);
+        clear_selection_and_inspector(state);
         return Task::none();
     }
 
@@ -39,20 +42,21 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     state.selected_album = Some(key.clone());
     state.selected_tracks.clear();
 
-    for (i, t) in state.tracks.iter().enumerate() {
+    for t in state.tracks.iter() {
+        let Some(id) = t.id else { continue };
         let k = album_key_for_track(t);
 
         if k.album_artist == key.album_artist && k.album == key.album {
-            state.selected_tracks.insert(i);
+            state.selected_tracks.insert(id);
         }
     }
 
-    // Choose a stable “primary”
+    // Choose a stable “primary” (BTreeSet keeps a stable order by id)
     state.selected_track = state.selected_tracks.iter().next().copied();
     state.last_clicked_track = state.selected_track;
 
     if state.selected_track.is_some() {
-        // IMPORTANT: load from *selection*, not just track 1
+        // IMPORTANT: load from *selection*, not just the primary.
         load_inspector_from_selection(state);
     } else {
         clear_inspector(state);
@@ -60,20 +64,22 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     }
 
     // Kick off lazy cover load for the primary track (drives album row + big cover)
-    let primary_idx = state.selected_track.unwrap();
-    maybe_load_cover_for_track(state, primary_idx)
+    let primary_id = state.selected_track.unwrap();
+    maybe_load_cover_for_track(state, primary_id)
 }
 
-pub(crate) fn select_track(state: &mut Sonora, index: usize) -> Task<Message> {
-    if index >= state.tracks.len() {
+pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
+    // If the id doesn't exist in the current list, ignore.
+    // (Can happen if messages arrive after a rescan replaced the list.)
+    let Some(idx) = state.index_of_id(id) else {
         return Task::none();
-    }
+    };
 
     // In Album view:
     // - Clicking a track in the currently expanded album should NOT collapse the album.
-    // - Clicking a track outside that album (rare) can collapse it.
+    // - Clicking a track outside that album can collapse it.
     if state.view_mode == ViewMode::Albums {
-        let clicked_key = album_key_for_track(&state.tracks[index]);
+        let clicked_key = album_key_for_track(&state.tracks[idx]);
 
         let keep_album_open = state.selected_album.as_ref().is_some_and(|k| {
             k.album_artist == clicked_key.album_artist && k.album == clicked_key.album
@@ -87,34 +93,38 @@ pub(crate) fn select_track(state: &mut Sonora, index: usize) -> Task<Message> {
         state.selected_album = None;
     }
 
-    // Plain click: replace selection with this single track
+    // Plain click: replace selection with this single track id.
     state.selected_tracks.clear();
-    state.selected_tracks.insert(index);
-    state.selected_track = Some(index);
-    state.last_clicked_track = Some(index);
+    state.selected_tracks.insert(id);
+    state.selected_track = Some(id);
+    state.last_clicked_track = Some(id);
 
     // IMPORTANT: load from selection (works for 1 or N)
     load_inspector_from_selection(state);
 
-    maybe_load_cover_for_track(state, index)
+    maybe_load_cover_for_track(state, id)
 }
 
 pub(crate) fn cover_loaded(
     state: &mut Sonora,
-    index: usize,
+    id: TrackId,
     handle: Option<iced::widget::image::Handle>,
 ) -> Task<Message> {
     if let Some(h) = handle {
-        state.cover_cache.insert(index, h);
+        state.cover_cache.insert(id, h);
     } else {
-        state.cover_cache.remove(&index);
+        state.cover_cache.remove(&id);
     }
     Task::none()
 }
 
 // Helpers
 
-fn album_key_for_track(t: &crate::core::types::TrackRow) -> AlbumKey {
+fn album_key_for_track(t: &TrackRow) -> AlbumKey {
+    // UI grouping rules (MVP):
+    // - prefer album_artist
+    // - fallback to artist
+    // - fallback to "Unknown Artist"
     let album_artist = t
         .album_artist
         .clone()
@@ -132,23 +142,26 @@ fn album_key_for_track(t: &crate::core::types::TrackRow) -> AlbumKey {
     }
 }
 
-fn maybe_load_cover_for_track(state: &mut Sonora, index: usize) -> Task<Message> {
-    if index >= state.tracks.len() {
-        return Task::none();
-    }
-    if state.cover_cache.contains_key(&index) {
+fn maybe_load_cover_for_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
+    // If we already have it, bail.
+    if state.cover_cache.contains_key(&id) {
         return Task::none();
     }
 
-    let path: PathBuf = state.tracks[index].path.clone();
+    // Find the track to get the path.
+    let Some(track) = state.track_by_id(id) else {
+        return Task::none();
+    };
+
+    let path: PathBuf = track.path.clone();
 
     Task::perform(
         spawn_blocking(move || load_cover_handle_from_path(&path)),
-        move |handle| Message::CoverLoaded(index, handle),
+        move |handle| Message::CoverLoaded(id, handle),
     )
 }
 
-fn load_cover_handle_from_path(path: &std::path::Path) -> Option<iced::widget::image::Handle> {
+fn load_cover_handle_from_path(path: &Path) -> Option<iced::widget::image::Handle> {
     let (bytes, _mime) = crate::core::tags::read_embedded_art(path).ok()??;
     Some(iced::widget::image::Handle::from_bytes(bytes))
 }

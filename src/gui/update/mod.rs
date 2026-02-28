@@ -1,6 +1,8 @@
 //! gui/update/mod.rs
 //! Update logic (router).
-//! Mutates state in response to `Message` events.
+//!
+//! route by TrackId, never by Vec index.
+//! This module should stay dumb: it just dispatches messages to the right handler.
 
 use iced::Task;
 
@@ -32,14 +34,14 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         // View + selection
         Message::SetViewMode(mode) => selection::set_view_mode(state, mode),
         Message::SelectAlbum(key) => selection::select_album(state, key),
-        Message::SelectTrack(i) => selection::select_track(state, i),
+        Message::SelectTrack(id) => selection::select_track(state, id),
 
         // Cover
-        Message::CoverLoaded(i, handle) => selection::cover_loaded(state, i, handle),
+        Message::CoverLoaded(id, handle) => selection::cover_loaded(state, id, handle),
 
         // Playback
         Message::PlaySelected => playback::play_selected(state),
-        Message::PlayTrack(i) => playback::play_track(state, i),
+        Message::PlayTrack(id) => playback::play_track(state, id),
         Message::TogglePlayPause => playback::toggle_play_pause(state),
         Message::Next => playback::next(state),
         Message::Prev => playback::prev(state),
@@ -61,7 +63,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         // Save
         Message::SaveInspectorToFile => save::save_inspector_to_file(state),
-        Message::SaveFinished(i, result) => save::save_finished(state, i, result),
+        Message::SaveFinished(id, result) => save::save_finished(state, id, result),
         Message::SaveFinishedBatch(result) => save::save_finished_batch(state, result),
         Message::RevertInspector => save::revert_inspector(state),
     }

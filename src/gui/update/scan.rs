@@ -1,4 +1,11 @@
 //! gui/update/scan.rs
+//! Scan lifecycle + async boundary + selection reset.
+//!
+//! - Scan result rows may not have ids yet.
+//! - We assign temporary TrackId values here so the GUI can operate id-first.
+//!
+//! Once SQLite lands, this becomes "load tracks from DB" instead.
+
 use iced::Task;
 use std::path::PathBuf;
 
@@ -7,6 +14,7 @@ use crate::core;
 use super::super::state::{Message, Sonora, TEST_ROOT};
 use super::selection::clear_selection_and_inspector;
 use super::util::spawn_blocking;
+use crate::core::types::{TrackId, TrackRow};
 
 pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     if state.scanning || state.saving {
@@ -34,12 +42,15 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
 
 pub(crate) fn scan_finished(
     state: &mut Sonora,
-    result: Result<(Vec<crate::core::types::TrackRow>, usize), String>,
+    result: Result<(Vec<TrackRow>, usize), String>,
 ) -> Task<Message> {
     state.scanning = false;
 
     match result {
-        Ok((rows, tag_failures)) => {
+        Ok((mut rows, tag_failures)) => {
+            // Phase 1: ensure every row has a TrackId (temporary, per-scan).
+            assign_temp_ids_if_missing(&mut rows);
+
             state.status = if tag_failures == 0 {
                 format!("Loaded {} tracks", rows.len())
             } else {
@@ -52,7 +63,7 @@ pub(crate) fn scan_finished(
 
             state.tracks = rows;
 
-            // After rescanning, any previous selection is invalid.
+            // New library = old ids/selection are invalid.
             clear_selection_and_inspector(state);
         }
         Err(e) => {
@@ -63,4 +74,21 @@ pub(crate) fn scan_finished(
     }
 
     Task::none()
+}
+
+fn assign_temp_ids_if_missing(rows: &mut [TrackRow]) {
+    // Deterministic and stable within a scan result.
+    // Not stable across rescans (that’s what SQLite will fix).
+    //
+    // IMPORTANT: your TrackId is currently a *type alias* (not a newtype),
+    // so assign by casting, not `TrackId(n)`.
+
+    let mut next: u64 = 1;
+
+    for r in rows.iter_mut() {
+        if r.id.is_none() {
+            r.id = Some(next as TrackId);
+            next += 1;
+        }
+    }
 }

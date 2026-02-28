@@ -1,9 +1,15 @@
 //! gui/update/inspector.rs
+//! Inspector draft state machine + mixed-selection semantics.
+//!
+//! - Selection is stored as TrackId(s).
+//! - We resolve ids -> indices only when we need to read TrackRow(s).
+
 use iced::Task;
 use std::collections::BTreeMap;
 
 use super::super::state::{InspectorField, KEEP_SENTINEL, Message, Sonora};
 use super::super::util::filename_stem;
+use crate::core::types::TrackId;
 
 pub(crate) fn toggle_extended(state: &mut Sonora, v: bool) -> Task<Message> {
     state.show_extended = v;
@@ -78,17 +84,22 @@ pub(crate) fn clear_inspector(state: &mut Sonora) {
 /// - Writes KEEP_SENTINEL into fields that are mixed.
 /// - Clears extended fields (for now) to avoid stale values.
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
-    // Determine which indices are selected
-    let mut idxs: Vec<usize> = if !state.selected_tracks.is_empty() {
+    // Determine which ids are selected
+    let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
-    } else if let Some(i) = state.selected_track {
-        vec![i]
+    } else if let Some(id) = state.selected_track {
+        vec![id]
     } else {
         clear_inspector(state);
         return;
     };
 
-    idxs.retain(|&i| i < state.tracks.len());
+    // Resolve ids -> indices (drop any stale ids)
+    let mut idxs: Vec<usize> = ids
+        .drain(..)
+        .filter_map(|id| state.index_of_id(id))
+        .collect();
+
     if idxs.is_empty() {
         clear_inspector(state);
         return;
