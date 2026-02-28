@@ -1,15 +1,24 @@
 //! core/library.rs
-//! 
-//! Filesystem scanning utilities (read-only)
-//! - Walks folders recursively (visits subfolders too)
-//! - Collects files that end in '.mp3'
-//! - Does NOT read ID3 tags
-//! - Does NOT know anything about the GUI (Iced)
-//! - Does NOT write or modify files
+//!
+//! Filesystem discovery (read-only).
+//!
+//! This module is deliberately "dumb":
+//! - It ONLY walks folders and returns candidate file paths.
+//! - It DOES NOT read tags.
+//! - It DOES NOT decode audio.
+//! - It DOES NOT know about the GUI.
+//! - This is scan pipeline stage (A): discover paths.
 
 use std::path::{Path, PathBuf};
 
 /// Recursively scan a directory tree and return all `.mp3` file paths.
+///
+/// Behavior:
+/// - Root must be a directory (else Err).
+/// - Non-fatal walk errors are skipped (PermissionDenied, NotFound).
+/// - Symlinked directories are NOT traversed (prevents cycles).
+/// - Symlinked files ARE allowed if they ultimately resolve to a file.
+/// - Output is sorted by full path.
 pub fn scan_mp3s(root: &Path) -> Result<Vec<PathBuf>, String> {
     if !root.is_dir() {
         return Err(format!("Not a directory: {}", root.display()));
@@ -63,7 +72,6 @@ pub fn scan_mp3s(root: &Path) -> Result<Vec<PathBuf>, String> {
             if ft.is_symlink() {
                 match std::fs::metadata(&path) {
                     Ok(md) => {
-                        let md: std::fs::Metadata = md;
                         if md.is_file() && is_mp3(&path) {
                             out.push(path);
                         }

@@ -95,7 +95,7 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     };
 
     // Resolve ids -> indices (drop any stale ids)
-    let mut idxs: Vec<usize> = ids
+    let idxs: Vec<usize> = ids
         .drain(..)
         .filter_map(|id| state.index_of_id(id))
         .collect();

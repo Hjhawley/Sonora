@@ -1,10 +1,13 @@
 //! gui/update/scan.rs
 //! Scan lifecycle + async boundary + selection reset.
 //!
-//! - Scan result rows may not have ids yet.
-//! - We assign temporary TrackId values here so the GUI can operate id-first.
+//! - Use the explicit core scan pipeline boundary:
+//!   (A) core::scan_paths(roots) -> Vec<PathBuf>
+//!   (B) core::read_tracks(paths) -> (Vec<TrackRow>, failures)
 //!
-//! Once SQLite lands, this becomes "load tracks from DB" instead.
+//! Still no SQLite:
+//! - We assign temporary TrackId values here so the GUI can operate id-first.
+//! - Once SQLite lands, this becomes "load tracks from DB" instead.
 
 use iced::Task;
 use std::path::PathBuf;
@@ -35,7 +38,13 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     };
 
     Task::perform(
-        spawn_blocking(move || core::scan_and_read_roots(&roots_to_scan)),
+        spawn_blocking(move || {
+            // Stage A: discover paths (dedup + sorted in core)
+            let paths = core::scan_paths(&roots_to_scan)?;
+            // Stage B: read tags into TrackRows (non-fatal per-file)
+            let (rows, failures) = core::read_tracks(paths);
+            Ok((rows, failures))
+        }),
         Message::ScanFinished,
     )
 }
@@ -48,7 +57,7 @@ pub(crate) fn scan_finished(
 
     match result {
         Ok((mut rows, tag_failures)) => {
-            // Phase 1: ensure every row has a TrackId (temporary, per-scan).
+            // Ensure every row has a TrackId (temporary, per-scan).
             assign_temp_ids_if_missing(&mut rows);
 
             state.status = if tag_failures == 0 {
@@ -79,8 +88,7 @@ pub(crate) fn scan_finished(
 fn assign_temp_ids_if_missing(rows: &mut [TrackRow]) {
     // Deterministic and stable within a scan result.
     // Not stable across rescans (that’s what SQLite will fix).
-    //
-    // IMPORTANT: your TrackId is currently a *type alias* (not a newtype),
+    // TrackId is currently a *type alias* (not a newtype),
     // so assign by casting, not `TrackId(n)`.
 
     let mut next: u64 = 1;
