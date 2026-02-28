@@ -138,6 +138,10 @@ pub(crate) fn save_finished(
         Ok(new_row) => {
             if let Some(slot) = state.track_by_id_mut(id) {
                 *slot = new_row;
+
+                // metadata may have changed album grouping keys -> rebuild caches
+                state.rebuild_library_caches();
+
                 load_inspector_from_selection(state);
             } else {
                 // Track vanished from current UI list (rescan?), but the write succeeded.
@@ -170,6 +174,9 @@ pub(crate) fn save_finished_batch(
                     *slot = row;
                 }
             }
+
+            // batch writes can change album grouping keys -> rebuild caches once
+            state.rebuild_library_caches();
 
             load_inspector_from_selection(state);
 
@@ -395,11 +402,11 @@ fn build_row_from_inspector_for_id(
 /// Applies a text input to an `Option<String>` field.
 ///
 /// Rules:
-/// - If input is `<keep>` → do nothing
-/// - Else if batch mode and input matches the primary track's original value → do nothing
+/// - If input is `<keep>` -> do nothing
+/// - Else if batch mode and input matches the primary track's original value -> do nothing
 ///   (interprets “unchanged inspector default” as KEEP)
-/// - Else if trimmed empty → set `None` (delete tag)
-/// - Else → set `Some(trimmed)`
+/// - Else if trimmed empty -> set `None` (delete tag)
+/// - Else -> set `Some(trimmed)`
 fn apply_opt_keep_batch(
     dst: &mut Option<String>,
     input: &str,
@@ -421,7 +428,7 @@ fn apply_opt_keep_batch(
         }
         // If primary_value is None:
         // - We do NOT auto-keep: user may be intentionally deleting/blanking.
-        // - So we fall through to the normal empty → None semantics.
+        // - So we fall through to the normal empty -> None semantics.
     }
 
     if t.is_empty() {

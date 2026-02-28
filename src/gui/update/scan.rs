@@ -72,6 +72,9 @@ pub(crate) fn scan_finished(
 
             state.tracks = rows;
 
+            // Rebuild id->index and album grouping caches for the new library.
+            state.rebuild_library_caches();
+
             // New library = old ids/selection are invalid.
             clear_selection_and_inspector(state);
         }

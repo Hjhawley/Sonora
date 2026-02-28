@@ -10,7 +10,8 @@
 //! If you’re looking for “how things change”, that lives in `gui/update/*`.
 //! If you’re looking for “how things look”, that lives in `gui/view/*`.
 //!
-//! - **Selection, now playing, and cover cache are keyed by `TrackId`**
+//! Identity rules:
+//! - **Selection, now playing, cover cache, and album grouping are keyed by `TrackId`**
 //! - We still keep `tracks: Vec<TrackRow>` for display order, but we do NOT treat indices as identity.
 
 use std::cell::RefCell;
@@ -93,7 +94,7 @@ pub(crate) struct InspectorDraft {
 
 /// Identifies which inspector field changed.
 ///
-/// This is a stable identifier used by view → update messages.
+/// This is a stable identifier used by view -> update messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum InspectorField {
     Title,
@@ -148,11 +149,20 @@ pub(crate) struct Sonora {
     // Library (display order)
     pub tracks: Vec<TrackRow>,
 
-    /// Cache: `TrackId` → decoded cover image handle (for quick UI rendering).
+    /// Cache: `TrackId` -> current Vec index.
     ///
-    /// Why key by id?
-    /// - Vec indices shift on rescans/sorts
-    /// - id stays stable once DB arrives
+    /// This makes id-first logic fast without repeatedly scanning `tracks`.
+    /// Rebuilt whenever `tracks` is replaced or mutated meaningfully (scan/save).
+    pub track_index: BTreeMap<TrackId, usize>,
+
+    /// Cache: `AlbumKey` -> ordered list of `TrackId`s in that album group.
+    ///
+    /// Why cache?
+    /// - Album grouping is O(n) and was being rebuilt every render.
+    /// - Grouping rules belong to update/scan boundaries, not view.
+    pub album_groups: BTreeMap<AlbumKey, Vec<TrackId>>,
+
+    /// Cache: `TrackId` -> decoded cover image handle (for quick UI rendering).
     pub cover_cache: BTreeMap<TrackId, iced::widget::image::Handle>,
 
     // Playback (core handle + UI state)
@@ -199,21 +209,68 @@ pub(crate) struct Sonora {
 
 impl Sonora {
     /// Find the current display index for a given `TrackId`.
-    ///
-    /// This is a helper for bridging "stable identity" to "current ordering".
-    /// Use it sparingly; prefer operating on ids in update logic.
+    #[inline]
     pub fn index_of_id(&self, id: TrackId) -> Option<usize> {
-        self.tracks.iter().position(|t| t.id == Some(id))
+        self.track_index.get(&id).copied()
     }
 
     /// Get a reference to a track by id.
+    #[inline]
     pub fn track_by_id(&self, id: TrackId) -> Option<&TrackRow> {
-        self.tracks.iter().find(|t| t.id == Some(id))
+        let i = self.index_of_id(id)?;
+        self.tracks.get(i)
     }
 
     /// Get a mutable reference to a track by id.
+    #[inline]
     pub fn track_by_id_mut(&mut self, id: TrackId) -> Option<&mut TrackRow> {
-        self.tracks.iter_mut().find(|t| t.id == Some(id))
+        let i = self.index_of_id(id)?;
+        self.tracks.get_mut(i)
+    }
+
+    /// Rebuild `track_index` and `album_groups` from `tracks`.
+    ///
+    /// Call this whenever `tracks` changes (scan, save, reorder, etc).
+    pub fn rebuild_library_caches(&mut self) {
+        self.track_index.clear();
+        self.album_groups.clear();
+
+        // Stage 1: id -> index
+        for (i, t) in self.tracks.iter().enumerate() {
+            let Some(id) = t.id else { continue };
+            self.track_index.insert(id, i);
+        }
+
+        // Stage 2: album grouping using the same UI rules everywhere
+        for t in self.tracks.iter() {
+            let Some(id) = t.id else { continue };
+
+            let album_artist = t
+                .album_artist
+                .clone()
+                .or_else(|| t.artist.clone())
+                .unwrap_or_else(|| "Unknown Artist".to_string());
+
+            let album = t
+                .album
+                .clone()
+                .unwrap_or_else(|| "Unknown Album".to_string());
+
+            self.album_groups
+                .entry(AlbumKey {
+                    album_artist,
+                    album,
+                })
+                .or_default()
+                .push(id);
+        }
+
+        // Optional: stable intra-album order.
+        // Keep "scan order" by default; the detail view will sort by disc/track/title.
+        // If you want to sort group vectors by display index:
+        // for ids in self.album_groups.values_mut() {
+        //     ids.sort_by_key(|id| self.track_index.get(id).copied().unwrap_or(usize::MAX));
+        // }
     }
 }
 
@@ -229,6 +286,9 @@ impl Default for Sonora {
             roots: Vec::new(),
 
             tracks: Vec::new(),
+
+            track_index: BTreeMap::new(),
+            album_groups: BTreeMap::new(),
             cover_cache: BTreeMap::new(),
 
             playback: Some(playback_controller),

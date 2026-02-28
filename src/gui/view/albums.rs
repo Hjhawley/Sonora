@@ -1,17 +1,12 @@
 //! gui/view/albums.rs
 //! Album view (grouping + album list + detail).
 //!
-//! - Album grouping stores `TrackId` (stable), not Vec indices.
+//! - Album grouping is cached in `state.album_groups` (AlbumKey -> Vec<TrackId>).
 //! - Cover cache is keyed by `TrackId`.
 //! - Track row click emits `Message::SelectTrack(track_id)`.
-//!
-//! Notes:
-//! - We still group from the current `state.tracks` Vec for display.
-//! - If a TrackRow has `id: None` (pre-DB), it is skipped to avoid broken messages.
 
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};
-use std::collections::BTreeMap;
 
 use super::super::state::{AlbumKey, Message, Sonora};
 use super::super::util::filename_stem;
@@ -23,36 +18,11 @@ use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackId;
 
 pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
-    let mut groups: BTreeMap<AlbumKey, Vec<TrackId>> = BTreeMap::new();
-
-    for t in state.tracks.iter() {
-        let Some(id) = t.id else { continue };
-
-        let album_artist = t
-            .album_artist
-            .clone()
-            .or_else(|| t.artist.clone())
-            .unwrap_or_else(|| "Unknown Artist".to_string());
-
-        let album = t
-            .album
-            .clone()
-            .unwrap_or_else(|| "Unknown Album".to_string());
-
-        groups
-            .entry(AlbumKey {
-                album_artist,
-                album,
-            })
-            .or_default()
-            .push(id);
-    }
-
     let selected_key: Option<AlbumKey> = state.selected_album.clone();
 
     // For list display: (key, track_count, representative_track_id)
-    // IMPORTANT: do not invent a rep id when an album has no tracks.
-    let albums: Vec<(AlbumKey, usize, TrackId)> = groups
+    let albums: Vec<(AlbumKey, usize, TrackId)> = state
+        .album_groups
         .iter()
         .filter_map(|(k, v)| v.first().copied().map(|rep| (k.clone(), v.len(), rep)))
         .collect();
@@ -62,7 +32,7 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
     let selected_payload: Option<(AlbumKey, Vec<TrackId>)> = state
         .selected_album
         .as_ref()
-        .and_then(|k| groups.get(k).map(|v| (k.clone(), v.clone())));
+        .and_then(|k| state.album_groups.get(k).map(|v| (k.clone(), v.clone())));
 
     let detail = build_album_detail(state, selected_payload);
 
@@ -130,7 +100,7 @@ fn build_album_detail(
         return container(text("Album has no tracks (weird).")).padding(12);
     }
 
-    // Resolve ids → indices defensively (avoid panics if the list changed).
+    // Resolve ids -> indices defensively (avoid panics if the list changed).
     let mut idxs: Vec<usize> = track_ids
         .into_iter()
         .filter_map(|id| state.index_of_id(id))
@@ -158,7 +128,6 @@ fn build_album_detail(
 
     let first_idx = idxs[0];
     let first = &state.tracks[first_idx];
-    let first_id = first.id;
 
     let year = first
         .year
@@ -167,7 +136,8 @@ fn build_album_detail(
     let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
     // Big cover: use the first track as the representative.
-    let big_cover = first_id
+    let rep_id = first.id;
+    let big_cover = rep_id
         .and_then(|id| state.cover_cache.get(&id))
         .map(|h| cover_thumb(Some(h), COVER_BIG))
         .unwrap_or_else(|| cover_thumb(None, COVER_BIG));
@@ -206,7 +176,7 @@ fn build_album_detail(
 
         // Marker rules:
         // - ▶ for now playing (strongest signal)
-        // - ● for selected (including the primary selection)
+        // - ● for selected
         let marker = if is_now_playing {
             "▶"
         } else if is_selected || is_primary {

@@ -3,9 +3,9 @@
 //! Selection + view-mode transitions.
 //!
 //! - All selection is keyed by `TrackId` (stable), not `Vec` indices.
-//! - We still *render* from `state.tracks: Vec<TrackRow>`, but we never store identity as an index.
+//! - Album expansion uses cached `state.album_groups` (no per-click O(n) scan).
 //!
-//! Cover art cache is also keyed by `TrackId`.
+//! Cover art cache is keyed by `TrackId`.
 
 use iced::Task;
 use std::path::{Path, PathBuf};
@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use super::super::state::{AlbumKey, Message, Sonora, ViewMode};
 use super::inspector::{clear_inspector, load_inspector_from_selection};
 use super::util::spawn_blocking;
-use crate::core::types::{TrackId, TrackRow};
+use crate::core::types::TrackId;
 
 pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message> {
     state.view_mode = mode;
@@ -38,15 +38,12 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         return Task::none();
     }
 
-    // Expanding selects the album AND selects all tracks in that album
     state.selected_album = Some(key.clone());
     state.selected_tracks.clear();
 
-    for t in state.tracks.iter() {
-        let Some(id) = t.id else { continue };
-        let k = album_key_for_track(t);
-
-        if k.album_artist == key.album_artist && k.album == key.album {
+    // Pull ids from cache (fast).
+    if let Some(ids) = state.album_groups.get(&key) {
+        for &id in ids {
             state.selected_tracks.insert(id);
         }
     }
@@ -56,7 +53,6 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     state.last_clicked_track = state.selected_track;
 
     if state.selected_track.is_some() {
-        // IMPORTANT: load from *selection*, not just the primary.
         load_inspector_from_selection(state);
     } else {
         clear_inspector(state);
@@ -70,7 +66,6 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
 
 pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     // If the id doesn't exist in the current list, ignore.
-    // (Can happen if messages arrive after a rescan replaced the list.)
     let Some(idx) = state.index_of_id(id) else {
         return Task::none();
     };
@@ -79,7 +74,7 @@ pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     // - Clicking a track in the currently expanded album should NOT collapse the album.
     // - Clicking a track outside that album can collapse it.
     if state.view_mode == ViewMode::Albums {
-        let clicked_key = album_key_for_track(&state.tracks[idx]);
+        let clicked_key = album_key_for_index(state, idx);
 
         let keep_album_open = state.selected_album.as_ref().is_some_and(|k| {
             k.album_artist == clicked_key.album_artist && k.album == clicked_key.album
@@ -89,7 +84,6 @@ pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
             state.selected_album = None;
         }
     } else {
-        // In Track view, there’s no expanded album concept.
         state.selected_album = None;
     }
 
@@ -99,7 +93,6 @@ pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     state.selected_track = Some(id);
     state.last_clicked_track = Some(id);
 
-    // IMPORTANT: load from selection (works for 1 or N)
     load_inspector_from_selection(state);
 
     maybe_load_cover_for_track(state, id)
@@ -120,11 +113,9 @@ pub(crate) fn cover_loaded(
 
 // Helpers
 
-fn album_key_for_track(t: &TrackRow) -> AlbumKey {
-    // UI grouping rules (MVP):
-    // - prefer album_artist
-    // - fallback to artist
-    // - fallback to "Unknown Artist"
+fn album_key_for_index(state: &Sonora, idx: usize) -> AlbumKey {
+    let t = &state.tracks[idx];
+
     let album_artist = t
         .album_artist
         .clone()

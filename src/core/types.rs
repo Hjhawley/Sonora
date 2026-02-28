@@ -75,16 +75,16 @@ pub struct TrackRow {
     // Composer (ID3: `TCOM`)
     pub composer: Option<String>,
 
-    // Track number (ID3: `TRCK`, "1/12" → 1)
+    // Track number (ID3: `TRCK`, "1/12" -> 1)
     pub track_no: Option<u32>,
 
-    // Total tracks on the album (ID3: `TRCK`, "1/12" → 12)
+    // Total tracks on the album (ID3: `TRCK`, "1/12" -> 12)
     pub track_total: Option<u32>,
 
-    // Disc number (ID3: `TPOS`, "1/2" → 1)
+    // Disc number (ID3: `TPOS`, "1/2" -> 1)
     pub disc_no: Option<u32>,
 
-    // Total discs (ID3: `TPOS`, "1/2" → 2)
+    // Total discs (ID3: `TPOS`, "1/2" -> 2)
     pub disc_total: Option<u32>,
 
     // Year (best effort) (ID3: `TYER` / `TDRC`)
