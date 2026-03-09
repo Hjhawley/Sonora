@@ -1,4 +1,5 @@
 //! core/playback/engine.rs
+//! playback driver
 
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};

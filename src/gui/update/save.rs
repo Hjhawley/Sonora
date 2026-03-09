@@ -2,15 +2,15 @@
 //!
 //! Turn the InspectorDraft into actual on-disk tag writes (single or batch).
 //!
-//! - Save targets are identified by `TrackId`, not `Vec` indices.
-//! - We still update `state.tracks` (display order Vec), but we locate rows by id.
+//! - Save targets are identified by 'TrackId', not 'Vec' indices.
+//! - We still update 'state.tracks' (display order Vec), but we locate rows by id.
 //!
 //! Safety features (kept):
 //! - If batch saving, auto-KEEP fields that still match the primary track’s original value
 //!   (prevents "album select all" from overwriting everything by accident).
 //!
 //! Intentional behavior:
-//! - We never mutate `state.tracks` until after a successful write + re-read.
+//! - We never mutate 'state.tracks' until after a successful write + re-read.
 //! - On write failure, UI remains consistent with disk.
 
 use iced::Task;
@@ -399,14 +399,14 @@ fn build_row_from_inspector_for_id(
     Ok(out)
 }
 
-/// Applies a text input to an `Option<String>` field.
+/// Applies a text input to an 'Option<String>' field.
 ///
 /// Rules:
-/// - If input is `<keep>` -> do nothing
+/// - If input is '<keep>' -> do nothing
 /// - Else if batch mode and input matches the primary track's original value -> do nothing
 ///   (interprets "unchanged inspector default" as KEEP)
-/// - Else if trimmed empty -> set `None` (delete tag)
-/// - Else -> set `Some(trimmed)`
+/// - Else if trimmed empty -> set 'None' (delete tag)
+/// - Else -> set 'Some(trimmed)'
 fn apply_opt_keep_batch(
     dst: &mut Option<String>,
     input: &str,

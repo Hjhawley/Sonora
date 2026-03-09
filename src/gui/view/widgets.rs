@@ -37,7 +37,7 @@ pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, M
     .center_y(Length::Fill)
 }
 
-/// If `handle` exists, show it; otherwise show the placeholder.
+/// If 'handle' exists, show it; otherwise show the placeholder.
 pub(crate) fn cover_thumb(
     handle: Option<&iced::widget::image::Handle>,
     size: f32,

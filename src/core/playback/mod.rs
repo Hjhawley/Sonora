@@ -1,5 +1,4 @@
 //! core/playback/mod.rs
-//! Sonora playback core module.
 
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};

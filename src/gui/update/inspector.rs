@@ -32,7 +32,7 @@ pub(crate) fn inspector_changed(
     Task::none()
 }
 
-/// Update a single inspector string field based on `InspectorField`.
+/// Update a single inspector string field based on 'InspectorField'.
 fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String) {
     match field {
         // Standard (visible by default)

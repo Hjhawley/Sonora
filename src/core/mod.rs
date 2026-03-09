@@ -44,7 +44,7 @@ pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
     Ok(out)
 }
 
-/// Read tags for a set of DB-backed `(TrackId, PathBuf)` pairs.
+/// Read tags for a set of DB-backed '(TrackId, PathBuf)' pairs.
 ///
 /// - Never fails hard per-file: unreadable tags return an "empty-ish" TrackRow
 /// - Ensures every returned row has its DB-owned TrackId attached

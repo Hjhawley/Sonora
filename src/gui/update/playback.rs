@@ -1,8 +1,8 @@
 //! gui/update/playback.rs
 //! GUI-playback engine bridge
 //!
-//! - `now_playing` and selection are `TrackId`, not Vec indices.
-//! - `PlayTrack` accepts a `TrackId` and looks up the current row by id.
+//! - 'now_playing' and selection are 'TrackId', not Vec indices.
+//! - 'PlayTrack' accepts a 'TrackId' and looks up the current row by id.
 //!
 //! Design goals:
 //! - GUI never touches rodio/symphonia directly.

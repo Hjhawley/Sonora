@@ -22,7 +22,7 @@ pub struct DiscoveredFile {
     pub size: Option<u64>,
 }
 
-/// Recursively scan a directory tree and return all `.mp3` files with lightweight file facts.
+/// Recursively scan a directory tree and return all '.mp3' files with lightweight file facts.
 ///
 /// Behavior:
 /// - Root must be a directory (else Err).
@@ -139,7 +139,7 @@ fn is_nonfatal_walk_error(e: &std::io::Error) -> bool {
     )
 }
 
-/// True if the file extension is `.mp3` (case-insensitive).
+/// True if the file extension is '.mp3' (case-insensitive).
 fn is_mp3(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())

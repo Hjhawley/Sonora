@@ -1,8 +1,8 @@
 //! gui/view/tracks.rs
 //! Track view (table list).
 //!
-//! - Row identity is `TrackId`, not `Vec` index.
-//! - We still iterate `state.tracks` in display order, but clicks emit messages by id.
+//! - Row identity is 'TrackId', not 'Vec' index.
+//! - We still iterate 'state.tracks' in display order, but clicks emit messages by id.
 
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};

@@ -2,10 +2,10 @@
 //!
 //! Selection + scope + view-mode transitions.
 //!
-//! - All selection is keyed by `TrackId` (stable), not `Vec` indices.
+//! - All selection is keyed by 'TrackId' (stable), not 'Vec' indices.
 //! - Album View is now:
-//!   - grid when `selected_album == None`
-//!   - album detail screen when `selected_album == Some(...)`
+//!   - grid when 'selected_album == None'
+//!   - album detail screen when 'selected_album == Some(...)'
 //! - Hidden/unhide is DB-backed and never touches the underlying file.
 
 use iced::Task;

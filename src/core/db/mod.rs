@@ -5,9 +5,9 @@
 //! Rules:
 //! - DB owns stable identity (TrackId).
 //! - Path is the natural unique key until fingerprinting exists.
-//! - `present` = file currently discovered on disk
-//! - `hidden` = user removed it from Sonora view, but file still exists
-//! - `mtime` / `size` prepare us for incremental scanning later
+//! - 'present' = file currently discovered on disk
+//! - 'hidden' = user removed it from Sonora view, but file still exists
+//! - 'mtime' / 'size' prepare us for incremental scanning later
 
 use std::path::{Path, PathBuf};
 
@@ -72,13 +72,13 @@ impl Db {
     /// Upsert all discovered files.
     ///
     /// Behavior:
-    /// - Mark everything missing first (`present = 0`)
+    /// - Mark everything missing first ('present = 0')
     /// - For discovered files:
     ///   - INSERT OR IGNORE by path
-    ///   - set `present = 1`
+    ///   - set 'present = 1'
     ///   - update mtime/size
-    /// - preserve `hidden`
-    /// - return `(TrackId, PathBuf)` in the same order as discovered input
+    /// - preserve 'hidden'
+    /// - return '(TrackId, PathBuf)' in the same order as discovered input
     pub fn upsert_discovered(
         &mut self,
         files: &[DiscoveredFile],
@@ -246,6 +246,7 @@ pub fn default_db_path() -> Result<PathBuf, String> {
         return Ok(dir);
     }
 
+    // macOS, not yet implemented
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var_os("HOME").ok_or("HOME not set".to_string())?;
@@ -258,6 +259,7 @@ pub fn default_db_path() -> Result<PathBuf, String> {
         return Ok(dir);
     }
 
+    // Linux, not yet implemented
     #[cfg(all(unix, not(target_os = "macos")))]
     {
         let base = std::env::var_os("XDG_DATA_HOME")

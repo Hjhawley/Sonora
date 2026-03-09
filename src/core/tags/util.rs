@@ -17,7 +17,7 @@ pub(crate) fn parse_slash_pair_u32(s: Option<&str>) -> (Option<u32>, Option<u32>
     (a, b)
 }
 
-/// Parse common "boolean-ish" tag values.
+/// Parse common boolean-shaped tags.
 /// Accepts: "1", "0", "true", "false", "yes", "no", "y", "n"
 pub(crate) fn parse_boolish(s: &str) -> Option<bool> {
     match s.trim().to_ascii_lowercase().as_str() {

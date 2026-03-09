@@ -2,8 +2,8 @@
 //! Audio decoding utilities (Symphonia) -> rodio::Source.
 //!
 //! Robust seeking strategy:
-//! 1) Try Symphonia demuxer seek (coarse, timestamp-based).
-//! 2) If seek undershoots (or fails), decode-skip the remaining delta.
+//! - Try Symphonia demuxer seek (coarse, timestamp-based).
+//! - If seek undershoots (or fails), decode-skip the remaining delta.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::{Time, TimeBase};
 
-/// Construct a new seekable rodio Source from `path`, starting at `start_ms`.
+/// Construct a new seekable rodio Source from 'path', starting at 'start_ms'.
 pub fn open_source_at_ms(
     path: &Path,
     start_ms: u64,

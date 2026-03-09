@@ -1,9 +1,9 @@
 //! core/tags/read.rs
-//! Read ID3 tags from an MP3 and convert them into a `TrackRow`.
+//! Read ID3 tags from an MP3 and convert them into a 'TrackRow'.
 //!
 //! - Tag reading does NOT assign identity.
-//! - `TrackRow.id` is set by the scanning/DB layer (temporary id now; DB id later).
-//! - So this module always returns `id: None`.
+//! - 'TrackRow.id' is set by the scanning/DB layer (temporary id now; DB id later).
+//! - So this module always returns 'id: None'.
 
 use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;

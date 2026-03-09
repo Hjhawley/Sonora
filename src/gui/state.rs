@@ -7,8 +7,8 @@
 //! - no update code (state transitions)
 //! - no blocking IO except light startup library restore
 //!
-//! If you’re looking for "how things change", that lives in `gui/update/*`.
-//! If you’re looking for "how things look", that lives in `gui/view/*`.
+//! If you’re looking for "how things change", that lives in 'gui/update/*'.
+//! If you’re looking for "how things look", that lives in 'gui/view/*'.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,14 +19,14 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
-/// Dev convenience: if user didn’t add roots, scan `/test`.
+/// Dev convenience: if user didn’t add roots, scan '/test'.
 pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 
 /// What the inspector shows when selected files disagree.
 ///
 /// Semantics:
-/// - In multi-select, if values differ, the field becomes `<keep>`
-/// - On save, `<keep>` means "leave the file’s existing value as-is"
+/// - In multi-select, if values differ, the field becomes '<keep>'
+/// - On save, '<keep>' means "leave the file’s existing value as-is"
 pub(crate) const KEEP_SENTINEL: &str = "<keep>";
 
 /// Tracks vs Albums is a layout choice.
@@ -46,7 +46,7 @@ pub(crate) enum LibraryScope {
 /// Grouping key for Album View.
 ///
 /// Important: This is a *UI grouping key*, not a DB key.
-/// It’s derived from `TrackRow` values using your grouping rules.
+/// It’s derived from 'TrackRow' values using your grouping rules.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
     pub album_artist: String,
@@ -139,13 +139,13 @@ pub(crate) struct Sonora {
     // Library (display order)
     pub tracks: Vec<TrackRow>,
 
-    /// Cache: `TrackId` -> current Vec index.
+    /// Cache: 'TrackId' -> current Vec index.
     pub track_index: BTreeMap<TrackId, usize>,
 
-    /// Cache: `AlbumKey` -> ordered list of `TrackId`s in that album group.
+    /// Cache: 'AlbumKey' -> ordered list of 'TrackId's in that album group.
     pub album_groups: BTreeMap<AlbumKey, Vec<TrackId>>,
 
-    /// Cache: `TrackId` -> decoded cover image handle (for quick UI rendering).
+    /// Cache: 'TrackId' -> decoded cover image handle (for quick UI rendering).
     pub cover_cache: BTreeMap<TrackId, iced::widget::image::Handle>,
 
     // Playback (core handle + UI state)
@@ -169,8 +169,8 @@ pub(crate) struct Sonora {
     pub library_scope: LibraryScope,
 
     /// In Album View:
-    /// - `None` => album grid
-    /// - `Some(key)` => album detail screen
+    /// - 'None' => album grid
+    /// - 'Some(key)' => album detail screen
     pub selected_album: Option<AlbumKey>,
 
     pub selected_tracks: BTreeSet<TrackId>,

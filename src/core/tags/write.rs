@@ -1,5 +1,5 @@
 //! core/tags/write.rs
-//! Write selected ID3 tags back to an MP3, based on a `TrackRow`.
+//! Write selected ID3 tags back to an MP3, based on a 'TrackRow'.
 
 use id3::frame::{Comment, Lyrics};
 use id3::{Tag, TagLike, Version};
@@ -71,21 +71,21 @@ fn set_lyrics_opt(tag: &mut Tag, v: &Option<String>) {
     }
 }
 
-/// Write tags for a single file, based on the desired contents of `row`.
+/// Write tags for a single file, based on the desired contents of 'row'.
 /// - Always writes "standard" fields (visible by default in UI).
-/// - Writes "extended" fields only if `write_extended == true`.
+/// - Writes "extended" fields only if 'write_extended == true'.
 ///
 /// Semantics:
-/// - `None` (or empty/whitespace string) => remove that frame from the file.
+/// - 'None' (or empty/whitespace string) => remove that frame from the file.
 pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), String> {
     let path = &row.path;
 
     // Load existing tag if possible; otherwise start fresh.
     let mut tag = Tag::read_from_path(path).unwrap_or_else(|_| Tag::new());
 
-    // -------------------------
+    //
     // Standard (always written)
-    // -------------------------
+    //
     set_text_opt(&mut tag, "TIT2", &row.title); // title
     set_text_opt(&mut tag, "TPE1", &row.artist); // artist
     set_text_opt(&mut tag, "TALB", &row.album); // album
@@ -117,9 +117,9 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
     set_lyrics_opt(&mut tag, &row.lyrics); // lyrics
     set_text_opt(&mut tag, "TEXT", &row.lyricist); // lyricist
 
-    // -------------------------
+    //
     // Extended (toggleable)
-    // -------------------------
+    //
     if write_extended {
         // Date string: use TDRC (v2.4-friendly), but also mirror to TYER if year is None
         // and the date begins with "YYYY".
