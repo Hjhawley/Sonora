@@ -1,13 +1,10 @@
 //! gui/update/scan.rs
 //! Scan lifecycle + async boundary + selection reset.
 //!
-//! - Use the explicit core scan pipeline boundary:
-//!   (A) core::scan_paths(roots) -> Vec<PathBuf>
-//!   (B) core::read_tracks(paths) -> (Vec<TrackRow>, failures)
-//!
-//! Still no SQLite:
-//! - We assign deterministic TrackId values derived from file paths.
-//! - Once SQLite lands, this becomes "load tracks from DB" instead.
+//! Scan pipeline:
+//!   core::scan_paths(roots) -> Vec<PathBuf>
+//!   SQLite upsert of discovered paths -> stable TrackIds
+//!   read tags into TrackRows and attach DB-backed ids
 
 use iced::Task;
 use std::path::PathBuf;
@@ -42,13 +39,12 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
             // discover paths
             let paths = core::scan_paths(&roots_to_scan)?;
 
-            // open db
+            // get stable TrackIds
             let db_path = core::db::default_db_path()?;
             let mut db = core::db::Db::open(&db_path)?;
-
-            // get stable TrackIds
             let id_paths = db.upsert_paths(&paths)?;
 
+            // read tags and attach ids
             let mut rows: Vec<TrackRow> = Vec::with_capacity(id_paths.len());
             let mut failures: usize = 0;
 
