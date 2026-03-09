@@ -16,6 +16,13 @@ use super::constants::{
 use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackId;
 
+#[derive(Clone)]
+struct AlbumTile {
+    key: AlbumKey,
+    count: usize,
+    cover: Option<iced::widget::image::Handle>,
+}
+
 pub(crate) fn build_albums_center(state: &Sonora) -> iced::widget::Column<'_, Message> {
     match &state.selected_album {
         Some(key) => build_album_detail_screen(state, key.clone()),
@@ -29,25 +36,30 @@ fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> 
         LibraryScope::Hidden => "Hidden Albums",
     };
 
-    let albums: Vec<(AlbumKey, usize, TrackId)> = state
+    let albums: Vec<AlbumTile> = state
         .album_groups
         .iter()
-        .filter_map(|(k, v)| v.first().copied().map(|rep| (k.clone(), v.len(), rep)))
+        .filter_map(|(k, v)| {
+            let rep_id: TrackId = v.first().copied()?;
+            Some(AlbumTile {
+                key: k.clone(),
+                count: v.len(),
+                cover: state.cover_cache.get(&rep_id).cloned(),
+            })
+        })
         .collect();
 
-    let grid = responsive(move |size: Size| build_album_grid_for_width(state, &albums, size.width));
+    let grid = responsive(move |size: Size| build_album_grid_for_width(&albums, size.width).into());
 
     column![text(heading).size(18), grid.height(Length::Fill)].spacing(18)
 }
 
-fn build_album_grid_for_width<'a>(
-    state: &'a Sonora,
-    albums: &'a [(AlbumKey, usize, TrackId)],
+fn build_album_grid_for_width(
+    albums: &[AlbumTile],
     available_width: f32,
-) -> iced::widget::Scrollable<'a, Message> {
+) -> iced::widget::Scrollable<'static, Message> {
     // Grid layout
     let footprint = ALBUM_TILE_W + ALBUM_GRID_SPACING_X;
-
     let computed_cols = ((available_width + ALBUM_GRID_SPACING_X) / footprint).floor() as usize;
     let cols = computed_cols.max(ALBUM_GRID_MIN_COLS).max(1);
 
@@ -56,18 +68,18 @@ fn build_album_grid_for_width<'a>(
     for chunk in albums.chunks(cols) {
         let mut r = row![].spacing(ALBUM_GRID_SPACING_X);
 
-        for (key, count, rep_id) in chunk.iter().cloned() {
-            let cover = cover_thumb(state.cover_cache.get(&rep_id), ALBUM_TILE_COVER);
+        for album in chunk {
+            let cover = cover_thumb(album.cover.as_ref(), ALBUM_TILE_COVER);
 
             let tile = column![
                 cover,
-                text(key.album.clone())
+                text(album.key.album.clone())
                     .size(15)
                     .width(Length::Fixed(ALBUM_TILE_W)),
-                text(key.album_artist.clone())
+                text(album.key.album_artist.clone())
                     .size(12)
                     .width(Length::Fixed(ALBUM_TILE_W)),
-                text(format!("{count} tracks"))
+                text(format!("{} tracks", album.count))
                     .size(11)
                     .width(Length::Fixed(ALBUM_TILE_W)),
             ]
@@ -79,7 +91,7 @@ fn build_album_grid_for_width<'a>(
                     .width(Length::Fixed(ALBUM_TILE_W))
                     .padding(6),
             )
-            .on_press(Message::SelectAlbum(key));
+            .on_press(Message::SelectAlbum(album.key.clone()));
 
             r = r.push(tile_widget);
         }
