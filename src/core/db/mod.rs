@@ -1,16 +1,19 @@
 //! core/db/mod.rs
 //!
-//! SQLite persistence layer (MVP).
+//! SQLite persistence layer.
 //!
 //! Rules:
 //! - DB owns stable identity (TrackId).
-//! - Path is the natural unique key pre-fingerprinting.
-//! - We keep the schema minimal and expand later.
+//! - Path is the natural unique key until fingerprinting exists.
+//! - `present` = file currently discovered on disk
+//! - `hidden` = user removed it from Sonora view, but file still exists
+//! - `mtime` / `size` prepare us for incremental scanning later
 
 use std::path::{Path, PathBuf};
 
 use rusqlite::{Connection, params};
 
+use crate::core::library::DiscoveredFile;
 use crate::core::types::TrackId;
 
 pub struct Db {
@@ -27,8 +30,6 @@ impl Db {
     }
 
     fn init_schema(&self) -> Result<(), String> {
-        // MVP: tracks table with stable id + unique path.
-        // Expand later (mtime/size/fingerprint, cached tags, etc).
         self.conn
             .execute_batch(
                 r#"
@@ -36,51 +37,201 @@ impl Db {
                 PRAGMA foreign_keys = ON;
 
                 CREATE TABLE IF NOT EXISTS tracks (
-                    id   INTEGER PRIMARY KEY,
-                    path TEXT NOT NULL UNIQUE
+                    id      INTEGER PRIMARY KEY,
+                    path    TEXT NOT NULL UNIQUE
                 );
                 "#,
             )
             .map_err(|e| e.to_string())?;
+
+        self.ensure_column("tracks", "present", "INTEGER NOT NULL DEFAULT 1")?;
+        self.ensure_column("tracks", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
+        self.ensure_column("tracks", "mtime", "INTEGER")?;
+        self.ensure_column("tracks", "size", "INTEGER")?;
+
         Ok(())
     }
 
-    /// Ensure each path exists as a row and return TrackIds in the same order.
+    fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<(), String> {
+        let pragma = format!("PRAGMA table_info({table})");
+        let mut stmt = self.conn.prepare(&pragma).map_err(|e| e.to_string())?;
+        let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let name: String = row.get(1).map_err(|e| e.to_string())?;
+            if name == column {
+                return Ok(());
+            }
+        }
+
+        let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
+        self.conn.execute(&sql, []).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Upsert all discovered files.
     ///
-    /// Implementation detail:
-    /// - INSERT OR IGNORE to create row
-    /// - SELECT id to fetch the stable primary key
-    pub fn upsert_paths(&mut self, paths: &[PathBuf]) -> Result<Vec<(TrackId, PathBuf)>, String> {
+    /// Behavior:
+    /// - Mark everything missing first (`present = 0`)
+    /// - For discovered files:
+    ///   - INSERT OR IGNORE by path
+    ///   - set `present = 1`
+    ///   - update mtime/size
+    /// - preserve `hidden`
+    /// - return `(TrackId, PathBuf)` in the same order as discovered input
+    pub fn upsert_discovered(
+        &mut self,
+        files: &[DiscoveredFile],
+    ) -> Result<Vec<(TrackId, PathBuf)>, String> {
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
 
-        let mut out: Vec<(TrackId, PathBuf)> = Vec::with_capacity(paths.len());
+        tx.execute("UPDATE tracks SET present = 0", [])
+            .map_err(|e| e.to_string())?;
+
+        let mut out: Vec<(TrackId, PathBuf)> = Vec::with_capacity(files.len());
 
         {
             let mut insert = tx
                 .prepare("INSERT OR IGNORE INTO tracks(path) VALUES (?1)")
                 .map_err(|e| e.to_string())?;
 
+            let mut update = tx
+                .prepare(
+                    "UPDATE tracks
+                     SET present = 1, mtime = ?2, size = ?3
+                     WHERE path = ?1",
+                )
+                .map_err(|e| e.to_string())?;
+
             let mut select = tx
                 .prepare("SELECT id FROM tracks WHERE path = ?1")
                 .map_err(|e| e.to_string())?;
 
-            for p in paths {
-                let p_str = p.to_string_lossy();
+            for f in files {
+                let p_str = f.path.to_string_lossy();
 
                 insert
                     .execute(params![p_str.as_ref()])
+                    .map_err(|e| e.to_string())?;
+
+                update
+                    .execute(params![
+                        p_str.as_ref(),
+                        f.mtime_unix,
+                        f.size.map(|s| s as i64)
+                    ])
                     .map_err(|e| e.to_string())?;
 
                 let id_i64: i64 = select
                     .query_row(params![p_str.as_ref()], |row| row.get(0))
                     .map_err(|e| e.to_string())?;
 
-                out.push((TrackId(id_i64), p.clone()));
+                out.push((TrackId(id_i64), f.path.clone()));
             }
         }
 
         tx.commit().map_err(|e| e.to_string())?;
         Ok(out)
+    }
+
+    /// Load currently visible library rows:
+    /// - present on disk
+    /// - not hidden by the user
+    pub fn load_visible_paths(&self) -> Result<Vec<(TrackId, PathBuf)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r#"
+                SELECT id, path
+                FROM tracks
+                WHERE present = 1 AND hidden = 0
+                ORDER BY path
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let path: String = row.get(1)?;
+                Ok((TrackId(id), PathBuf::from(path)))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Future UI support: hidden list.
+    pub fn load_hidden_paths(&self) -> Result<Vec<(TrackId, PathBuf)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r#"
+                SELECT id, path
+                FROM tracks
+                WHERE hidden = 1
+                ORDER BY path
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let path: String = row.get(1)?;
+                Ok((TrackId(id), PathBuf::from(path)))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Future UI support: missing list.
+    pub fn load_missing_paths(&self) -> Result<Vec<(TrackId, PathBuf)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r#"
+                SELECT id, path
+                FROM tracks
+                WHERE present = 0
+                ORDER BY path
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let path: String = row.get(1)?;
+                Ok((TrackId(id), PathBuf::from(path)))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Future UI support: hide / unhide without touching the file.
+    pub fn set_hidden(&self, id: TrackId, hidden: bool) -> Result<(), String> {
+        self.conn
+            .execute(
+                "UPDATE tracks SET hidden = ?2 WHERE id = ?1",
+                params![id.0, if hidden { 1 } else { 0 }],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 }
 

@@ -5,20 +5,17 @@
 //! This file is intentionally *data-only*:
 //! - no view code (rendering)
 //! - no update code (state transitions)
-//! - no blocking IO
+//! - no blocking IO except light startup library restore
 //!
 //! If you’re looking for "how things change", that lives in `gui/update/*`.
 //! If you’re looking for "how things look", that lives in `gui/view/*`.
-//!
-//! Identity rules:
-//! - **Selection, now playing, cover cache, and album grouping are keyed by `TrackId`**
-//! - We still keep `tracks: Vec<TrackRow>` for display order, but we do NOT treat indices as identity.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 
+use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
@@ -50,13 +47,8 @@ pub(crate) struct AlbumKey {
 }
 
 /// Draft editable metadata (strings so the user can type anything).
-///
-/// This is an edit buffer, not the source of truth.
-/// - Selection determines what we load into it.
-/// - Save builds a "desired TrackRow" per target from this draft.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
-    // Standard (visible by default)
     pub title: String,
     pub artist: String,
     pub album: String,
@@ -76,7 +68,6 @@ pub(crate) struct InspectorDraft {
     pub lyrics: String,
     pub lyricist: String,
 
-    // Extended (toggleable)
     pub date: String,
     pub conductor: String,
     pub remixer: String,
@@ -93,8 +84,6 @@ pub(crate) struct InspectorDraft {
 }
 
 /// Identifies which inspector field changed.
-///
-/// This is a stable identifier used by view -> update messages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum InspectorField {
     Title,
@@ -131,12 +120,6 @@ pub(crate) enum InspectorField {
     Copyright,
 }
 
-/// App state.
-///
-/// Notes:
-/// - `tracks` is display order; do not store identity as an index elsewhere.
-/// - `TrackId` may be missing (`None`) pre-DB; selection logic should be robust.
-///   (But once DB arrives, `None` should be treated as a bug.)
 pub(crate) struct Sonora {
     // Status + lifecycle
     pub status: String,
@@ -150,16 +133,9 @@ pub(crate) struct Sonora {
     pub tracks: Vec<TrackRow>,
 
     /// Cache: `TrackId` -> current Vec index.
-    ///
-    /// This makes id-first logic fast without repeatedly scanning `tracks`.
-    /// Rebuilt whenever `tracks` is replaced or mutated meaningfully (scan/save).
     pub track_index: BTreeMap<TrackId, usize>,
 
     /// Cache: `AlbumKey` -> ordered list of `TrackId`s in that album group.
-    ///
-    /// Why cache?
-    /// - Album grouping is O(n) and was being rebuilt every render.
-    /// - Grouping rules belong to update/scan boundaries, not view.
     pub album_groups: BTreeMap<AlbumKey, Vec<TrackId>>,
 
     /// Cache: `TrackId` -> decoded cover image handle (for quick UI rendering).
@@ -179,28 +155,19 @@ pub(crate) struct Sonora {
     pub volume: f32,
 
     /// While dragging the seek slider, keep a UI-only preview ratio here.
-    /// On release, we commit it (send PlayerCommand::Seek).
     pub seek_preview_ratio: Option<f32>,
 
     // Selection / navigation
     pub view_mode: ViewMode,
     pub selected_album: Option<AlbumKey>,
-
-    /// Multi-selection set of track ids (stable).
     pub selected_tracks: BTreeSet<TrackId>,
-
-    /// Primary selection (stable id). Used as the "inspector anchor".
     pub selected_track: Option<TrackId>,
-
-    /// For shift-click range selection (stable id).
     pub last_clicked_track: Option<TrackId>,
 
     // Inspector
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
     pub saving: bool,
-
-    /// For each field: are selected tracks "mixed" for this value?
     pub inspector_mixed: BTreeMap<InspectorField, bool>,
 
     // UI toggles
@@ -208,20 +175,17 @@ pub(crate) struct Sonora {
 }
 
 impl Sonora {
-    /// Find the current display index for a given `TrackId`.
     #[inline]
     pub fn index_of_id(&self, id: TrackId) -> Option<usize> {
         self.track_index.get(&id).copied()
     }
 
-    /// Get a reference to a track by id.
     #[inline]
     pub fn track_by_id(&self, id: TrackId) -> Option<&TrackRow> {
         let i = self.index_of_id(id)?;
         self.tracks.get(i)
     }
 
-    /// Get a mutable reference to a track by id.
     #[inline]
     pub fn track_by_id_mut(&mut self, id: TrackId) -> Option<&mut TrackRow> {
         let i = self.index_of_id(id)?;
@@ -229,19 +193,15 @@ impl Sonora {
     }
 
     /// Rebuild `track_index` and `album_groups` from `tracks`.
-    ///
-    /// Call this whenever `tracks` changes (scan, save, reorder, etc).
     pub fn rebuild_library_caches(&mut self) {
         self.track_index.clear();
         self.album_groups.clear();
 
-        // Stage 1: id -> index
         for (i, t) in self.tracks.iter().enumerate() {
             let Some(id) = t.id else { continue };
             self.track_index.insert(id, i);
         }
 
-        // Stage 2: album grouping using the same UI rules everywhere
         for t in self.tracks.iter() {
             let Some(id) = t.id else { continue };
 
@@ -264,13 +224,6 @@ impl Sonora {
                 .or_default()
                 .push(id);
         }
-
-        // Optional: stable intra-album order.
-        // Keep "scan order" by default; the detail view will sort by disc/track/title.
-        // If you want to sort group vectors by display index:
-        // for ids in self.album_groups.values_mut() {
-        //     ids.sort_by_key(|id| self.track_index.get(id).copied().unwrap_or(usize::MAX));
-        // }
     }
 }
 
@@ -278,14 +231,41 @@ impl Default for Sonora {
     fn default() -> Self {
         let (playback_controller, playback_events) = start_playback();
 
-        Self {
-            status: "Add a folder, then Scan.".to_string(),
+        let (tracks, status) = match core::load_visible_tracks_from_db() {
+            Ok((tracks, failures)) => {
+                if tracks.is_empty() {
+                    (
+                        tracks,
+                        "Add a folder, then Scan. Existing library will appear here once scanned."
+                            .to_string(),
+                    )
+                } else if failures == 0 {
+                    (
+                        tracks.clone(),
+                        format!("Loaded {} tracks from library.", tracks.len()),
+                    )
+                } else {
+                    (
+                        tracks.clone(),
+                        format!(
+                            "Loaded {} tracks from library ({} tag read failures).",
+                            tracks.len(),
+                            failures
+                        ),
+                    )
+                }
+            }
+            Err(e) => (Vec::new(), format!("Library DB unavailable: {e}")),
+        };
+
+        let mut s = Self {
+            status,
             scanning: false,
 
             root_input: String::new(),
             roots: Vec::new(),
 
-            tracks: Vec::new(),
+            tracks,
 
             track_index: BTreeMap::new(),
             album_groups: BTreeMap::new(),
@@ -315,13 +295,14 @@ impl Default for Sonora {
             inspector_mixed: BTreeMap::new(),
 
             show_extended: false,
-        }
+        };
+
+        s.rebuild_library_caches();
+        s
     }
 }
 
 /// Message = "something happened".
-///
-/// GUI emits these from view code. Update code consumes them.
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Noop,
@@ -341,8 +322,6 @@ pub(crate) enum Message {
     // View + selection
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
-
-    /// Select a track by stable id (not Vec index).
     SelectTrack(TrackId),
 
     // Cover art
@@ -350,23 +329,15 @@ pub(crate) enum Message {
 
     // Playback controls (from UI)
     PlaySelected,
-
-    /// Play a track by stable id (not Vec index).
     PlayTrack(TrackId),
-
     TogglePlayPause,
     Next,
     Prev,
 
-    /// Seek slider changed (preview only; does NOT command the engine)
     SeekTo(f32),
-
-    /// Seek slider released (commit the seek)
     SeekCommit,
-
     SetVolume(f32),
 
-    // (optional path; still supported)
     PlaybackEvent(PlayerEvent),
 
     // Inspector edits
@@ -375,12 +346,7 @@ pub(crate) enum Message {
 
     // Actions
     SaveInspectorToFile,
-
-    /// Save result for a single target track id.
     SaveFinished(TrackId, Result<TrackRow, String>),
-
-    /// Save result for a batch.
     SaveFinishedBatch(Result<Vec<(TrackId, TrackRow)>, String>),
-
     RevertInspector,
 }
