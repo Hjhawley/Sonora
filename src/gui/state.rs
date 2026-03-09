@@ -19,7 +19,7 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
-/// Dev convenience: if user didn’t add roots, scan '/test'.
+/// Dev: if user didn’t add roots, scan '/test'
 pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 
 /// What the inspector shows when selected files disagree.
@@ -41,6 +41,28 @@ pub(crate) enum ViewMode {
 pub(crate) enum LibraryScope {
     Library,
     Hidden,
+}
+
+/// Playback ordering policy.
+///
+/// - Normal = display order
+/// - Shuffle = persistent shuffled queue order
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlayOrder {
+    Normal,
+    Shuffle,
+}
+
+/// Repeat policy.
+///
+/// - Off = stop at end of queue
+/// - All = wrap entire queue
+/// - One = replay current track
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RepeatMode {
+    Off,
+    All,
+    One,
 }
 
 /// Grouping key for Album View.
@@ -164,6 +186,13 @@ pub(crate) struct Sonora {
     /// While dragging the seek slider, keep a UI-only preview ratio here.
     pub seek_preview_ratio: Option<f32>,
 
+    // Playback policy
+    pub play_order: PlayOrder,
+    pub repeat_mode: RepeatMode,
+
+    /// Persistent queue order used only when 'play_order == PlayOrder::Shuffle'.
+    pub shuffled_ids: Vec<TrackId>,
+
     // Selection / navigation
     pub view_mode: ViewMode,
     pub library_scope: LibraryScope,
@@ -216,9 +245,12 @@ impl Sonora {
         self.track_index.clear();
         self.album_groups.clear();
 
+        let mut visible_ids: Vec<TrackId> = Vec::new();
+
         for (i, t) in self.tracks.iter().enumerate() {
             let Some(id) = t.id else { continue };
             self.track_index.insert(id, i);
+            visible_ids.push(id);
         }
 
         for t in self.tracks.iter() {
@@ -242,6 +274,23 @@ impl Sonora {
                 })
                 .or_default()
                 .push(id);
+        }
+
+        // Keep the shuffle queue valid across scans/scope changes:
+        // - drop ids that no longer exist
+        // - dedupe defensively
+        // - append any newly visible ids at the end
+        let valid_ids: BTreeSet<TrackId> = visible_ids.iter().copied().collect();
+
+        let mut seen: BTreeSet<TrackId> = BTreeSet::new();
+        self.shuffled_ids
+            .retain(|id| valid_ids.contains(id) && seen.insert(*id));
+
+        let mut queued: BTreeSet<TrackId> = self.shuffled_ids.iter().copied().collect();
+        for id in visible_ids {
+            if queued.insert(id) {
+                self.shuffled_ids.push(id);
+            }
         }
     }
 }
@@ -301,6 +350,10 @@ impl Default for Sonora {
 
             seek_preview_ratio: None,
 
+            play_order: PlayOrder::Normal,
+            repeat_mode: RepeatMode::Off,
+            shuffled_ids: Vec::new(),
+
             view_mode: ViewMode::Tracks,
             library_scope: LibraryScope::Library,
             selected_album: None,
@@ -322,7 +375,7 @@ impl Default for Sonora {
     }
 }
 
-/// Message = "something happened".
+/// Message = "something happened"
 #[derive(Debug, Clone)]
 pub(crate) enum Message {
     Noop,
@@ -355,6 +408,8 @@ pub(crate) enum Message {
     PlaySelected,
     PlayTrack(TrackId),
     TogglePlayPause,
+    ToggleShuffle,
+    CycleRepeatMode,
     Next,
     Prev,
 

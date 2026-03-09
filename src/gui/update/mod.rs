@@ -47,6 +47,8 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::PlaySelected => playback::play_selected(state),
         Message::PlayTrack(id) => playback::play_track(state, id),
         Message::TogglePlayPause => playback::toggle_play_pause(state),
+        Message::ToggleShuffle => playback::toggle_shuffle(state),
+        Message::CycleRepeatMode => playback::cycle_repeat_mode(state),
         Message::Next => playback::next(state),
         Message::Prev => playback::prev(state),
 

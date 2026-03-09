@@ -1,11 +1,20 @@
 [package]
 name = "sonora"
-version = "0.7.4"
+version = "0.8.0"
 edition = "2024"
 
 [dependencies]
 iced = { version = "0.14", features = ["image", "tokio"] }
 id3 = "1.16.3"
 rodio = "0.21.1"
-symphonia = { version = "0.5.5", features = ["mp3", "flac", "wav", "ogg", "vorbis", "aac", "isomp4"] }
+symphonia = { version = "0.5.5", features = [
+    "mp3",
+    "flac",
+    "wav",
+    "ogg",
+    "vorbis",
+    "aac",
+    "isomp4",
+] }
+rand = "0.8"
 rusqlite = { version = "0.32", features = ["bundled"] }

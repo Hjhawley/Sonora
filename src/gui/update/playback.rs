@@ -9,10 +9,13 @@
 //! - All IO / timing is driven by the engine + TickPlayback polling.
 
 use iced::Task;
+use rand::seq::SliceRandom;
 
-use super::super::state::{Message, Sonora};
+use super::super::state::{Message, PlayOrder, RepeatMode, Sonora};
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
 use crate::core::types::TrackId;
+
+const PREV_RESTART_THRESHOLD_MS: u64 = 3_000;
 
 fn ensure_engine(state: &mut Sonora) {
     if state.playback.is_some() && state.playback_events.is_some() {
@@ -24,6 +27,145 @@ fn ensure_engine(state: &mut Sonora) {
 
     state.playback = Some(controller);
     state.playback_events = Some(std::cell::RefCell::new(events));
+}
+
+fn clear_playback_ui(state: &mut Sonora) {
+    state.now_playing = None;
+    state.is_playing = false;
+    state.position_ms = 0;
+    state.duration_ms = None;
+    state.seek_preview_ratio = None;
+}
+
+fn visible_track_ids(state: &Sonora) -> Vec<TrackId> {
+    state.tracks.iter().filter_map(|t| t.id).collect()
+}
+
+fn sync_shuffled_ids(state: &mut Sonora) {
+    let visible_ids = visible_track_ids(state);
+    if visible_ids.is_empty() {
+        state.shuffled_ids.clear();
+        return;
+    }
+
+    let visible_set: std::collections::BTreeSet<TrackId> = visible_ids.iter().copied().collect();
+
+    let mut seen: std::collections::BTreeSet<TrackId> = std::collections::BTreeSet::new();
+    state
+        .shuffled_ids
+        .retain(|id| visible_set.contains(id) && seen.insert(*id));
+
+    let mut queued: std::collections::BTreeSet<TrackId> =
+        state.shuffled_ids.iter().copied().collect();
+    for id in visible_ids {
+        if queued.insert(id) {
+            state.shuffled_ids.push(id);
+        }
+    }
+}
+
+fn rebuild_shuffle_order(state: &mut Sonora) {
+    let mut ids = visible_track_ids(state);
+    if ids.is_empty() {
+        state.shuffled_ids.clear();
+        return;
+    }
+
+    let anchor = state.now_playing.or(state.selected_track);
+
+    if let Some(anchor_id) = anchor {
+        if let Some(anchor_idx) = ids.iter().position(|&id| id == anchor_id) {
+            ids.remove(anchor_idx);
+            ids.shuffle(&mut rand::thread_rng());
+
+            let insert_at = anchor_idx.min(ids.len());
+            ids.insert(insert_at, anchor_id);
+
+            state.shuffled_ids = ids;
+            return;
+        }
+    }
+
+    ids.shuffle(&mut rand::thread_rng());
+    state.shuffled_ids = ids;
+}
+
+fn playback_ids(state: &mut Sonora) -> Vec<TrackId> {
+    match state.play_order {
+        PlayOrder::Normal => visible_track_ids(state),
+        PlayOrder::Shuffle => {
+            sync_shuffled_ids(state);
+            if state.shuffled_ids.is_empty() {
+                visible_track_ids(state)
+            } else {
+                state.shuffled_ids.clone()
+            }
+        }
+    }
+}
+
+fn next_track_id(state: &mut Sonora) -> Option<TrackId> {
+    let ids = playback_ids(state);
+    if ids.is_empty() {
+        return None;
+    }
+
+    if state.repeat_mode == RepeatMode::One {
+        return state
+            .now_playing
+            .or(state.selected_track)
+            .filter(|id| ids.contains(id))
+            .or_else(|| ids.first().copied());
+    }
+
+    let anchor_id = state.now_playing.or(state.selected_track);
+    let Some(anchor_id) = anchor_id else {
+        return ids.first().copied();
+    };
+
+    let Some(cur_idx) = ids.iter().position(|&id| id == anchor_id) else {
+        return ids.first().copied();
+    };
+
+    if cur_idx + 1 < ids.len() {
+        Some(ids[cur_idx + 1])
+    } else if state.repeat_mode == RepeatMode::All {
+        ids.first().copied()
+    } else {
+        None
+    }
+}
+
+fn prev_track_id(state: &mut Sonora) -> Option<TrackId> {
+    let ids = playback_ids(state);
+    if ids.is_empty() {
+        return None;
+    }
+
+    let anchor_id = state
+        .now_playing
+        .or(state.selected_track)
+        .or_else(|| ids.first().copied())?;
+
+    if state.now_playing == Some(anchor_id) && state.position_ms > PREV_RESTART_THRESHOLD_MS {
+        return Some(anchor_id);
+    }
+
+    if state.repeat_mode == RepeatMode::One {
+        return Some(anchor_id);
+    }
+
+    let Some(cur_idx) = ids.iter().position(|&id| id == anchor_id) else {
+        return ids.first().copied();
+    };
+
+    if cur_idx > 0 {
+        Some(ids[cur_idx - 1])
+    } else if state.repeat_mode == RepeatMode::All {
+        ids.last().copied()
+    } else {
+        Some(anchor_id)
+    }
 }
 
 pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
@@ -57,6 +199,7 @@ pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
 
 pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     ensure_engine(state);
+    sync_shuffled_ids(state);
 
     let Some(controller) = &state.playback else {
         state.status = "Playback engine failed to initialize.".into();
@@ -98,6 +241,38 @@ pub(crate) fn toggle_play_pause(state: &mut Sonora) -> Task<Message> {
     }
 }
 
+pub(crate) fn toggle_shuffle(state: &mut Sonora) -> Task<Message> {
+    state.play_order = match state.play_order {
+        PlayOrder::Normal => {
+            rebuild_shuffle_order(state);
+            state.status = "Shuffle enabled.".to_string();
+            PlayOrder::Shuffle
+        }
+        PlayOrder::Shuffle => {
+            state.status = "Shuffle disabled.".to_string();
+            PlayOrder::Normal
+        }
+    };
+
+    Task::none()
+}
+
+pub(crate) fn cycle_repeat_mode(state: &mut Sonora) -> Task<Message> {
+    state.repeat_mode = match state.repeat_mode {
+        RepeatMode::Off => RepeatMode::All,
+        RepeatMode::All => RepeatMode::One,
+        RepeatMode::One => RepeatMode::Off,
+    };
+
+    state.status = match state.repeat_mode {
+        RepeatMode::Off => "Repeat off.".to_string(),
+        RepeatMode::All => "Repeat all.".to_string(),
+        RepeatMode::One => "Repeat one.".to_string(),
+    };
+
+    Task::none()
+}
+
 pub(crate) fn pause(state: &mut Sonora) -> Task<Message> {
     ensure_engine(state);
 
@@ -133,18 +308,11 @@ pub(crate) fn resume(state: &mut Sonora) -> Task<Message> {
 pub(crate) fn stop(state: &mut Sonora) -> Task<Message> {
     ensure_engine(state);
 
-    let Some(controller) = &state.playback else {
-        state.status = "Stop failed: playback engine failed to initialize.".into();
-        return Task::none();
-    };
+    if let Some(controller) = &state.playback {
+        controller.send(PlayerCommand::Stop);
+    }
 
-    controller.send(PlayerCommand::Stop);
-
-    state.is_playing = false;
-    state.position_ms = 0;
-    state.duration_ms = None;
-    state.seek_preview_ratio = None;
-
+    clear_playback_ui(state);
     Task::none()
 }
 
@@ -153,28 +321,9 @@ pub(crate) fn next(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    // Prefer "now playing", else selection, else first track.
-    let anchor_id = state
-        .now_playing
-        .or(state.selected_track)
-        .or_else(|| state.tracks.first().and_then(|t| t.id));
-
-    let Some(cur_id) = anchor_id else {
-        state.status = "No playable track found (missing ids?).".into();
-        return Task::none();
-    };
-
-    // Convert current id to index, then move by index in the current display order.
-    let cur_idx = state.index_of_id(cur_id).unwrap_or(0);
-    let next_idx = if cur_idx + 1 >= state.tracks.len() {
-        0
-    } else {
-        cur_idx + 1
-    };
-
-    let Some(next_id) = state.tracks.get(next_idx).and_then(|t| t.id) else {
-        state.status = "Next failed: track missing id.".into();
-        return Task::none();
+    let Some(next_id) = next_track_id(state) else {
+        state.status = "End of queue.".to_string();
+        return stop(state);
     };
 
     play_track(state, next_id)
@@ -185,25 +334,8 @@ pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    let anchor_id = state
-        .now_playing
-        .or(state.selected_track)
-        .or_else(|| state.tracks.first().and_then(|t| t.id));
-
-    let Some(cur_id) = anchor_id else {
-        state.status = "No playable track found (missing ids?).".into();
-        return Task::none();
-    };
-
-    let cur_idx = state.index_of_id(cur_id).unwrap_or(0);
-    let prev_idx = if cur_idx == 0 {
-        state.tracks.len() - 1
-    } else {
-        cur_idx - 1
-    };
-
-    let Some(prev_id) = state.tracks.get(prev_idx).and_then(|t| t.id) else {
-        state.status = "Prev failed: track missing id.".into();
+    let Some(prev_id) = prev_track_id(state) else {
+        state.status = "No playable track found.".to_string();
         return Task::none();
     };
 
@@ -305,8 +437,6 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             duration_ms,
             start_ms,
         } => {
-            // "Started" is the engine telling us it successfully began playback.
-            // We don't infer identity from path here yet.
             state.is_playing = true;
             state.duration_ms = duration_ms;
             state.position_ms = start_ms;
@@ -316,21 +446,20 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
         PlayerEvent::Paused => state.is_playing = false,
         PlayerEvent::Resumed => state.is_playing = true,
         PlayerEvent::Stopped => {
-            state.is_playing = false;
-            state.position_ms = 0;
-            state.duration_ms = None;
-            state.seek_preview_ratio = None;
+            clear_playback_ui(state);
         }
         PlayerEvent::Position { position_ms } => {
-            // If user is dragging the seek slider, don't fight them.
             if state.seek_preview_ratio.is_none() {
                 state.position_ms = position_ms;
             }
         }
         PlayerEvent::TrackEnded => {
-            state.is_playing = false;
-            state.position_ms = 0;
-            state.seek_preview_ratio = None;
+            if let Some(next_id) = next_track_id(state) {
+                return play_track(state, next_id);
+            }
+
+            clear_playback_ui(state);
+            state.status = "Reached end of queue.".to_string();
         }
         PlayerEvent::Error(err) => {
             state.status = format!("Playback error: {err}");

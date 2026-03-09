@@ -5,7 +5,7 @@
 use iced::widget::{button, column, container, image, row, slider, text, text_input};
 use iced::{Alignment, Element, Length};
 
-use super::super::state::{Message, Sonora};
+use super::super::state::{Message, PlayOrder, RepeatMode, Sonora};
 use super::constants::LABEL_W;
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
@@ -108,6 +108,29 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         button("⏭")
     };
 
+    let shuffle_label = match state.play_order {
+        PlayOrder::Normal => "Shuffle",
+        PlayOrder::Shuffle => "Shuffle ✓",
+    };
+
+    let repeat_label = match state.repeat_mode {
+        RepeatMode::Off => "Repeat: Off",
+        RepeatMode::All => "Repeat: All",
+        RepeatMode::One => "Repeat: One",
+    };
+
+    let shuffle_btn = if engine_ready {
+        button(shuffle_label).on_press(Message::ToggleShuffle)
+    } else {
+        button(shuffle_label)
+    };
+
+    let repeat_btn = if engine_ready {
+        button(repeat_label).on_press(Message::CycleRepeatMode)
+    } else {
+        button(repeat_label)
+    };
+
     // seek slider
     let pos = state.position_ms;
     let dur = state.duration_ms.unwrap_or(0);
@@ -175,7 +198,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         ]
         .spacing(6)
         .width(Length::Fill),
-        row![text("Vol").size(12), vol_slider]
+        row![shuffle_btn, repeat_btn, text("Vol").size(12), vol_slider]
             .spacing(8)
             .align_y(Alignment::Center),
     ]
