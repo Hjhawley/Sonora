@@ -127,7 +127,8 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         / 1000
         / 60;
 
-    let back_btn = button("← Back to albums").on_press(Message::SelectAlbum(key.clone()));
+    let back_btn = button("← Back to albums")
+        .on_press(Message::SetViewMode(super::super::state::ViewMode::Albums));
 
     let rep_id = first.id;
     let big_cover = rep_id
@@ -135,7 +136,8 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         .map(|h| cover_thumb(Some(h), ALBUM_DETAIL_COVER))
         .unwrap_or_else(|| cover_thumb(None, ALBUM_DETAIL_COVER));
 
-    let header = row![
+    // Clicking the album header re-selects the whole album
+    let header_content = row![
         big_cover,
         column![
             text(key.album.clone()).size(30),
@@ -148,6 +150,13 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
     ]
     .spacing(24)
     .align_y(Alignment::Center);
+
+    let header = mouse_area(
+        container(header_content)
+            .width(Length::Fill)
+            .padding([4, 0]),
+    )
+    .on_press(Message::SelectAlbum(key.clone()));
 
     let mut list = column![].spacing(TRACK_LIST_SPACING);
 

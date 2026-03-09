@@ -74,7 +74,24 @@ pub(crate) fn scope_loaded(
 }
 
 pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message> {
+    let was_albums = state.view_mode == ViewMode::Albums;
+
     state.view_mode = mode;
+
+    // When explicitly switching into Track View, leave album detail entirely.
+    if mode == ViewMode::Tracks {
+        state.selected_album = None;
+    }
+
+    // When explicitly switching into Album View, go back to the album grid.
+    if mode == ViewMode::Albums && !was_albums {
+        state.selected_album = None;
+        state.selected_track = None;
+        state.selected_tracks.clear();
+        state.last_clicked_track = None;
+        clear_inspector(state);
+        return preload_album_covers(state);
+    }
 
     state.selected_track = None;
     state.selected_tracks.clear();
@@ -95,12 +112,8 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         state.view_mode = ViewMode::Albums;
     }
 
-    // Clicking the same album while already in detail acts like "Back".
-    if state.selected_album.as_ref() == Some(&key) {
-        clear_selection_and_inspector(state);
-        return Task::none();
-    }
-
+    // If we're already looking at this album detail screen, interpret this as:
+    // "re-select all tracks in this album"
     state.selected_album = Some(key.clone());
     state.selected_tracks.clear();
 
@@ -110,7 +123,7 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         }
     }
 
-    // Primary = first track in album, stable by TrackId ordering in the set.
+    // Primary = first track in album, stable by TrackId ordering in the set
     state.selected_track = state.selected_tracks.iter().next().copied();
     state.last_clicked_track = state.selected_track;
 
@@ -130,7 +143,7 @@ pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
         return Task::none();
     };
 
-    // In Album detail, keep the detail screen open if the clicked track belongs to the open album.
+    // In Album detail, keep the detail screen open if the clicked track belongs to the open album
     if state.view_mode == ViewMode::Albums {
         let clicked_key = album_key_for_index(state, idx);
 
