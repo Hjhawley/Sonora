@@ -1,19 +1,34 @@
 //! gui/view/sidebar.rs
-//! Left sidebar (scan, view toggles, roots list, playlists).
+//! Left sidebar (scan, scope toggles, layout toggles, roots list).
 
 use iced::Length;
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 
-use super::super::state::{Message, Sonora, ViewMode};
+use super::super::state::{LibraryScope, Message, Sonora, ViewMode};
 
 pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let busy = state.scanning || state.saving;
+    let has_selection = state.selected_track.is_some() || !state.selected_tracks.is_empty();
 
     let scan_btn = if state.scanning {
         button("Scanning...")
     } else {
         button("Scan Library").on_press(Message::ScanLibrary)
     };
+
+    let library_btn = if state.library_scope == LibraryScope::Library {
+        button("✓ Library")
+    } else {
+        button("Library").on_press(Message::SetLibraryScope(LibraryScope::Library))
+    };
+
+    let hidden_btn = if state.library_scope == LibraryScope::Hidden {
+        button("✓ Hidden")
+    } else {
+        button("Hidden").on_press(Message::SetLibraryScope(LibraryScope::Hidden))
+    };
+
+    let scope_toggle = row![library_btn, hidden_btn].spacing(8);
 
     let albums_btn = if state.view_mode == ViewMode::Albums {
         button("✓ Album View")
@@ -28,6 +43,23 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     };
 
     let view_toggle = row![albums_btn, tracks_btn].spacing(8);
+
+    let visibility_btn = match state.library_scope {
+        LibraryScope::Library => {
+            if busy || !has_selection {
+                button("Hide from Sonora")
+            } else {
+                button("Hide from Sonora").on_press(Message::HideSelected)
+            }
+        }
+        LibraryScope::Hidden => {
+            if busy || !has_selection {
+                button("Unhide")
+            } else {
+                button("Unhide").on_press(Message::UnhideSelected)
+            }
+        }
+    };
 
     let root_input = text_input("Add folder path", &state.root_input)
         .on_input(Message::RootInputChanged)
@@ -50,7 +82,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
             button("×").on_press(Message::RemoveRoot(i))
         };
 
-        // Keep long paths from exploding the layout.
         let path_txt = text(p.display().to_string()).size(12).width(Length::Fill);
 
         roots_list = roots_list.push(
@@ -61,22 +92,23 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     }
     let roots_panel = scrollable(roots_list.spacing(6)).height(Length::Fixed(160.0));
 
-    let playlists = column![
-        text("Playlists").size(16),
-        button("Library"),
-        button("Favorites (coming soon)"),
-        button("Recently added (coming soon)"),
-    ]
-    .spacing(6);
+    let scope_label = match state.library_scope {
+        LibraryScope::Library => "Library",
+        LibraryScope::Hidden => "Hidden",
+    };
 
     let col = column![
         text(&state.status).size(12),
         scan_btn,
+        text("Scope").size(16),
+        scope_toggle,
+        text("Layout").size(16),
         view_toggle,
+        visibility_btn,
         text("Library folders").size(16),
         add_row,
         roots_panel,
-        playlists,
+        text(format!("Current view: {scope_label}")).size(12),
     ]
     .spacing(12);
 

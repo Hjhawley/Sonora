@@ -31,6 +31,10 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::ScanLibrary => scan::scan_library(state),
         Message::ScanFinished(result) => scan::scan_finished(state, result),
 
+        // Scope / library dataset
+        Message::SetLibraryScope(scope) => selection::set_library_scope(state, scope),
+        Message::ScopeLoaded(result) => selection::scope_loaded(state, result),
+
         // View + selection
         Message::SetViewMode(mode) => selection::set_view_mode(state, mode),
         Message::SelectAlbum(key) => selection::select_album(state, key),
@@ -66,5 +70,9 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SaveFinished(id, result) => save::save_finished(state, id, result),
         Message::SaveFinishedBatch(result) => save::save_finished_batch(state, result),
         Message::RevertInspector => save::revert_inspector(state),
+
+        // Sonora-only visibility
+        Message::HideSelected => selection::hide_selected(state),
+        Message::UnhideSelected => selection::unhide_selected(state),
     }
 }

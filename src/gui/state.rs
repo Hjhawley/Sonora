@@ -29,11 +29,18 @@ pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 /// - On save, `<keep>` means "leave the file’s existing value as-is"
 pub(crate) const KEEP_SENTINEL: &str = "<keep>";
 
-/// Albums vs Tracks list mode.
+/// Tracks vs Albums is a layout choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ViewMode {
     Albums,
     Tracks,
+}
+
+/// Library vs Hidden is a dataset/scope choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum LibraryScope {
+    Library,
+    Hidden,
 }
 
 /// Grouping key for Album View.
@@ -159,6 +166,7 @@ pub(crate) struct Sonora {
 
     // Selection / navigation
     pub view_mode: ViewMode,
+    pub library_scope: LibraryScope,
     pub selected_album: Option<AlbumKey>,
     pub selected_tracks: BTreeSet<TrackId>,
     pub selected_track: Option<TrackId>,
@@ -192,7 +200,6 @@ impl Sonora {
         self.tracks.get_mut(i)
     }
 
-    /// Rebuild `track_index` and `album_groups` from `tracks`.
     pub fn rebuild_library_caches(&mut self) {
         self.track_index.clear();
         self.album_groups.clear();
@@ -283,6 +290,7 @@ impl Default for Sonora {
             seek_preview_ratio: None,
 
             view_mode: ViewMode::Tracks,
+            library_scope: LibraryScope::Library,
             selected_album: None,
 
             selected_tracks: BTreeSet::new(),
@@ -319,6 +327,10 @@ pub(crate) enum Message {
     ScanLibrary,
     ScanFinished(Result<(Vec<TrackRow>, usize), String>),
 
+    // Library scope / reloading
+    SetLibraryScope(LibraryScope),
+    ScopeLoaded(Result<(LibraryScope, Vec<TrackRow>, usize), String>),
+
     // View + selection
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
@@ -349,4 +361,8 @@ pub(crate) enum Message {
     SaveFinished(TrackId, Result<TrackRow, String>),
     SaveFinishedBatch(Result<Vec<(TrackId, TrackRow)>, String>),
     RevertInspector,
+
+    // Sonora-only visibility
+    HideSelected,
+    UnhideSelected,
 }

@@ -7,7 +7,7 @@
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};
 
-use super::super::state::{Message, Sonora};
+use super::super::state::{LibraryScope, Message, Sonora};
 use super::super::util::filename_stem;
 use super::constants::{
     HEADER_TEXT, ROW_TEXT, TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
@@ -15,8 +15,13 @@ use super::constants::{
 use super::widgets::fmt_duration;
 
 pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
+    let title = match state.library_scope {
+        LibraryScope::Library => "Tracks",
+        LibraryScope::Hidden => "Hidden Tracks",
+    };
+
     column![
-        text("Tracks").size(18),
+        text(title).size(18),
         build_tracks_table(state).height(Length::Fill),
     ]
     .spacing(12)
@@ -46,14 +51,10 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
             continue;
         };
 
-        // Selection (inspector)
         let is_selected = state.selected_tracks.contains(&id);
         let is_primary_selected = state.selected_track == Some(id);
-
-        // Playback
         let is_now_playing = state.now_playing == Some(id);
 
-        // ▶ means "now playing". ● means "selected".
         let marker = if is_now_playing {
             "▶"
         } else if is_selected {
@@ -91,7 +92,6 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         .spacing(10)
         .align_y(Alignment::Center);
 
-        // First click selects; clicking the already-selected row plays it.
         let msg = if is_primary_selected {
             Message::PlayTrack(id)
         } else {

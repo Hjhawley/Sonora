@@ -65,13 +65,17 @@ pub fn hydrate_tracks(id_paths: Vec<(TrackId, PathBuf)>) -> (Vec<TrackRow>, usiz
 }
 
 /// Load visible library rows from the DB without scanning for filesystem updates.
-///
-/// This means:
-/// - startup can restore the previous library immediately
-/// - explicit Scan is still what refreshes `present`/missing status
 pub fn load_visible_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
     let db_path = db::default_db_path()?;
     let db = db::Db::open(&db_path)?;
     let id_paths = db.load_visible_paths()?;
+    Ok(hydrate_tracks(id_paths))
+}
+
+/// Load hidden library rows from the DB without scanning for filesystem updates.
+pub fn load_hidden_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
+    let db_path = db::default_db_path()?;
+    let db = db::Db::open(&db_path)?;
+    let id_paths = db.load_hidden_paths()?;
     Ok(hydrate_tracks(id_paths))
 }

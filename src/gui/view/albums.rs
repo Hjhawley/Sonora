@@ -8,7 +8,7 @@
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};
 
-use super::super::state::{AlbumKey, Message, Sonora};
+use super::super::state::{AlbumKey, LibraryScope, Message, Sonora};
 use super::super::util::filename_stem;
 use super::constants::{
     ALBUM_LIST_H, ALBUM_LIST_SPACING, ALBUM_ROW_COVER, ALBUM_ROW_H, COVER_BIG, ROW_TEXT,
@@ -18,9 +18,13 @@ use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackId;
 
 pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
+    let heading = match state.library_scope {
+        LibraryScope::Library => "Albums",
+        LibraryScope::Hidden => "Hidden Albums",
+    };
+
     let selected_key: Option<AlbumKey> = state.selected_album.clone();
 
-    // For list display: (key, track_count, representative_track_id)
     let albums: Vec<(AlbumKey, usize, TrackId)> = state
         .album_groups
         .iter()
@@ -37,7 +41,7 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
     let detail = build_album_detail(state, selected_payload);
 
     column![
-        text("Albums").size(18),
+        text(heading).size(18),
         list.height(Length::Fixed(ALBUM_LIST_H)),
         detail.height(Length::Fill),
     ]
@@ -100,7 +104,6 @@ fn build_album_detail(
         return container(text("Album has no tracks (weird).")).padding(12);
     }
 
-    // Resolve ids -> indices defensively (avoid panics if the list changed).
     let mut idxs: Vec<usize> = track_ids
         .into_iter()
         .filter_map(|id| state.index_of_id(id))
@@ -110,7 +113,6 @@ fn build_album_detail(
         return container(text("Album tracks are out of range (rescan?).")).padding(12);
     }
 
-    // Sort by (disc, track, title) for a sane album ordering.
     idxs.sort_by(|&a, &b| {
         let ta = &state.tracks[a];
         let tb = &state.tracks[b];
@@ -135,7 +137,6 @@ fn build_album_detail(
         .unwrap_or_else(|| "-".into());
     let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
-    // Big cover: use the first track as the representative.
     let rep_id = first.id;
     let big_cover = rep_id
         .and_then(|id| state.cover_cache.get(&id))
@@ -174,9 +175,6 @@ fn build_album_detail(
         let is_selected = state.selected_tracks.contains(&id);
         let is_now_playing = state.now_playing == Some(id);
 
-        // Marker rules:
-        // - ▶ for now playing (strongest signal)
-        // - ● for selected
         let marker = if is_now_playing {
             "▶"
         } else if is_selected || is_primary {
