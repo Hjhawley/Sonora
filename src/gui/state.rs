@@ -167,7 +167,12 @@ pub(crate) struct Sonora {
     // Selection / navigation
     pub view_mode: ViewMode,
     pub library_scope: LibraryScope,
+
+    /// In Album View:
+    /// - `None` => album grid
+    /// - `Some(key)` => album detail screen
     pub selected_album: Option<AlbumKey>,
+
     pub selected_tracks: BTreeSet<TrackId>,
     pub selected_track: Option<TrackId>,
     pub last_clicked_track: Option<TrackId>,
@@ -198,6 +203,13 @@ impl Sonora {
     pub fn track_by_id_mut(&mut self, id: TrackId) -> Option<&mut TrackRow> {
         let i = self.index_of_id(id)?;
         self.tracks.get_mut(i)
+    }
+
+    #[inline]
+    pub fn representative_track_id_for_album(&self, key: &AlbumKey) -> Option<TrackId> {
+        self.album_groups
+            .get(key)
+            .and_then(|ids| ids.first().copied())
     }
 
     pub fn rebuild_library_caches(&mut self) {

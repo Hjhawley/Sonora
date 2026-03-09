@@ -23,11 +23,17 @@ pub(crate) const TRACK_ROW_VPAD: f32 = 2.0;
 pub(crate) const TRACK_ROW_HPAD: f32 = 8.0;
 pub(crate) const TRACK_LIST_SPACING: f32 = 1.0;
 
-// Album list
-pub(crate) const ALBUM_LIST_H: f32 = 260.0;
-pub(crate) const ALBUM_ROW_H: f32 = 56.0;
-pub(crate) const ALBUM_ROW_COVER: f32 = 44.0;
-pub(crate) const ALBUM_LIST_SPACING: f32 = 1.0;
+// Album grid
+pub(crate) const ALBUM_GRID_COLS: usize = 4;
+pub(crate) const ALBUM_GRID_SPACING_X: f32 = 22.0;
+pub(crate) const ALBUM_GRID_SPACING_Y: f32 = 28.0;
+pub(crate) const ALBUM_TILE_W: f32 = 180.0;
+pub(crate) const ALBUM_TILE_COVER: f32 = 140.0;
+
+// Album detail
+pub(crate) const ALBUM_DETAIL_COVER: f32 = 260.0;
+pub(crate) const ALBUM_DETAIL_TRACK_W_NO: f32 = 40.0;
+pub(crate) const ALBUM_DETAIL_TRACK_W_LEN: f32 = 64.0;
 
 // Artwork
 pub(crate) const COVER_BIG: f32 = 220.0;

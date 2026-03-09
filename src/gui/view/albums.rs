@@ -1,29 +1,33 @@
 //! gui/view/albums.rs
-//! Album view (grouping + album list + detail).
-//!
-//! - Album grouping is cached in `state.album_groups` (AlbumKey -> Vec<TrackId>).
-//! - Cover cache is keyed by `TrackId`.
-//! - Track row click emits `Message::SelectTrack(track_id)`.
+//! Album view:
+//! - album grid when no album is selected
+//! - album detail screen when an album is selected
 
-use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};
 
 use super::super::state::{AlbumKey, LibraryScope, Message, Sonora};
 use super::super::util::filename_stem;
 use super::constants::{
-    ALBUM_LIST_H, ALBUM_LIST_SPACING, ALBUM_ROW_COVER, ALBUM_ROW_H, COVER_BIG, ROW_TEXT,
+    ALBUM_DETAIL_COVER, ALBUM_DETAIL_TRACK_W_LEN, ALBUM_DETAIL_TRACK_W_NO, ALBUM_GRID_COLS,
+    ALBUM_GRID_SPACING_X, ALBUM_GRID_SPACING_Y, ALBUM_TILE_COVER, ALBUM_TILE_W, ROW_TEXT,
     TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
 use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackId;
 
-pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
+pub(crate) fn build_albums_center(state: &Sonora) -> iced::widget::Column<'_, Message> {
+    match &state.selected_album {
+        Some(key) => build_album_detail_screen(state, key.clone()),
+        None => build_album_grid_screen(state),
+    }
+}
+
+fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> {
     let heading = match state.library_scope {
         LibraryScope::Library => "Albums",
         LibraryScope::Hidden => "Hidden Albums",
     };
-
-    let selected_key: Option<AlbumKey> = state.selected_album.clone();
 
     let albums: Vec<(AlbumKey, usize, TrackId)> = state
         .album_groups
@@ -31,77 +35,55 @@ pub(crate) fn build_albums_center(state: &Sonora) -> Column<'_, Message> {
         .filter_map(|(k, v)| v.first().copied().map(|rep| (k.clone(), v.len(), rep)))
         .collect();
 
-    let list = build_album_list(state, selected_key.clone(), albums);
+    let mut outer = column![text(heading).size(18)].spacing(18);
 
-    let selected_payload: Option<(AlbumKey, Vec<TrackId>)> = state
-        .selected_album
-        .as_ref()
-        .and_then(|k| state.album_groups.get(k).map(|v| (k.clone(), v.clone())));
+    let mut rows_col = column![].spacing(ALBUM_GRID_SPACING_Y);
 
-    let detail = build_album_detail(state, selected_payload);
+    for chunk in albums.chunks(ALBUM_GRID_COLS) {
+        let mut r = row![].spacing(ALBUM_GRID_SPACING_X);
 
-    column![
-        text(heading).size(18),
-        list.height(Length::Fixed(ALBUM_LIST_H)),
-        detail.height(Length::Fill),
-    ]
-    .spacing(12)
-}
+        for (key, count, rep_id) in chunk.iter().cloned() {
+            let cover = cover_thumb(state.cover_cache.get(&rep_id), ALBUM_TILE_COVER);
 
-fn build_album_list(
-    state: &Sonora,
-    selected: Option<AlbumKey>,
-    albums: Vec<(AlbumKey, usize, TrackId)>,
-) -> iced::widget::Scrollable<'static, Message> {
-    let mut col: Column<'static, Message> = column![].spacing(ALBUM_LIST_SPACING);
+            let tile = column![
+                cover,
+                text(key.album.clone())
+                    .size(15)
+                    .width(Length::Fixed(ALBUM_TILE_W)),
+                text(key.album_artist.clone())
+                    .size(12)
+                    .width(Length::Fixed(ALBUM_TILE_W)),
+                text(format!("{count} tracks"))
+                    .size(11)
+                    .width(Length::Fixed(ALBUM_TILE_W)),
+            ]
+            .spacing(4)
+            .width(Length::Fixed(ALBUM_TILE_W));
 
-    for (key, count, rep_id) in albums {
-        let is_selected = selected.as_ref() == Some(&key);
+            let tile_widget = mouse_area(
+                container(tile)
+                    .width(Length::Fixed(ALBUM_TILE_W))
+                    .padding(6),
+            )
+            .on_press(Message::SelectAlbum(key));
 
-        let title_line = if is_selected {
-            format!("● {}", key.album)
-        } else {
-            key.album.clone()
-        };
-        let artist_line = key.album_artist.clone();
-        let count_line = format!("{count} tracks");
+            r = r.push(tile_widget);
+        }
 
-        let cover = cover_thumb(state.cover_cache.get(&rep_id), ALBUM_ROW_COVER);
-
-        let row_cells = row![
-            cover,
-            column![text(title_line).size(14), text(artist_line).size(12)]
-                .spacing(2)
-                .width(Length::Fill),
-            text(count_line).size(12).width(Length::Fixed(90.0)),
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center);
-
-        let row_widget = mouse_area(
-            container(row_cells)
-                .padding([6, 8])
-                .height(Length::Fixed(ALBUM_ROW_H))
-                .width(Length::Fill),
-        )
-        .on_press(Message::SelectAlbum(key));
-
-        col = col.push(row_widget);
+        rows_col = rows_col.push(r);
     }
 
-    scrollable(col)
+    outer = outer.push(scrollable(rows_col).height(Length::Fill));
+    outer
 }
 
-fn build_album_detail(
-    state: &Sonora,
-    selected: Option<(AlbumKey, Vec<TrackId>)>,
-) -> iced::widget::Container<'_, Message> {
-    let Some((key, track_ids)) = selected else {
-        return container(text("Select an album to view tracks.")).padding(12);
+fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Column<'_, Message> {
+    let Some(track_ids) = state.album_groups.get(&key).cloned() else {
+        return column![text("Album not found.").size(18)];
     };
 
     if track_ids.is_empty() {
-        return container(text("Album has no tracks (weird).")).padding(12);
+        return column![text("Album has no tracks.").size(18)];
     }
 
     let mut idxs: Vec<usize> = track_ids
@@ -110,7 +92,7 @@ fn build_album_detail(
         .collect();
 
     if idxs.is_empty() {
-        return container(text("Album tracks are out of range (rescan?).")).padding(12);
+        return column![text("Album tracks are out of range (rescan?).").size(18)];
     }
 
     idxs.sort_by(|&a, &b| {
@@ -137,24 +119,34 @@ fn build_album_detail(
         .unwrap_or_else(|| "-".into());
     let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
+    let total_tracks = idxs.len();
+    let total_minutes: u32 = idxs
+        .iter()
+        .filter_map(|&i| state.tracks[i].duration_ms)
+        .sum::<u32>()
+        / 1000
+        / 60;
+
+    let back_btn = button("← Back to albums").on_press(Message::SelectAlbum(key.clone()));
+
     let rep_id = first.id;
     let big_cover = rep_id
         .and_then(|id| state.cover_cache.get(&id))
-        .map(|h| cover_thumb(Some(h), COVER_BIG))
-        .unwrap_or_else(|| cover_thumb(None, COVER_BIG));
+        .map(|h| cover_thumb(Some(h), ALBUM_DETAIL_COVER))
+        .unwrap_or_else(|| cover_thumb(None, ALBUM_DETAIL_COVER));
 
     let header = row![
         big_cover,
         column![
-            text(key.album.clone()).size(26),
-            text(key.album_artist.clone()).size(18),
+            text(key.album.clone()).size(30),
+            text(key.album_artist.clone()).size(20),
             text(format!("{genre} • {year}")).size(14),
-            text(format!("{} songs", idxs.len())).size(12),
+            text(format!("{total_tracks} tracks • {total_minutes} min")).size(13),
         ]
-        .spacing(6)
+        .spacing(8)
         .width(Length::Fill),
     ]
-    .spacing(18)
+    .spacing(24)
     .align_y(Alignment::Center);
 
     let mut list = column![].spacing(TRACK_LIST_SPACING);
@@ -185,14 +177,27 @@ fn build_album_detail(
 
         let row_cells = row![
             text(marker).size(ROW_TEXT).width(Length::Fixed(24.0)),
-            text(n).size(ROW_TEXT).width(Length::Fixed(32.0)),
+            text(n)
+                .size(ROW_TEXT)
+                .width(Length::Fixed(ALBUM_DETAIL_TRACK_W_NO)),
             column![text(title).size(ROW_TEXT), text(artist).size(12)]
                 .spacing(2)
                 .width(Length::Fill),
-            text(dur).size(ROW_TEXT).width(Length::Fixed(60.0)),
+            text(dur)
+                .size(ROW_TEXT)
+                .width(Length::Fixed(ALBUM_DETAIL_TRACK_W_LEN)),
         ]
         .spacing(10)
         .align_y(Alignment::Center);
+
+        // Match Track View behavior:
+        // - first click selects for metadata
+        // - clicking the selected row plays it
+        let msg = if is_primary {
+            Message::PlayTrack(id)
+        } else {
+            Message::SelectTrack(id)
+        };
 
         let row_widget = mouse_area(
             container(row_cells)
@@ -200,11 +205,12 @@ fn build_album_detail(
                 .height(Length::Fixed(TRACK_ROW_H))
                 .width(Length::Fill),
         )
-        .on_press(Message::SelectTrack(id));
+        .on_press(msg);
 
         list = list.push(row_widget);
     }
 
     let tracks_panel = scrollable(list).height(Length::Fill);
-    container(column![header, tracks_panel].spacing(12)).padding(12)
+
+    column![back_btn, header, tracks_panel].spacing(18)
 }

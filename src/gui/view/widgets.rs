@@ -9,7 +9,9 @@ use super::super::state::{Message, Sonora};
 use super::constants::LABEL_W;
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
-    let Some(ms) = ms else { return "-".into() };
+    let Some(ms) = ms else {
+        return "-".into();
+    };
     let s = ms / 1000;
     let m = s / 60;
     let s = s % 60;
@@ -44,8 +46,6 @@ pub(crate) fn cover_thumb(
         Some(h) => container(image(h.clone()))
             .width(Length::Fixed(size))
             .height(Length::Fixed(size))
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
             .into(),
         None => cover_placeholder(size).into(),
     }
@@ -108,7 +108,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         button("⏭")
     };
 
-    // --- seek slider ---
+    // seek slider
     let pos = state.position_ms;
     let dur = state.duration_ms.unwrap_or(0);
 
@@ -125,7 +125,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let seek = if seek_enabled {
         slider(0.0..=1.0, shown_ratio, Message::SeekTo)
-            .step(0.001) // <-- CRITICAL: default step is 1.0 in iced 0.14
+            .step(0.001)
             .on_release(Message::SeekCommit)
             .width(Length::Fill)
     } else {
@@ -140,12 +140,12 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         format!("{} / -:--", fmt_duration_u64(pos))
     };
 
-    // --- volume slider ---
+    // volume slider
     let vol = state.volume.clamp(0.0, 1.0);
 
     let vol_slider = if engine_ready {
         slider(0.0..=1.0, vol, Message::SetVolume)
-            .step(0.01) // <-- fixes "mute/unmute" behavior
+            .step(0.01)
             .width(Length::Fixed(140.0))
     } else {
         slider(0.0..=1.0, vol, |_| Message::Noop)
@@ -153,7 +153,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
             .width(Length::Fixed(140.0))
     };
 
-    // --- now playing label ---
+    // "now playing" label
     let now_playing = match state.now_playing.and_then(|id| state.track_by_id(id)) {
         Some(t) => t
             .title
