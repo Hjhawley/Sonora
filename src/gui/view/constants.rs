@@ -24,7 +24,7 @@ pub(crate) const TRACK_ROW_HPAD: f32 = 8.0;
 pub(crate) const TRACK_LIST_SPACING: f32 = 1.0;
 
 // Album grid
-pub(crate) const ALBUM_GRID_COLS: usize = 4;
+pub(crate) const ALBUM_GRID_MIN_COLS: usize = 1;
 pub(crate) const ALBUM_GRID_SPACING_X: f32 = 22.0;
 pub(crate) const ALBUM_GRID_SPACING_Y: f32 = 28.0;
 pub(crate) const ALBUM_TILE_W: f32 = 180.0;

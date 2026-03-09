@@ -3,13 +3,13 @@
 //! - album grid when no album is selected
 //! - album detail screen when an album is selected
 
-use iced::widget::{button, column, container, mouse_area, row, scrollable, text};
-use iced::{Alignment, Length};
+use iced::widget::{button, column, container, mouse_area, responsive, row, scrollable, text};
+use iced::{Alignment, Length, Size};
 
 use super::super::state::{AlbumKey, LibraryScope, Message, Sonora};
 use super::super::util::filename_stem;
 use super::constants::{
-    ALBUM_DETAIL_COVER, ALBUM_DETAIL_TRACK_W_LEN, ALBUM_DETAIL_TRACK_W_NO, ALBUM_GRID_COLS,
+    ALBUM_DETAIL_COVER, ALBUM_DETAIL_TRACK_W_LEN, ALBUM_DETAIL_TRACK_W_NO, ALBUM_GRID_MIN_COLS,
     ALBUM_GRID_SPACING_X, ALBUM_GRID_SPACING_Y, ALBUM_TILE_COVER, ALBUM_TILE_W, ROW_TEXT,
     TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
@@ -35,11 +35,25 @@ fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> 
         .filter_map(|(k, v)| v.first().copied().map(|rep| (k.clone(), v.len(), rep)))
         .collect();
 
-    let mut outer = column![text(heading).size(18)].spacing(18);
+    let grid = responsive(move |size: Size| build_album_grid_for_width(state, &albums, size.width));
+
+    column![text(heading).size(18), grid.height(Length::Fill)].spacing(18)
+}
+
+fn build_album_grid_for_width<'a>(
+    state: &'a Sonora,
+    albums: &'a [(AlbumKey, usize, TrackId)],
+    available_width: f32,
+) -> iced::widget::Scrollable<'a, Message> {
+    // Grid layout
+    let footprint = ALBUM_TILE_W + ALBUM_GRID_SPACING_X;
+
+    let computed_cols = ((available_width + ALBUM_GRID_SPACING_X) / footprint).floor() as usize;
+    let cols = computed_cols.max(ALBUM_GRID_MIN_COLS).max(1);
 
     let mut rows_col = column![].spacing(ALBUM_GRID_SPACING_Y);
 
-    for chunk in albums.chunks(ALBUM_GRID_COLS) {
+    for chunk in albums.chunks(cols) {
         let mut r = row![].spacing(ALBUM_GRID_SPACING_X);
 
         for (key, count, rep_id) in chunk.iter().cloned() {
@@ -73,8 +87,7 @@ fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> 
         rows_col = rows_col.push(r);
     }
 
-    outer = outer.push(scrollable(rows_col).height(Length::Fill));
-    outer
+    scrollable(rows_col).height(Length::Fill)
 }
 
 fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Column<'_, Message> {
