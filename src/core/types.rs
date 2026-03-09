@@ -8,7 +8,7 @@
 // - No ID3 / tag parsing
 // - No database code
 //
-// `TrackRow` is the app’s canonical “one file + metadata we care about” record.
+// `TrackRow` is the app’s canonical "one file + metadata we care about" record.
 // The `core::tags` layer *produces* and *consumes* it, and the GUI renders/edits it.
 //
 // We use lots of `Option<T>` because real libraries are messy:
@@ -17,25 +17,25 @@
 // - inconsistent tagging conventions
 //
 // Conventions (important):
-// - **`None`** means “absent / unknown / unreadable”
+// - **`None`** means "absent / unknown / unreadable"
 // - **`Some(s)`** should be non-empty and trimmed (normalized for UI sanity)
 //   (i.e., treat empty/whitespace as `None` during read + inspector parsing)
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 
-// Stable identifier for a track.
-//
-// Why have this?
-// - `Vec` indices are not stable (rescans, sorts, inserts, deletes)
-// - once SQLite exists, this becomes the DB primary key
-//
-// MVP note:
-// - while you don't have a DB yet, `TrackRow::id` may be `None`
-// - once SQLite lands, every row should have `Some(id)`
-//
-// We choose `i64` because it matches SQLite `INTEGER PRIMARY KEY` nicely.
-pub type TrackId = i64;
+/// Stable identifier for a track (DB primary key once SQLite exists).
+///
+/// Newtype (NOT a type alias) so you can’t accidentally mix it with ints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TrackId(pub i64);
+
+impl fmt::Display for TrackId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 // Minimal "row" of track metadata for display/edit.
 // One `TrackRow` = one audio file + the metadata we know about it.
@@ -54,7 +54,7 @@ pub struct TrackRow {
     // Canonical file location for this track.
     //
     // MVP identity is still effectively path-based; later the DB owns identity and
-    // this becomes “where it currently lives”.
+    // this becomes "where it currently lives".
     pub path: PathBuf,
 
     // Core display/edit tags (shown by default)

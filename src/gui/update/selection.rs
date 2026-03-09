@@ -48,7 +48,7 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         }
     }
 
-    // Choose a stable “primary” (BTreeSet keeps a stable order by id)
+    // Choose a stable "primary" (BTreeSet keeps a stable order by id)
     state.selected_track = state.selected_tracks.iter().next().copied();
     state.last_clicked_track = state.selected_track;
 

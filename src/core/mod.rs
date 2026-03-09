@@ -5,21 +5,18 @@
 //! - Read/write tags (metadata IO)
 //! - Return plain data structs for the GUI to render
 //!
-//! - Make the scan pipeline explicit and modular:
+//! Scan pipeline boundary:
 //!   (A) discover paths -> Vec<PathBuf>
-//!   (B) read tags -> Vec<TrackRow>
-//!
-//! This keeps the GUI dumb, and makes the later SQLite pivot easy:
-//! - "scan" becomes "discover paths -> upsert/load from DB"
-//! - but (A) and (B) remain stable APIs.
+//!   (B) read tags -> (Vec<TrackRow>, tag_failures)
 
+pub mod db;
 pub mod library;
 pub mod playback;
 pub mod tags;
 pub mod types;
 
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use types::TrackRow;
 
@@ -27,7 +24,7 @@ use types::TrackRow;
 ///
 /// - MP3-only for MVP (library enforces extension rules)
 /// - De-dupes across overlapping roots by full path
-/// - Sorts paths once (core owns ordering, GUI shouldn't)
+/// - Sorts paths once (core owns ordering; GUI shouldn't)
 pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<PathBuf>, String> {
     let mut seen: HashSet<PathBuf> = HashSet::with_capacity(1024);
     let mut out: Vec<PathBuf> = Vec::new();
@@ -62,20 +59,4 @@ pub fn read_tracks(paths: Vec<PathBuf>) -> (Vec<TrackRow>, usize) {
     }
 
     (rows, tag_failures)
-}
-
-/// Convenience: old API preserved (GUI can keep calling this for now).
-///
-/// Internally, this is now just:
-/// - scan_paths(roots)
-/// - read_tracks(paths)
-pub fn scan_and_read_roots(roots: &[PathBuf]) -> Result<(Vec<TrackRow>, usize), String> {
-    let paths = scan_paths(roots)?;
-    let (rows, failures) = read_tracks(paths);
-    Ok((rows, failures))
-}
-
-/// Convenience for callers that have a single root.
-pub fn scan_paths_one(root: &Path) -> Result<Vec<PathBuf>, String> {
-    scan_paths(&[root.to_path_buf()])
 }

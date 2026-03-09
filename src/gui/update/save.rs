@@ -7,7 +7,7 @@
 //!
 //! Safety features (kept):
 //! - If batch saving, auto-KEEP fields that still match the primary track’s original value
-//!   (prevents “album select all” from overwriting everything by accident).
+//!   (prevents "album select all" from overwriting everything by accident).
 //!
 //! Intentional behavior:
 //! - We never mutate `state.tracks` until after a successful write + re-read.
@@ -50,7 +50,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
 
     //
     // Safety: if batch saving, auto-KEEP fields that still match primary track
-    // (prevents “album select all” from overwriting everything by accident)
+    // (prevents "album select all" from overwriting everything by accident)
     //
     let is_batch = ids.len() > 1;
     let primary_id = state.selected_track;
@@ -404,7 +404,7 @@ fn build_row_from_inspector_for_id(
 /// Rules:
 /// - If input is `<keep>` -> do nothing
 /// - Else if batch mode and input matches the primary track's original value -> do nothing
-///   (interprets “unchanged inspector default” as KEEP)
+///   (interprets "unchanged inspector default" as KEEP)
 /// - Else if trimmed empty -> set `None` (delete tag)
 /// - Else -> set `Some(trimmed)`
 fn apply_opt_keep_batch(

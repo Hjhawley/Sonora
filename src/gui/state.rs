@@ -7,8 +7,8 @@
 //! - no update code (state transitions)
 //! - no blocking IO
 //!
-//! If you’re looking for “how things change”, that lives in `gui/update/*`.
-//! If you’re looking for “how things look”, that lives in `gui/view/*`.
+//! If you’re looking for "how things change", that lives in `gui/update/*`.
+//! If you’re looking for "how things look", that lives in `gui/view/*`.
 //!
 //! Identity rules:
 //! - **Selection, now playing, cover cache, and album grouping are keyed by `TrackId`**
@@ -29,7 +29,7 @@ pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 ///
 /// Semantics:
 /// - In multi-select, if values differ, the field becomes `<keep>`
-/// - On save, `<keep>` means “leave the file’s existing value as-is”
+/// - On save, `<keep>` means "leave the file’s existing value as-is"
 pub(crate) const KEEP_SENTINEL: &str = "<keep>";
 
 /// Albums vs Tracks list mode.
@@ -319,7 +319,7 @@ impl Default for Sonora {
     }
 }
 
-/// Message = “something happened”.
+/// Message = "something happened".
 ///
 /// GUI emits these from view code. Update code consumes them.
 #[derive(Debug, Clone)]

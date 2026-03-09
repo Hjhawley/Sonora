@@ -145,7 +145,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let vol_slider = if engine_ready {
         slider(0.0..=1.0, vol, Message::SetVolume)
-            .step(0.01) // <-- fixes “mute/unmute” behavior
+            .step(0.01) // <-- fixes "mute/unmute" behavior
             .width(Length::Fixed(140.0))
     } else {
         slider(0.0..=1.0, vol, |_| Message::Noop)

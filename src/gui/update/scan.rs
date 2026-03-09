@@ -6,7 +6,7 @@
 //!   (B) core::read_tracks(paths) -> (Vec<TrackRow>, failures)
 //!
 //! Still no SQLite:
-//! - We assign temporary TrackId values here so the GUI can operate id-first.
+//! - We assign deterministic TrackId values derived from file paths.
 //! - Once SQLite lands, this becomes "load tracks from DB" instead.
 
 use iced::Task;
@@ -17,7 +17,7 @@ use crate::core;
 use super::super::state::{Message, Sonora, TEST_ROOT};
 use super::selection::clear_selection_and_inspector;
 use super::util::spawn_blocking;
-use crate::core::types::{TrackId, TrackRow};
+use crate::core::types::TrackRow;
 
 pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     if state.scanning || state.saving {
@@ -39,10 +39,30 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
 
     Task::perform(
         spawn_blocking(move || {
-            // Stage A: discover paths (dedup + sorted in core)
+            // discover paths
             let paths = core::scan_paths(&roots_to_scan)?;
-            // Stage B: read tags into TrackRows (non-fatal per-file)
-            let (rows, failures) = core::read_tracks(paths);
+
+            // open db
+            let db_path = core::db::default_db_path()?;
+            let mut db = core::db::Db::open(&db_path)?;
+
+            // get stable TrackIds
+            let id_paths = db.upsert_paths(&paths)?;
+
+            let mut rows: Vec<TrackRow> = Vec::with_capacity(id_paths.len());
+            let mut failures: usize = 0;
+
+            for (id, path) in id_paths {
+                let (mut row, failed) = core::tags::read_track_row(path);
+
+                if failed {
+                    failures += 1;
+                }
+
+                row.id = Some(id);
+                rows.push(row);
+            }
+
             Ok((rows, failures))
         }),
         Message::ScanFinished,
@@ -56,10 +76,7 @@ pub(crate) fn scan_finished(
     state.scanning = false;
 
     match result {
-        Ok((mut rows, tag_failures)) => {
-            // Ensure every row has a TrackId (temporary, per-scan).
-            assign_temp_ids_if_missing(&mut rows);
-
+        Ok((rows, tag_failures)) => {
             state.status = if tag_failures == 0 {
                 format!("Loaded {} tracks", rows.len())
             } else {
@@ -86,20 +103,4 @@ pub(crate) fn scan_finished(
     }
 
     Task::none()
-}
-
-fn assign_temp_ids_if_missing(rows: &mut [TrackRow]) {
-    // Deterministic and stable within a scan result.
-    // Not stable across rescans (that’s what SQLite will fix).
-    // TrackId is currently a *type alias* (not a newtype),
-    // so assign by casting, not `TrackId(n)`.
-
-    let mut next: u64 = 1;
-
-    for r in rows.iter_mut() {
-        if r.id.is_none() {
-            r.id = Some(next as TrackId);
-            next += 1;
-        }
-    }
 }

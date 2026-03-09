@@ -180,7 +180,7 @@ fn empty_row(path: PathBuf) -> TrackRow {
 }
 
 /// Get a best-effort string value from a frame id.
-/// This is intentionally defensive: some frames that are “text-ish” may not be Content::Text.
+/// This is intentionally defensive: some frames that are "text-ish" may not be Content::Text.
 fn text_frame(tag: &Tag, id: &str) -> Option<String> {
     let frame = tag.get(id)?;
     match frame.content() {
@@ -189,7 +189,7 @@ fn text_frame(tag: &Tag, id: &str) -> Option<String> {
         // Some builds/crate versions surface a string via link frames too.
         Content::Link(s) => Some(s.clone()),
 
-        // If id3 ever decides to represent certain things as “unknown but decodable”,
+        // If id3 ever decides to represent certain things as "unknown but decodable",
         // we still ignore it rather than guessing.
         _ => None,
     }
