@@ -2,9 +2,9 @@
 //! Scan lifecycle + async boundary + selection reset.
 //!
 //! Scan pipeline:
-//!   (A) discover current filesystem paths + file facts
-//!   (B) upsert them into SQLite, updating `present`, `mtime`, `size`
-//!   (C) load hydrated TrackRows with stable DB-backed ids
+//!   discover current filesystem paths + file facts
+//!   upsert them into SQLite, updating `present`, `mtime`, `size`
+//!   load hydrated TrackRows with stable DB-backed ids
 
 use iced::Task;
 use std::path::PathBuf;
@@ -36,15 +36,15 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
 
     Task::perform(
         spawn_blocking(move || {
-            // Stage A: discover files on disk
+            // discover files on disk
             let discovered = core::scan_paths(&roots_to_scan)?;
 
-            // Stage B: DB-backed identity + present/missing update
+            // DB-backed identity + present/missing update
             let db_path = core::db::default_db_path()?;
             let mut db = core::db::Db::open(&db_path)?;
             let id_paths = db.upsert_discovered(&discovered)?;
 
-            // Stage C: hydrate rows by reading tags from the discovered files
+            // hydrate rows by reading tags from the discovered files
             let (rows, failures) = core::hydrate_tracks(id_paths);
 
             Ok((rows, failures))
