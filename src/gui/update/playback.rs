@@ -10,8 +10,9 @@
 
 use iced::Task;
 use rand::seq::SliceRandom;
+use std::collections::BTreeSet;
 
-use super::super::state::{Message, PlayOrder, RepeatMode, Sonora};
+use super::super::state::{Message, PlayOrder, RepeatMode, Sonora, ViewMode};
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
 use crate::core::types::TrackId;
 
@@ -41,31 +42,57 @@ fn visible_track_ids(state: &Sonora) -> Vec<TrackId> {
     state.tracks.iter().filter_map(|t| t.id).collect()
 }
 
+/// Returns the current ordered playback context before shuffle is applied.
+///
+/// Rules:
+/// - Album View detail screen => only that album's tracks, in current dataset order
+/// - otherwise => all visible tracks
+///
+/// This is the seam playlists will later plug into.
+fn context_track_ids(state: &Sonora) -> Vec<TrackId> {
+    if state.view_mode == ViewMode::Albums {
+        if let Some(key) = &state.selected_album {
+            if let Some(ids) = state.album_groups.get(key) {
+                return ids.clone();
+            }
+        }
+    }
+
+    visible_track_ids(state)
+}
+
+/// Keep only ids that are still valid for the current playback context,
+/// preserve relative order, and append any newly-added ids at the end.
 fn sync_shuffled_ids(state: &mut Sonora) {
-    let visible_ids = visible_track_ids(state);
-    if visible_ids.is_empty() {
+    let context_ids = context_track_ids(state);
+    if context_ids.is_empty() {
         state.shuffled_ids.clear();
         return;
     }
 
-    let visible_set: std::collections::BTreeSet<TrackId> = visible_ids.iter().copied().collect();
+    let valid_set: BTreeSet<TrackId> = context_ids.iter().copied().collect();
 
-    let mut seen: std::collections::BTreeSet<TrackId> = std::collections::BTreeSet::new();
+    let mut seen: BTreeSet<TrackId> = BTreeSet::new();
     state
         .shuffled_ids
-        .retain(|id| visible_set.contains(id) && seen.insert(*id));
+        .retain(|id| valid_set.contains(id) && seen.insert(*id));
 
-    let mut queued: std::collections::BTreeSet<TrackId> =
-        state.shuffled_ids.iter().copied().collect();
-    for id in visible_ids {
+    let mut queued: BTreeSet<TrackId> = state.shuffled_ids.iter().copied().collect();
+    for id in context_ids {
         if queued.insert(id) {
             state.shuffled_ids.push(id);
         }
     }
 }
 
+/// Build a fresh shuffled order for the current playback context.
+///
+/// Behavior:
+/// - shuffle only within the active context (album detail, later playlist, else library)
+/// - if there is an anchor (now playing or selected), keep it at the same index
+///   it occupied in the unshuffled context when possible
 fn rebuild_shuffle_order(state: &mut Sonora) {
-    let mut ids = visible_track_ids(state);
+    let mut ids = context_track_ids(state);
     if ids.is_empty() {
         state.shuffled_ids.clear();
         return;
@@ -92,11 +119,11 @@ fn rebuild_shuffle_order(state: &mut Sonora) {
 
 fn playback_ids(state: &mut Sonora) -> Vec<TrackId> {
     match state.play_order {
-        PlayOrder::Normal => visible_track_ids(state),
+        PlayOrder::Normal => context_track_ids(state),
         PlayOrder::Shuffle => {
             sync_shuffled_ids(state);
             if state.shuffled_ids.is_empty() {
-                visible_track_ids(state)
+                context_track_ids(state)
             } else {
                 state.shuffled_ids.clone()
             }
