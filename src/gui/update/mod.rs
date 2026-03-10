@@ -39,6 +39,9 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SetViewMode(mode) => selection::set_view_mode(state, mode),
         Message::SelectAlbum(key) => selection::select_album(state, key),
         Message::SelectTrack(id) => selection::select_track(state, id),
+        Message::AlbumTilePressed(key) => selection::album_tile_pressed(state, key),
+        Message::AlbumHeaderPressed(key) => selection::album_header_pressed(state, key),
+        Message::AlbumTrackPressed(key, id) => selection::album_track_pressed(state, key, id),
 
         // Cover
         Message::CoverLoaded(id, handle) => selection::cover_loaded(state, id, handle),
@@ -46,6 +49,8 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         // Playback
         Message::PlaySelected => playback::play_selected(state),
         Message::PlayTrack(id) => playback::play_track(state, id),
+        Message::PlayAlbum(key) => playback::play_album(state, key),
+        Message::PlayAlbumFromTrack(key, id) => playback::play_album_from_track(state, key, id),
         Message::TogglePlayPause => playback::toggle_play_pause(state),
         Message::ToggleShuffle => playback::toggle_shuffle(state),
         Message::CycleRepeatMode => playback::cycle_repeat_mode(state),

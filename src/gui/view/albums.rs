@@ -91,7 +91,7 @@ fn build_album_grid_for_width(
                     .width(Length::Fixed(ALBUM_TILE_W))
                     .padding(6),
             )
-            .on_press(Message::SelectAlbum(album.key.clone()));
+            .on_press(Message::AlbumTilePressed(album.key.clone()));
 
             r = r.push(tile_widget);
         }
@@ -155,6 +155,8 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
     let back_btn = button("← Back to albums")
         .on_press(Message::SetViewMode(super::super::state::ViewMode::Albums));
 
+    let play_album_btn = button("Play Album").on_press(Message::PlayAlbum(key.clone()));
+
     let rep_id = first.id;
     let big_cover = rep_id
         .and_then(|id| state.cover_cache.get(&id))
@@ -169,6 +171,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
             text(key.album_artist.clone()).size(20),
             text(format!("{genre} • {year}")).size(14),
             text(format!("{total_tracks} tracks • {total_minutes} min")).size(13),
+            play_album_btn,
         ]
         .spacing(8)
         .width(Length::Fill),
@@ -181,7 +184,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
             .width(Length::Fill)
             .padding([4, 0]),
     )
-    .on_press(Message::SelectAlbum(key.clone()));
+    .on_press(Message::AlbumHeaderPressed(key.clone()));
 
     let mut list = column![].spacing(TRACK_LIST_SPACING);
 
@@ -224,22 +227,13 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         .spacing(10)
         .align_y(Alignment::Center);
 
-        // Match Track View behavior:
-        // - first click selects for metadata
-        // - clicking the selected row plays it
-        let msg = if is_primary {
-            Message::PlayTrack(id)
-        } else {
-            Message::SelectTrack(id)
-        };
-
         let row_widget = mouse_area(
             container(row_cells)
                 .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
                 .height(Length::Fixed(TRACK_ROW_H))
                 .width(Length::Fill),
         )
-        .on_press(msg);
+        .on_press(Message::AlbumTrackPressed(key.clone(), id));
 
         list = list.push(row_widget);
     }

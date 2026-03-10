@@ -10,12 +10,16 @@
 
 use iced::Task;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-use super::super::state::{AlbumKey, LibraryScope, Message, Sonora, ViewMode};
+use super::super::state::{AlbumKey, AlbumPressTarget, LibraryScope, Message, Sonora, ViewMode};
 use super::inspector::{clear_inspector, load_inspector_from_selection};
+use super::playback;
 use super::util::spawn_blocking;
 use crate::core;
 use crate::core::types::{TrackId, TrackRow};
+
+const DOUBLE_CLICK_WINDOW_MS: u64 = 400;
 
 pub(crate) fn set_library_scope(state: &mut Sonora, scope: LibraryScope) -> Task<Message> {
     if state.library_scope == scope {
@@ -77,13 +81,14 @@ pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message>
     let was_albums = state.view_mode == ViewMode::Albums;
 
     state.view_mode = mode;
+    state.last_album_press = None;
 
-    // When explicitly switching into Track View, leave album detail entirely.
+    // When explicitly switching into Track View, leave album detail entirely
     if mode == ViewMode::Tracks {
         state.selected_album = None;
     }
 
-    // When explicitly switching into Album View, go back to the album grid.
+    // When explicitly switching into Album View, go back to the album grid
     if mode == ViewMode::Albums && !was_albums {
         state.selected_album = None;
         state.selected_track = None;
@@ -143,7 +148,8 @@ pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
         return Task::none();
     };
 
-    // In Album detail, keep the detail screen open if the clicked track belongs to the open album
+    // In Album View, keep the detail screen open
+    // if the clicked track belongs to the open album
     if state.view_mode == ViewMode::Albums {
         let clicked_key = album_key_for_index(state, idx);
 
@@ -166,6 +172,45 @@ pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     load_inspector_from_selection(state);
 
     maybe_load_cover_for_track(state, id)
+}
+
+pub(crate) fn album_tile_pressed(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
+    let is_double = register_album_press(state, AlbumPressTarget::Tile(key.clone()));
+
+    let select_task = select_album(state, key.clone());
+
+    if is_double {
+        let play_task = playback::play_album(state, key);
+        Task::batch(vec![select_task, play_task])
+    } else {
+        select_task
+    }
+}
+
+pub(crate) fn album_header_pressed(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
+    let is_double = register_album_press(state, AlbumPressTarget::Header(key.clone()));
+
+    let select_task = select_album(state, key.clone());
+
+    if is_double {
+        let play_task = playback::play_album(state, key);
+        Task::batch(vec![select_task, play_task])
+    } else {
+        select_task
+    }
+}
+
+pub(crate) fn album_track_pressed(state: &mut Sonora, key: AlbumKey, id: TrackId) -> Task<Message> {
+    let is_double = register_album_press(state, AlbumPressTarget::Track(key.clone(), id));
+
+    let select_task = select_track(state, id);
+
+    if is_double {
+        let play_task = playback::play_album_from_track(state, key, id);
+        Task::batch(vec![select_task, play_task])
+    } else {
+        select_task
+    }
 }
 
 pub(crate) fn hide_selected(state: &mut Sonora) -> Task<Message> {
@@ -285,6 +330,19 @@ fn selected_ids(state: &Sonora) -> Vec<TrackId> {
     ids
 }
 
+fn register_album_press(state: &mut Sonora, target: AlbumPressTarget) -> bool {
+    let now = Instant::now();
+    let window = Duration::from_millis(DOUBLE_CLICK_WINDOW_MS);
+
+    let is_double = state
+        .last_album_press
+        .as_ref()
+        .is_some_and(|(prev, at)| *prev == target && now.duration_since(*at) <= window);
+
+    state.last_album_press = Some((target, now));
+    is_double
+}
+
 // Helpers
 
 fn album_key_for_index(state: &Sonora, idx: usize) -> AlbumKey {
@@ -334,6 +392,7 @@ pub(crate) fn clear_selection_and_inspector(state: &mut Sonora) {
     state.selected_tracks.clear();
     state.last_clicked_track = None;
     state.selected_album = None;
+    state.last_album_press = None;
 
     clear_inspector(state);
 }

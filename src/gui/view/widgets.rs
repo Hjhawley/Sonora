@@ -5,7 +5,7 @@
 use iced::widget::{button, column, container, image, row, slider, text, text_input};
 use iced::{Alignment, Element, Length};
 
-use super::super::state::{Message, PlayOrder, RepeatMode, Sonora};
+use super::super::state::{Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
 use super::constants::LABEL_W;
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
@@ -91,9 +91,9 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let play_label = if state.is_playing { "Pause" } else { "Play" };
 
     let prev_btn = if engine_ready {
-        button("⏮").on_press(Message::Prev)
+        button("Prev").on_press(Message::Prev)
     } else {
-        button("⏮")
+        button("Next")
     };
 
     let play_btn = if engine_ready {
@@ -117,6 +117,11 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         RepeatMode::Off => "Repeat: Off",
         RepeatMode::All => "Repeat: All",
         RepeatMode::One => "Repeat: One",
+    };
+
+    let queue_label = match &state.playback_context {
+        PlaybackContext::Library => "Queue: Library".to_string(),
+        PlaybackContext::Album(key) => format!("Queue: Album — {}", key.album),
     };
 
     let shuffle_btn = if engine_ready {
@@ -143,7 +148,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         0.0
     };
 
-    // If the user is currently dragging, show their preview value.
+    // If the user is currently dragging, show their preview value
     let shown_ratio = state.seek_preview_ratio.unwrap_or(live_ratio);
 
     let seek = if seek_enabled {
@@ -192,6 +197,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
             .align_y(Alignment::Center),
         column![
             text(now_playing).size(14),
+            text(queue_label).size(12),
             row![seek, text(time_text).size(12)]
                 .spacing(10)
                 .align_y(Alignment::Center),

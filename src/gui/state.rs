@@ -14,6 +14,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
+use std::time::Instant;
 
 use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
@@ -65,6 +66,18 @@ pub(crate) enum RepeatMode {
     One,
 }
 
+/// Explicit playback queue scope.
+///
+/// This is intentionally separate from:
+/// - current view
+/// - current selection
+/// - current metadata editing target
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum PlaybackContext {
+    Library,
+    Album(AlbumKey),
+}
+
 /// Grouping key for Album View.
 ///
 /// Important: This is a *UI grouping key*, not a DB key.
@@ -73,6 +86,14 @@ pub(crate) enum RepeatMode {
 pub(crate) struct AlbumKey {
     pub album_artist: String,
     pub album: String,
+}
+
+/// Used for local double-click detection in Album View.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AlbumPressTarget {
+    Tile(AlbumKey),
+    Header(AlbumKey),
+    Track(AlbumKey, TrackId),
 }
 
 /// Draft editable metadata (strings so the user can type anything).
@@ -196,6 +217,7 @@ pub(crate) struct Sonora {
     // Playback policy
     pub play_order: PlayOrder,
     pub repeat_mode: RepeatMode,
+    pub playback_context: PlaybackContext,
 
     /// Persistent queue order used only when 'play_order == PlayOrder::Shuffle'.
     pub shuffled_ids: Vec<TrackId>,
@@ -212,6 +234,9 @@ pub(crate) struct Sonora {
     pub selected_tracks: BTreeSet<TrackId>,
     pub selected_track: Option<TrackId>,
     pub last_clicked_track: Option<TrackId>,
+
+    /// Album-view double click bookkeeping.
+    pub last_album_press: Option<(AlbumPressTarget, Instant)>,
 
     // Inspector
     pub inspector: InspectorDraft,
@@ -299,6 +324,15 @@ impl Sonora {
                 self.shuffled_ids.push(id);
             }
         }
+
+        if matches!(&self.playback_context, PlaybackContext::Album(key) if !self.album_groups.contains_key(key))
+        {
+            self.playback_context = PlaybackContext::Library;
+        }
+
+        if matches!(&self.selected_album, Some(key) if !self.album_groups.contains_key(key)) {
+            self.selected_album = None;
+        }
     }
 }
 
@@ -362,6 +396,7 @@ impl Default for Sonora {
 
             play_order: PlayOrder::Normal,
             repeat_mode: RepeatMode::Off,
+            playback_context: PlaybackContext::Library,
             shuffled_ids: Vec::new(),
 
             view_mode: ViewMode::Tracks,
@@ -371,6 +406,7 @@ impl Default for Sonora {
             selected_tracks: BTreeSet::new(),
             selected_track: None,
             last_clicked_track: None,
+            last_album_press: None,
 
             inspector: InspectorDraft::default(),
             inspector_dirty: false,
@@ -411,12 +447,19 @@ pub(crate) enum Message {
     SelectAlbum(AlbumKey),
     SelectTrack(TrackId),
 
+    // Album-view click handling (single-click select, double-click play)
+    AlbumTilePressed(AlbumKey),
+    AlbumHeaderPressed(AlbumKey),
+    AlbumTrackPressed(AlbumKey, TrackId),
+
     // Cover art
     CoverLoaded(TrackId, Option<iced::widget::image::Handle>),
 
     // Playback controls (from UI)
     PlaySelected,
     PlayTrack(TrackId),
+    PlayAlbum(AlbumKey),
+    PlayAlbumFromTrack(AlbumKey, TrackId),
     TogglePlayPause,
     ToggleShuffle,
     CycleRepeatMode,

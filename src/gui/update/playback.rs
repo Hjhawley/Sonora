@@ -12,7 +12,7 @@ use iced::Task;
 use rand::seq::SliceRandom;
 use std::collections::BTreeSet;
 
-use super::super::state::{Message, PlayOrder, RepeatMode, Sonora, ViewMode};
+use super::super::state::{AlbumKey, Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
 use crate::core::types::TrackId;
 
@@ -44,23 +44,52 @@ fn visible_track_ids(state: &Sonora) -> Vec<TrackId> {
     state.tracks.iter().filter_map(|t| t.id).collect()
 }
 
+fn ordered_album_track_ids(state: &Sonora, key: &AlbumKey) -> Vec<TrackId> {
+    let Some(ids) = state.album_groups.get(key) else {
+        return Vec::new();
+    };
+
+    let mut ids = ids.clone();
+
+    ids.sort_by(|a, b| {
+        let ta = state.track_by_id(*a);
+        let tb = state.track_by_id(*b);
+
+        match (ta, tb) {
+            (Some(ta), Some(tb)) => (
+                ta.disc_no.unwrap_or(0),
+                ta.track_no.unwrap_or(0),
+                ta.title.clone().unwrap_or_default(),
+                *a,
+            )
+                .cmp(&(
+                    tb.disc_no.unwrap_or(0),
+                    tb.track_no.unwrap_or(0),
+                    tb.title.clone().unwrap_or_default(),
+                    *b,
+                )),
+            _ => a.cmp(b),
+        }
+    });
+
+    ids
+}
+
 /// Returns the current ordered playback context before shuffle is applied.
 ///
-/// Rules:
-/// - Album View detail screen => only that album's tracks, in current dataset order
-/// - otherwise => all visible tracks
-///
-/// This is the seam playlists will later plug into.
+/// This is intentionally driven by explicit playback state, not view state.
 fn context_track_ids(state: &Sonora) -> Vec<TrackId> {
-    if state.view_mode == ViewMode::Albums {
-        if let Some(key) = &state.selected_album {
-            if let Some(ids) = state.album_groups.get(key) {
-                return ids.clone();
+    match &state.playback_context {
+        PlaybackContext::Library => visible_track_ids(state),
+        PlaybackContext::Album(key) => {
+            let ids = ordered_album_track_ids(state, key);
+            if ids.is_empty() {
+                visible_track_ids(state)
+            } else {
+                ids
             }
         }
     }
-
-    visible_track_ids(state)
 }
 
 /// Keep only ids that are still valid for the current playback context,
@@ -90,7 +119,7 @@ fn sync_shuffled_ids(state: &mut Sonora) {
 /// Build a fresh shuffled order for the current playback context.
 ///
 /// Behavior:
-/// - shuffle only within the active context (album detail, later playlist, else library)
+/// - shuffle only within the active playback context
 /// - if there is an anchor (now playing or selected), keep it at the same index
 ///   it occupied in the unshuffled context when possible
 fn rebuild_shuffle_order(state: &mut Sonora) {
@@ -201,36 +230,29 @@ fn event_matches_active(state: &Sonora, playback_id: u64) -> bool {
     state.active_playback_id == Some(playback_id)
 }
 
-pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
-    let Some(rx_cell) = state.playback_events.as_ref() else {
-        return Task::none();
-    };
-
-    let mut drained: Vec<PlayerEvent> = Vec::new();
-    {
-        // Receiver::try_recv only needs &self, so borrow() is enough
-        let rx = rx_cell.borrow();
-        while let Ok(ev) = rx.try_recv() {
-            drained.push(ev);
+fn set_context_library(state: &mut Sonora) {
+    if state.playback_context != PlaybackContext::Library {
+        state.playback_context = PlaybackContext::Library;
+        if state.play_order == PlayOrder::Shuffle {
+            rebuild_shuffle_order(state);
+        } else {
+            sync_shuffled_ids(state);
         }
     }
+}
 
-    for ev in drained {
-        let _ = handle_event(state, ev);
+fn set_context_album(state: &mut Sonora, key: AlbumKey) {
+    if state.playback_context != PlaybackContext::Album(key.clone()) {
+        state.playback_context = PlaybackContext::Album(key);
+        if state.play_order == PlayOrder::Shuffle {
+            rebuild_shuffle_order(state);
+        } else {
+            sync_shuffled_ids(state);
+        }
     }
-
-    Task::none()
 }
 
-pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
-    let Some(id) = state.selected_track else {
-        state.status = "No track selected.".into();
-        return Task::none();
-    };
-    play_track(state, id)
-}
-
-pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
+fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     ensure_engine(state);
     sync_shuffled_ids(state);
 
@@ -251,8 +273,8 @@ pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
 
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
-    // Playback should not hijack selection.
-    // We intentionally do NOT trust any older non-Started transport events after this.
+    // Playback should not hijack selection
+    // We do not trust any older non-Started transport events after this
     state.awaiting_started = true;
     state.now_playing = Some(id);
     state.is_playing = true;
@@ -262,6 +284,73 @@ pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     state.status = format!("Playing: {}", path.display());
 
     Task::none()
+}
+
+pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
+    let Some(rx_cell) = state.playback_events.as_ref() else {
+        return Task::none();
+    };
+
+    let mut drained: Vec<PlayerEvent> = Vec::new();
+    {
+        let rx = rx_cell.borrow();
+        while let Ok(ev) = rx.try_recv() {
+            drained.push(ev);
+        }
+    }
+
+    for ev in drained {
+        let _ = handle_event(state, ev);
+    }
+
+    Task::none()
+}
+
+pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
+    let Some(id) = state.selected_track else {
+        state.status = "No track selected.".into();
+        return Task::none();
+    };
+
+    if let Some(key) = state.selected_album.clone() {
+        let ids = ordered_album_track_ids(state, &key);
+        if ids.contains(&id) {
+            return play_album_from_track(state, key, id);
+        }
+    }
+
+    play_track(state, id)
+}
+
+pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
+    set_context_library(state);
+    play_track_internal(state, id)
+}
+
+pub(crate) fn play_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
+    let ids = ordered_album_track_ids(state, &key);
+    let Some(first_id) = ids.first().copied() else {
+        state.status = "Album has no playable tracks.".to_string();
+        return Task::none();
+    };
+
+    set_context_album(state, key);
+    play_track_internal(state, first_id)
+}
+
+pub(crate) fn play_album_from_track(
+    state: &mut Sonora,
+    key: AlbumKey,
+    id: TrackId,
+) -> Task<Message> {
+    let ids = ordered_album_track_ids(state, &key);
+    if !ids.contains(&id) {
+        state.status = "Track is not part of that album.".to_string();
+        return Task::none();
+    }
+
+    set_context_album(state, key);
+    play_track_internal(state, id)
 }
 
 pub(crate) fn toggle_play_pause(state: &mut Sonora) -> Task<Message> {
@@ -361,7 +450,7 @@ pub(crate) fn next(state: &mut Sonora) -> Task<Message> {
         return stop(state);
     };
 
-    play_track(state, next_id)
+    play_track_internal(state, next_id)
 }
 
 pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
@@ -374,7 +463,7 @@ pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     };
 
-    play_track(state, prev_id)
+    play_track_internal(state, prev_id)
 }
 
 /// Seek slider changed: preview only (UI updates, no engine command).
@@ -417,7 +506,7 @@ pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
 
     let mut target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
 
-    // Seeking to *exactly* the end tends to produce EOF weirdness; clamp slightly.
+    // Seeking to the end tends to produce EOF weirdness, so clamp slightly
     if target_ms >= dur_ms {
         target_ms = dur_ms.saturating_sub(1);
     }
@@ -428,11 +517,12 @@ pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
         ratio, dur_ms, target_ms
     );
 
-    // Seek reopens the source inside the engine, so we should expect a fresh Started event.
+    // Seek reopens the source inside the engine,
+    // so we should expect a fresh Started event
     state.awaiting_started = true;
     controller.send(PlayerCommand::Seek(target_ms));
 
-    // Optimistic UI update; engine will confirm via Started/Position.
+    // Optimistic UI update; engine will confirm via Started/Position
     state.position_ms = target_ms;
 
     Task::none()
@@ -521,8 +611,8 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
         }
 
         PlayerEvent::Stopped { playback_id } => {
-            // UI already handles Stop optimistically.
-            // Ignore stale stops, and also ignore matching stops while a new Started is pending.
+            // UI already handles Stop optimistically
+            // Ignore stale stops, and also ignore matching stops while a new Started is pending
             if state.awaiting_started || !event_matches_active(state, playback_id) {
                 return Task::none();
             }
@@ -549,7 +639,7 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             }
 
             if let Some(next_id) = next_track_id(state) {
-                return play_track(state, next_id);
+                return play_track_internal(state, next_id);
             }
 
             clear_playback_ui(state);
