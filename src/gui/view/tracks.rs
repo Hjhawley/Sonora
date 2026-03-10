@@ -16,7 +16,7 @@ use super::widgets::fmt_duration;
 
 pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     let title = match state.library_scope {
-        LibraryScope::Library => "Tracks",
+        LibraryScope::Library => "All Tracks",
         LibraryScope::Hidden => "Hidden Tracks",
     };
 

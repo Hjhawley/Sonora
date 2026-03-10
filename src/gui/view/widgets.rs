@@ -93,7 +93,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let prev_btn = if engine_ready {
         button("Prev").on_press(Message::Prev)
     } else {
-        button("Next")
+        button("Prev")
     };
 
     let play_btn = if engine_ready {
@@ -103,9 +103,9 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     };
 
     let next_btn = if engine_ready {
-        button("⏭").on_press(Message::Next)
+        button("Next").on_press(Message::Next)
     } else {
-        button("⏭")
+        button("Next")
     };
 
     let shuffle_label = match state.play_order {

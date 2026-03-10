@@ -11,10 +11,12 @@
 
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::core::library::DiscoveredFile;
 use crate::core::types::TrackId;
+
+const APP_STATE_VOLUME_KEY: &str = "volume";
 
 pub struct Db {
     conn: Connection,
@@ -39,6 +41,11 @@ impl Db {
                 CREATE TABLE IF NOT EXISTS tracks (
                     id      INTEGER PRIMARY KEY,
                     path    TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS app_state (
+                    key     TEXT PRIMARY KEY,
+                    value   TEXT NOT NULL
                 );
                 "#,
             )
@@ -223,12 +230,48 @@ impl Db {
         Ok(out)
     }
 
-    /// Future UI support: hide / unhide without touching the file.
+    /// Future UI support: hide / unhide without touching the file
     pub fn set_hidden(&self, id: TrackId, hidden: bool) -> Result<(), String> {
         self.conn
             .execute(
                 "UPDATE tracks SET hidden = ?2 WHERE id = ?1",
                 params![id.0, if hidden { 1 } else { 0 }],
+            )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Load persisted master volume (0.0..=1.0), if present and valid
+    pub fn load_volume(&self) -> Result<Option<f32>, String> {
+        let raw: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM app_state WHERE key = ?1",
+                params![APP_STATE_VOLUME_KEY],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+
+        let Some(raw) = raw else {
+            return Ok(None);
+        };
+
+        let parsed = raw.parse::<f32>().map_err(|e| e.to_string())?;
+        Ok(Some(parsed.clamp(0.0, 1.0)))
+    }
+
+    /// Persist master volume (clamped to 0.0..=1.0)
+    pub fn save_volume(&self, volume: f32) -> Result<(), String> {
+        let volume = volume.clamp(0.0, 1.0);
+        self.conn
+            .execute(
+                r#"
+                INSERT INTO app_state(key, value)
+                VALUES (?1, ?2)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                "#,
+                params![APP_STATE_VOLUME_KEY, volume.to_string()],
             )
             .map_err(|e| e.to_string())?;
         Ok(())

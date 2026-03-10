@@ -40,6 +40,14 @@ fn clear_playback_ui(state: &mut Sonora) {
     state.seek_preview_ratio = None;
 }
 
+fn persist_volume(volume: f32) {
+    if let Ok(db_path) = crate::core::db::default_db_path() {
+        if let Ok(db) = crate::core::db::Db::open(&db_path) {
+            let _ = db.save_volume(volume);
+        }
+    }
+}
+
 fn visible_track_ids(state: &Sonora) -> Vec<TrackId> {
     state.tracks.iter().filter_map(|t| t.id).collect()
 }
@@ -535,6 +543,8 @@ pub(crate) fn set_volume(state: &mut Sonora, volume: f32) -> Task<Message> {
     if let Some(controller) = &state.playback {
         controller.send(PlayerCommand::SetVolume(volume));
     }
+
+    persist_volume(volume);
 
     Task::none()
 }

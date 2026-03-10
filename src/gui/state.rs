@@ -340,6 +340,15 @@ impl Default for Sonora {
     fn default() -> Self {
         let (playback_controller, playback_events) = start_playback();
 
+        let saved_volume = (|| -> Result<Option<f32>, String> {
+            let db_path = core::db::default_db_path()?;
+            let db = core::db::Db::open(&db_path)?;
+            db.load_volume()
+        })()
+        .unwrap_or(None)
+        .unwrap_or(1.0)
+        .clamp(0.0, 1.0);
+
         let (tracks, status) = match core::load_visible_tracks_from_db() {
             Ok((tracks, failures)) => {
                 if tracks.is_empty() {
@@ -390,7 +399,7 @@ impl Default for Sonora {
             is_playing: false,
             position_ms: 0,
             duration_ms: None,
-            volume: 1.0,
+            volume: saved_volume,
 
             seek_preview_ratio: None,
 
@@ -417,6 +426,11 @@ impl Default for Sonora {
         };
 
         s.rebuild_library_caches();
+
+        if let Some(controller) = &s.playback {
+            controller.send(crate::core::playback::PlayerCommand::SetVolume(s.volume));
+        }
+
         s
     }
 }

@@ -32,7 +32,7 @@ pub(crate) fn build_albums_center(state: &Sonora) -> iced::widget::Column<'_, Me
 
 fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> {
     let heading = match state.library_scope {
-        LibraryScope::Library => "Albums",
+        LibraryScope::Library => "All Albums",
         LibraryScope::Hidden => "Hidden Albums",
     };
 
