@@ -35,18 +35,28 @@ pub enum PlayerCommand {
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
     Started {
+        playback_id: u64,
         path: PathBuf,
         duration_ms: Option<u64>,
         /// The position the engine started from (0 normally, nonzero when seeking)
         start_ms: u64,
     },
-    Paused,
-    Resumed,
-    Stopped,
+    Paused {
+        playback_id: u64,
+    },
+    Resumed {
+        playback_id: u64,
+    },
+    Stopped {
+        playback_id: u64,
+    },
     Position {
+        playback_id: u64,
         position_ms: u64,
     },
-    TrackEnded,
+    TrackEnded {
+        playback_id: u64,
+    },
     Error(String),
 }
 

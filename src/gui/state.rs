@@ -176,6 +176,13 @@ pub(crate) struct Sonora {
     /// Receiver of engine events (polled via TickPlayback).
     pub playback_events: Option<RefCell<Receiver<PlayerEvent>>>,
 
+    /// Current engine playback session id.
+    pub active_playback_id: Option<u64>,
+
+    /// True after issuing a PlayFile/Seek that should produce a fresh Started event.
+    /// While this is true, stale non-Started transport events are ignored.
+    pub awaiting_started: bool,
+
     /// Which track is currently loaded/playing (stable id, not index).
     pub now_playing: Option<TrackId>,
     pub is_playing: bool,
@@ -341,6 +348,9 @@ impl Default for Sonora {
 
             playback: Some(playback_controller),
             playback_events: Some(RefCell::new(playback_events)),
+
+            active_playback_id: None,
+            awaiting_started: false,
 
             now_playing: None,
             is_playing: false,

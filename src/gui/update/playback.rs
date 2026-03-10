@@ -31,6 +31,8 @@ fn ensure_engine(state: &mut Sonora) {
 }
 
 fn clear_playback_ui(state: &mut Sonora) {
+    state.active_playback_id = None;
+    state.awaiting_started = false;
     state.now_playing = None;
     state.is_playing = false;
     state.position_ms = 0;
@@ -195,6 +197,10 @@ fn prev_track_id(state: &mut Sonora) -> Option<TrackId> {
     }
 }
 
+fn event_matches_active(state: &Sonora, playback_id: u64) -> bool {
+    state.active_playback_id == Some(playback_id)
+}
+
 pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
     let Some(rx_cell) = state.playback_events.as_ref() else {
         return Task::none();
@@ -202,7 +208,7 @@ pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
 
     let mut drained: Vec<PlayerEvent> = Vec::new();
     {
-        // Receiver::try_recv only needs &self, so borrow() is enough.
+        // Receiver::try_recv only needs &self, so borrow() is enough
         let rx = rx_cell.borrow();
         while let Ok(ev) = rx.try_recv() {
             drained.push(ev);
@@ -246,6 +252,8 @@ pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
     // Playback should not hijack selection.
+    // We intentionally do NOT trust any older non-Started transport events after this.
+    state.awaiting_started = true;
     state.now_playing = Some(id);
     state.is_playing = true;
     state.position_ms = 0;
@@ -420,6 +428,8 @@ pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
         ratio, dur_ms, target_ms
     );
 
+    // Seek reopens the source inside the engine, so we should expect a fresh Started event.
+    state.awaiting_started = true;
     controller.send(PlayerCommand::Seek(target_ms));
 
     // Optimistic UI update; engine will confirm via Started/Position.
@@ -443,44 +453,101 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
     #[cfg(debug_assertions)]
     match &event {
         PlayerEvent::Started {
+            playback_id,
             path,
             duration_ms,
             start_ms,
         } => {
             eprintln!(
-                "[GUI] Event Started path={} duration_ms={:?} start_ms={}",
+                "[GUI] Event Started playback_id={} path={} duration_ms={:?} start_ms={}",
+                playback_id,
                 path.display(),
                 duration_ms,
                 start_ms
             );
         }
+        PlayerEvent::Paused { playback_id } => {
+            eprintln!("[GUI] Event Paused playback_id={}", playback_id);
+        }
+        PlayerEvent::Resumed { playback_id } => {
+            eprintln!("[GUI] Event Resumed playback_id={}", playback_id);
+        }
+        PlayerEvent::Stopped { playback_id } => {
+            eprintln!("[GUI] Event Stopped playback_id={}", playback_id);
+        }
+        PlayerEvent::Position {
+            playback_id,
+            position_ms,
+        } => {
+            eprintln!(
+                "[GUI] Event Position playback_id={} position_ms={}",
+                playback_id, position_ms
+            );
+        }
+        PlayerEvent::TrackEnded { playback_id } => {
+            eprintln!("[GUI] Event TrackEnded playback_id={}", playback_id);
+        }
         PlayerEvent::Error(e) => eprintln!("[GUI] Event Error {}", e),
-        _ => {}
     }
 
     match event {
         PlayerEvent::Started {
+            playback_id,
             path,
             duration_ms,
             start_ms,
         } => {
+            state.active_playback_id = Some(playback_id);
+            state.awaiting_started = false;
             state.is_playing = true;
             state.duration_ms = duration_ms;
             state.position_ms = start_ms;
             state.seek_preview_ratio = None;
             state.status = format!("Now playing: {}", path.display());
         }
-        PlayerEvent::Paused => state.is_playing = false,
-        PlayerEvent::Resumed => state.is_playing = true,
-        PlayerEvent::Stopped => {
+
+        PlayerEvent::Paused { playback_id } => {
+            if state.awaiting_started || !event_matches_active(state, playback_id) {
+                return Task::none();
+            }
+            state.is_playing = false;
+        }
+
+        PlayerEvent::Resumed { playback_id } => {
+            if state.awaiting_started || !event_matches_active(state, playback_id) {
+                return Task::none();
+            }
+            state.is_playing = true;
+        }
+
+        PlayerEvent::Stopped { playback_id } => {
+            // UI already handles Stop optimistically.
+            // Ignore stale stops, and also ignore matching stops while a new Started is pending.
+            if state.awaiting_started || !event_matches_active(state, playback_id) {
+                return Task::none();
+            }
+
             clear_playback_ui(state);
         }
-        PlayerEvent::Position { position_ms } => {
+
+        PlayerEvent::Position {
+            playback_id,
+            position_ms,
+        } => {
+            if state.awaiting_started || !event_matches_active(state, playback_id) {
+                return Task::none();
+            }
+
             if state.seek_preview_ratio.is_none() {
                 state.position_ms = position_ms;
             }
         }
-        PlayerEvent::TrackEnded => {
+
+        PlayerEvent::TrackEnded { playback_id } => {
+            if state.awaiting_started || !event_matches_active(state, playback_id) {
+                return Task::none();
+            }
+
             if let Some(next_id) = next_track_id(state) {
                 return play_track(state, next_id);
             }
@@ -488,7 +555,9 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             clear_playback_ui(state);
             state.status = "Reached end of queue.".to_string();
         }
+
         PlayerEvent::Error(err) => {
+            state.awaiting_started = false;
             state.status = format!("Playback error: {err}");
         }
     }

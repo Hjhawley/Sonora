@@ -20,6 +20,10 @@ pub struct PlaybackEngine {
     current_path: Option<PathBuf>,
     current_duration_ms: Option<u64>,
 
+    // Monotonic id for each playback session/source instance.
+    next_playback_id: u64,
+    current_playback_id: Option<u64>,
+
     // UI position = base_position_ms + sink.get_pos()
     base_position_ms: u64,
 
@@ -42,6 +46,8 @@ impl PlaybackEngine {
             sink: None,
             current_path: None,
             current_duration_ms: None,
+            next_playback_id: 1,
+            current_playback_id: None,
             base_position_ms: 0,
             volume: 1.0,
             ended_emitted: false,
@@ -88,26 +94,30 @@ impl PlaybackEngine {
                 #[cfg(debug_assertions)]
                 eprintln!("[ENGINE] Pause");
 
-                if let Some(sink) = &self.sink {
+                if let (Some(sink), Some(playback_id)) = (&self.sink, self.current_playback_id) {
                     sink.pause();
-                    let _ = self.event_tx.send(PlayerEvent::Paused);
+                    let _ = self.event_tx.send(PlayerEvent::Paused { playback_id });
                 }
             }
             PlayerCommand::Resume => {
                 #[cfg(debug_assertions)]
                 eprintln!("[ENGINE] Resume");
 
-                if let Some(sink) = &self.sink {
+                if let (Some(sink), Some(playback_id)) = (&self.sink, self.current_playback_id) {
                     sink.play();
-                    let _ = self.event_tx.send(PlayerEvent::Resumed);
+                    let _ = self.event_tx.send(PlayerEvent::Resumed { playback_id });
                 }
             }
             PlayerCommand::Stop => {
                 #[cfg(debug_assertions)]
                 eprintln!("[ENGINE] Stop");
 
+                let stopped_id = self.current_playback_id;
                 self.stop_internal();
-                let _ = self.event_tx.send(PlayerEvent::Stopped);
+
+                if let Some(playback_id) = stopped_id {
+                    let _ = self.event_tx.send(PlayerEvent::Stopped { playback_id });
+                }
             }
             PlayerCommand::Seek(ms) => {
                 #[cfg(debug_assertions)]
@@ -126,11 +136,11 @@ impl PlaybackEngine {
 
                 if let Err(e) = self.play_file_at(path, ms, resume_playing) {
                     let _ = self.event_tx.send(PlayerEvent::Error(e));
-                } else {
-                    // Immediate UI feedback (optional; tick will also catch up).
-                    let _ = self
-                        .event_tx
-                        .send(PlayerEvent::Position { position_ms: ms });
+                } else if let Some(playback_id) = self.current_playback_id {
+                    let _ = self.event_tx.send(PlayerEvent::Position {
+                        playback_id,
+                        position_ms: ms,
+                    });
                 }
             }
             PlayerCommand::SetVolume(v) => {
@@ -156,13 +166,19 @@ impl PlaybackEngine {
         let Some(sink) = &self.sink else {
             return;
         };
+        let Some(playback_id) = self.current_playback_id else {
+            return;
+        };
 
         let position_ms = self.base_position_ms + sink.get_pos().as_millis() as u64;
-        let _ = self.event_tx.send(PlayerEvent::Position { position_ms });
+        let _ = self.event_tx.send(PlayerEvent::Position {
+            playback_id,
+            position_ms,
+        });
 
         if sink.empty() && self.current_path.is_some() && !self.ended_emitted {
             self.ended_emitted = true;
-            let _ = self.event_tx.send(PlayerEvent::TrackEnded);
+            let _ = self.event_tx.send(PlayerEvent::TrackEnded { playback_id });
             self.stop_internal();
         }
     }
@@ -189,6 +205,10 @@ impl PlaybackEngine {
             sink.pause();
         }
 
+        let playback_id = self.next_playback_id;
+        self.next_playback_id = self.next_playback_id.saturating_add(1);
+
+        self.current_playback_id = Some(playback_id);
         self.current_duration_ms = duration_ms;
         self.current_path = Some(path.clone());
         self.sink = Some(sink);
@@ -198,13 +218,15 @@ impl PlaybackEngine {
 
         #[cfg(debug_assertions)]
         eprintln!(
-            "[ENGINE] Started path={} start_ms={} duration_ms={:?}",
+            "[ENGINE] Started playback_id={} path={} start_ms={} duration_ms={:?}",
+            playback_id,
             path.display(),
             start_ms,
             duration_ms
         );
 
         let _ = self.event_tx.send(PlayerEvent::Started {
+            playback_id,
             path,
             duration_ms,
             start_ms,
@@ -217,6 +239,7 @@ impl PlaybackEngine {
         if let Some(sink) = self.sink.take() {
             sink.stop();
         }
+        self.current_playback_id = None;
         self.current_path = None;
         self.current_duration_ms = None;
         self.base_position_ms = 0;
