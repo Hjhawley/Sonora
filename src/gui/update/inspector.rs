@@ -3,11 +3,12 @@
 //!
 //! - Selection is stored as TrackId(s).
 //! - We resolve ids -> indices only when we need to read TrackRow(s).
+//! - Mixed-state is tracked structurally in `state.inspector_mixed`.
 
 use iced::Task;
 use std::collections::BTreeMap;
 
-use super::super::state::{InspectorField, KEEP_SENTINEL, Message, Sonora};
+use super::super::state::{InspectorDraft, InspectorField, Message, Sonora, mixed_display_string};
 use super::super::util::filename_stem;
 use crate::core::types::TrackId;
 
@@ -21,18 +22,15 @@ pub(crate) fn inspector_changed(
     field: InspectorField,
     value: String,
 ) -> Task<Message> {
-    // If a field is currently mixed, editing should replace the sentinel with the new value
-    // and clear the mixed flag for that field.
-    if value != KEEP_SENTINEL {
-        state.inspector_mixed.insert(field, false);
-    }
+    // Any explicit edit replaces mixed display state with a real value.
+    state.inspector_mixed.insert(field, false);
 
     set_inspector_field(state, field, value);
     state.inspector_dirty = true;
     Task::none()
 }
 
-/// Update a single inspector string field based on 'InspectorField'.
+/// Update a single inspector string field based on `InspectorField`.
 fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String) {
     match field {
         // Standard (visible by default)
@@ -81,10 +79,9 @@ pub(crate) fn clear_inspector(state: &mut Sonora) {
 
 /// Load inspector fields from the current selection.
 /// - Works for single-track and multi-track selection.
-/// - Writes KEEP_SENTINEL into fields that are mixed.
+/// - Writes `<mixed>` into fields that disagree across selected tracks.
 /// - Clears extended fields (for now) to avoid stale values.
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
-    // Determine which ids are selected
     let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
     } else if let Some(id) = state.selected_track {
@@ -94,7 +91,6 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         return;
     };
 
-    // Resolve ids -> indices (drop any stale ids)
     let idxs: Vec<usize> = ids
         .drain(..)
         .filter_map(|id| state.index_of_id(id))
@@ -105,13 +101,14 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         return;
     }
 
-    // --- helpers ---
     fn opt_str(v: &Option<String>) -> String {
         v.clone().unwrap_or_default()
     }
+
     fn opt_u32(v: Option<u32>) -> String {
         v.map(|n| n.to_string()).unwrap_or_default()
     }
+
     fn opt_year_i32(v: Option<i32>) -> String {
         v.map(|y| y.to_string()).unwrap_or_default()
     }
@@ -126,7 +123,7 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         let mixed = values.iter().any(|v| *v != first);
 
         if mixed {
-            *draft_slot = KEEP_SENTINEL.to_string();
+            InspectorDraft::set_mixed(draft_slot);
             mixed_map.insert(field, true);
         } else {
             *draft_slot = first;
@@ -134,7 +131,6 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         }
     }
 
-    // Collect per-field strings for all selected tracks
     let titles: Vec<String> = idxs
         .iter()
         .map(|&i| {
@@ -304,20 +300,38 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
 
     state.inspector_mixed = map_mixed;
 
-    // Avoid stale extended values until you implement mixed/aggregation for them.
-    state.inspector.date.clear();
-    state.inspector.conductor.clear();
-    state.inspector.remixer.clear();
-    state.inspector.publisher.clear();
-    state.inspector.subtitle.clear();
-    state.inspector.bpm.clear();
-    state.inspector.key.clear();
-    state.inspector.mood.clear();
-    state.inspector.language.clear();
-    state.inspector.isrc.clear();
-    state.inspector.encoder_settings.clear();
-    state.inspector.encoded_by.clear();
-    state.inspector.copyright.clear();
+    // Avoid stale extended values until you implement aggregation/mixed support for them too.
+    state.inspector.date = mixed_display_string().to_string();
+    state.inspector.conductor = mixed_display_string().to_string();
+    state.inspector.remixer = mixed_display_string().to_string();
+    state.inspector.publisher = mixed_display_string().to_string();
+    state.inspector.subtitle = mixed_display_string().to_string();
+    state.inspector.bpm = mixed_display_string().to_string();
+    state.inspector.key = mixed_display_string().to_string();
+    state.inspector.mood = mixed_display_string().to_string();
+    state.inspector.language = mixed_display_string().to_string();
+    state.inspector.isrc = mixed_display_string().to_string();
+    state.inspector.encoder_settings = mixed_display_string().to_string();
+    state.inspector.encoded_by = mixed_display_string().to_string();
+    state.inspector.copyright = mixed_display_string().to_string();
+
+    for field in [
+        InspectorField::Date,
+        InspectorField::Conductor,
+        InspectorField::Remixer,
+        InspectorField::Publisher,
+        InspectorField::Subtitle,
+        InspectorField::Bpm,
+        InspectorField::Key,
+        InspectorField::Mood,
+        InspectorField::Language,
+        InspectorField::Isrc,
+        InspectorField::EncoderSettings,
+        InspectorField::EncodedBy,
+        InspectorField::Copyright,
+    ] {
+        state.inspector_mixed.insert(field, true);
+    }
 
     state.inspector_dirty = false;
 }

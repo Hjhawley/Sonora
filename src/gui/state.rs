@@ -2,13 +2,13 @@
 //!
 //! GUI state + message vocabulary.
 //!
-//! This file is intentionally *data-only*:
+//! This file is intentionally data-centric:
 //! - no view code (rendering)
 //! - no update code (state transitions)
 //! - no blocking IO except light startup library restore
 //!
-//! If you’re looking for "how things change", that lives in 'gui/update/*'.
-//! If you’re looking for "how things look", that lives in 'gui/view/*'.
+//! If you’re looking for "how things change", that lives in `gui/update/*`.
+//! If you’re looking for "how things look", that lives in `gui/view/*`.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,15 +20,27 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
-/// Dev: if user didn’t add roots, scan '/test'
+/// Dev-only convenience root.
 pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 
 /// What the inspector shows when selected files disagree.
 ///
-/// Semantics:
-/// - In multi-select, if values differ, the field becomes '<keep>'
-/// - On save, '<keep>' means "leave the file’s existing value as-is"
-pub(crate) const KEEP_SENTINEL: &str = "<keep>";
+/// Important:
+/// - This is a UI display string, not the true source of mixed-state meaning.
+/// - Real mixed-state is tracked structurally in `Sonora::inspector_mixed`.
+/// - The view can render this in a distinct style/color so it cannot be mistaken
+///   for a real user-entered literal value.
+pub(crate) const MIXED_SENTINEL: &str = "<mixed>";
+
+#[inline]
+pub(crate) fn mixed_display_string() -> &'static str {
+    MIXED_SENTINEL
+}
+
+#[inline]
+pub(crate) fn is_mixed_display_value(s: &str) -> bool {
+    s.trim() == MIXED_SENTINEL
+}
 
 /// Tracks vs Albums is a layout choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,8 +92,8 @@ pub(crate) enum PlaybackContext {
 
 /// Grouping key for Album View.
 ///
-/// Important: This is a *UI grouping key*, not a DB key.
-/// It’s derived from 'TrackRow' values using your grouping rules.
+/// Important: This is a UI grouping key, not a DB key.
+/// It’s derived from `TrackRow` values using grouping rules.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
     pub album_artist: String,
@@ -97,6 +109,9 @@ pub(crate) enum AlbumPressTarget {
 }
 
 /// Draft editable metadata (strings so the user can type anything).
+///
+/// Mixed-state is tracked separately in `Sonora::inspector_mixed`.
+/// When a field is mixed, the draft typically contains `MIXED_SENTINEL` for display.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
     pub title: String,
@@ -131,6 +146,13 @@ pub(crate) struct InspectorDraft {
     pub encoder_settings: String,
     pub encoded_by: String,
     pub copyright: String,
+}
+
+impl InspectorDraft {
+    #[inline]
+    pub fn set_mixed(field: &mut String) {
+        *field = MIXED_SENTINEL.to_string();
+    }
 }
 
 /// Identifies which inspector field changed.
@@ -182,25 +204,25 @@ pub(crate) struct Sonora {
     // Library (display order)
     pub tracks: Vec<TrackRow>,
 
-    /// Cache: 'TrackId' -> current Vec index.
+    /// Cache: `TrackId` -> current `Vec` index.
     pub track_index: BTreeMap<TrackId, usize>,
 
-    /// Cache: 'AlbumKey' -> ordered list of 'TrackId's in that album group.
+    /// Cache: `AlbumKey` -> ordered list of `TrackId`s in that album group.
     pub album_groups: BTreeMap<AlbumKey, Vec<TrackId>>,
 
-    /// Cache: 'TrackId' -> decoded cover image handle (for quick UI rendering).
+    /// Cache: `TrackId` -> decoded cover image handle (for quick UI rendering).
     pub cover_cache: BTreeMap<TrackId, iced::widget::image::Handle>,
 
     // Playback (core handle + UI state)
     pub playback: Option<PlaybackController>,
 
-    /// Receiver of engine events (polled via TickPlayback).
+    /// Receiver of engine events (polled via `TickPlayback`).
     pub playback_events: Option<RefCell<Receiver<PlayerEvent>>>,
 
     /// Current engine playback session id.
     pub active_playback_id: Option<u64>,
 
-    /// True after issuing a PlayFile/Seek that should produce a fresh Started event.
+    /// True after issuing a PlayFile/Seek that should produce a fresh `Started` event.
     /// While this is true, stale non-Started transport events are ignored.
     pub awaiting_started: bool,
 
@@ -219,7 +241,7 @@ pub(crate) struct Sonora {
     pub repeat_mode: RepeatMode,
     pub playback_context: PlaybackContext,
 
-    /// Persistent queue order used only when 'play_order == PlayOrder::Shuffle'.
+    /// Persistent queue order used only when `play_order == PlayOrder::Shuffle`.
     pub shuffled_ids: Vec<TrackId>,
 
     // Selection / navigation
@@ -227,8 +249,8 @@ pub(crate) struct Sonora {
     pub library_scope: LibraryScope,
 
     /// In Album View:
-    /// - 'None' => album grid
-    /// - 'Some(key)' => album detail screen
+    /// - `None` => album grid
+    /// - `Some(key)` => album detail screen
     pub selected_album: Option<AlbumKey>,
 
     pub selected_tracks: BTreeSet<TrackId>,
@@ -242,6 +264,12 @@ pub(crate) struct Sonora {
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
     pub saving: bool,
+
+    /// `true` means "selected files disagree on this field".
+    ///
+    /// This is the authoritative mixed-state signal.
+    /// The inspector draft may display `MIXED_SENTINEL`, but save logic should rely
+    /// on this structure rather than trusting the raw string.
     pub inspector_mixed: BTreeMap<InspectorField, bool>,
 
     // UI toggles
@@ -249,95 +277,14 @@ pub(crate) struct Sonora {
 }
 
 impl Sonora {
-    #[inline]
-    pub fn index_of_id(&self, id: TrackId) -> Option<usize> {
-        self.track_index.get(&id).copied()
-    }
-
-    #[inline]
-    pub fn track_by_id(&self, id: TrackId) -> Option<&TrackRow> {
-        let i = self.index_of_id(id)?;
-        self.tracks.get(i)
-    }
-
-    #[inline]
-    pub fn track_by_id_mut(&mut self, id: TrackId) -> Option<&mut TrackRow> {
-        let i = self.index_of_id(id)?;
-        self.tracks.get_mut(i)
-    }
-
-    #[inline]
-    pub fn representative_track_id_for_album(&self, key: &AlbumKey) -> Option<TrackId> {
-        self.album_groups
-            .get(key)
-            .and_then(|ids| ids.first().copied())
-    }
-
-    pub fn rebuild_library_caches(&mut self) {
-        self.track_index.clear();
-        self.album_groups.clear();
-
-        let mut visible_ids: Vec<TrackId> = Vec::new();
-
-        for (i, t) in self.tracks.iter().enumerate() {
-            let Some(id) = t.id else { continue };
-            self.track_index.insert(id, i);
-            visible_ids.push(id);
-        }
-
-        for t in self.tracks.iter() {
-            let Some(id) = t.id else { continue };
-
-            let album_artist = t
-                .album_artist
-                .clone()
-                .or_else(|| t.artist.clone())
-                .unwrap_or_else(|| "Unknown Artist".to_string());
-
-            let album = t
-                .album
-                .clone()
-                .unwrap_or_else(|| "Unknown Album".to_string());
-
-            self.album_groups
-                .entry(AlbumKey {
-                    album_artist,
-                    album,
-                })
-                .or_default()
-                .push(id);
-        }
-
-        // Keep the shuffle queue valid across scans/scope changes:
-        // - drop ids that no longer exist
-        // - dedupe defensively
-        // - append any newly visible ids at the end
-        let valid_ids: BTreeSet<TrackId> = visible_ids.iter().copied().collect();
-
-        let mut seen: BTreeSet<TrackId> = BTreeSet::new();
-        self.shuffled_ids
-            .retain(|id| valid_ids.contains(id) && seen.insert(*id));
-
-        let mut queued: BTreeSet<TrackId> = self.shuffled_ids.iter().copied().collect();
-        for id in visible_ids {
-            if queued.insert(id) {
-                self.shuffled_ids.push(id);
-            }
-        }
-
-        if matches!(&self.playback_context, PlaybackContext::Album(key) if !self.album_groups.contains_key(key))
-        {
-            self.playback_context = PlaybackContext::Library;
-        }
-
-        if matches!(&self.selected_album, Some(key) if !self.album_groups.contains_key(key)) {
-            self.selected_album = None;
-        }
-    }
-}
-
-impl Default for Sonora {
-    fn default() -> Self {
+    /// Real application startup constructor.
+    ///
+    /// This does a little light startup work:
+    /// - spin up playback engine
+    /// - restore saved volume
+    /// - load visible library rows from DB
+    /// - rebuild derived indexes/caches
+    pub fn new() -> Self {
         let (playback_controller, playback_events) = start_playback();
 
         let saved_volume = (|| -> Result<Option<f32>, String> {
@@ -425,13 +372,128 @@ impl Default for Sonora {
             show_extended: false,
         };
 
-        s.rebuild_library_caches();
+        s.rebuild_library_derived_state();
 
         if let Some(controller) = &s.playback {
             controller.send(crate::core::playback::PlayerCommand::SetVolume(s.volume));
         }
 
         s
+    }
+
+    #[inline]
+    pub fn has_selection(&self) -> bool {
+        self.selected_track.is_some() || !self.selected_tracks.is_empty()
+    }
+
+    #[inline]
+    pub fn index_of_id(&self, id: TrackId) -> Option<usize> {
+        self.track_index.get(&id).copied()
+    }
+
+    #[inline]
+    pub fn track_by_id(&self, id: TrackId) -> Option<&TrackRow> {
+        let i = self.index_of_id(id)?;
+        self.tracks.get(i)
+    }
+
+    #[inline]
+    pub fn track_by_id_mut(&mut self, id: TrackId) -> Option<&mut TrackRow> {
+        let i = self.index_of_id(id)?;
+        self.tracks.get_mut(i)
+    }
+
+    #[inline]
+    pub fn representative_track_id_for_album(&self, key: &AlbumKey) -> Option<TrackId> {
+        self.album_groups
+            .get(key)
+            .and_then(|ids| ids.first().copied())
+    }
+
+    /// Rebuild all derived library state after replacing or mutating `self.tracks`.
+    ///
+    /// This currently refreshes:
+    /// - `track_index`
+    /// - `album_groups`
+    /// - `shuffled_ids` validity
+    /// - invalid `playback_context`
+    /// - invalid `selected_album`
+    pub fn rebuild_library_derived_state(&mut self) {
+        self.track_index.clear();
+        self.album_groups.clear();
+
+        let mut visible_ids: Vec<TrackId> = Vec::new();
+
+        for (i, t) in self.tracks.iter().enumerate() {
+            let Some(id) = t.id else {
+                continue;
+            };
+            self.track_index.insert(id, i);
+            visible_ids.push(id);
+        }
+
+        for t in &self.tracks {
+            let Some(id) = t.id else {
+                continue;
+            };
+
+            let album_artist = t
+                .album_artist
+                .clone()
+                .or_else(|| t.artist.clone())
+                .unwrap_or_else(|| "Unknown Artist".to_string());
+
+            let album = t
+                .album
+                .clone()
+                .unwrap_or_else(|| "Unknown Album".to_string());
+
+            self.album_groups
+                .entry(AlbumKey {
+                    album_artist,
+                    album,
+                })
+                .or_default()
+                .push(id);
+        }
+
+        // Keep the shuffle queue valid across scans/scope changes:
+        // - drop ids that no longer exist
+        // - dedupe defensively
+        // - append any newly visible ids at the end
+        let valid_ids: BTreeSet<TrackId> = visible_ids.iter().copied().collect();
+
+        let mut seen: BTreeSet<TrackId> = BTreeSet::new();
+        self.shuffled_ids
+            .retain(|id| valid_ids.contains(id) && seen.insert(*id));
+
+        let mut queued: BTreeSet<TrackId> = self.shuffled_ids.iter().copied().collect();
+        for id in visible_ids {
+            if queued.insert(id) {
+                self.shuffled_ids.push(id);
+            }
+        }
+
+        if matches!(&self.playback_context, PlaybackContext::Album(key) if !self.album_groups.contains_key(key))
+        {
+            self.playback_context = PlaybackContext::Library;
+        }
+
+        if matches!(&self.selected_album, Some(key) if !self.album_groups.contains_key(key)) {
+            self.selected_album = None;
+        }
+    }
+
+    /// Compatibility wrapper for older call sites.
+    #[inline]
+    pub fn rebuild_library_caches(&mut self) {
+        self.rebuild_library_derived_state();
+    }
+}
+
+impl Default for Sonora {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

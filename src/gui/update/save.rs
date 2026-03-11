@@ -2,20 +2,22 @@
 //!
 //! Turn the InspectorDraft into actual on-disk tag writes (single or batch).
 //!
-//! - Save targets are identified by 'TrackId', not 'Vec' indices.
-//! - We still update 'state.tracks' (display order Vec), but we locate rows by id.
+//! - Save targets are identified by `TrackId`, not `Vec` indices.
+//! - We still update `state.tracks` (display order Vec), but we locate rows by id.
 //!
-//! Safety features (kept):
-//! - If batch saving, auto-KEEP fields that still match the primary track’s original value
-//!   (prevents "album select all" from overwriting everything by accident).
+//! Safety features:
+//! - Mixed inspector fields are treated as "leave existing value alone".
+//! - If batch saving, unchanged values that still match the primary track’s
+//!   original value are also treated conservatively to reduce accidental
+//!   overwrite of many files.
 //!
 //! Intentional behavior:
-//! - We never mutate 'state.tracks' until after a successful write + re-read.
+//! - We never mutate `state.tracks` until after a successful write + re-read.
 //! - On write failure, UI remains consistent with disk.
 
 use iced::Task;
 
-use super::super::state::{KEEP_SENTINEL, Message, Sonora};
+use super::super::state::{InspectorField, Message, Sonora, is_mixed_display_value};
 use super::super::util::{parse_optional_i32, parse_optional_u32};
 use super::inspector::load_inspector_from_selection;
 use super::util::spawn_blocking;
@@ -31,7 +33,6 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    // Determine which track IDs we are saving to.
     let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
     } else if let Some(id) = state.selected_track {
@@ -48,15 +49,10 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    //
-    // Safety: if batch saving, auto-KEEP fields that still match primary track
-    // (prevents "album select all" from overwriting everything by accident)
-    //
     let is_batch = ids.len() > 1;
     let primary_id = state.selected_track;
     let primary_row: Option<&TrackRow> = primary_id.and_then(|id| state.track_by_id(id));
 
-    // Build rows to write
     let mut rows_to_write: Vec<(TrackId, TrackRow)> = Vec::with_capacity(ids.len());
     for &id in &ids {
         match build_row_from_inspector_for_id(state, id, is_batch, primary_row) {
@@ -77,7 +73,6 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
 
     let write_extended = state.show_extended;
 
-    // Single-file path
     if rows_to_write.len() == 1 {
         let (id, row_to_write) = rows_to_write.remove(0);
 
@@ -89,7 +84,6 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
                     if failed {
                         Err("Wrote tags, but failed to re-read them".to_string())
                     } else {
-                        // Preserve identity in the re-read row.
                         r.id = row_to_write.id;
                         Ok(r)
                     }
@@ -99,7 +93,6 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         );
     }
 
-    // Batch path
     Task::perform(
         spawn_blocking(move || {
             let mut out: Vec<(TrackId, TrackRow)> = Vec::new();
@@ -115,9 +108,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
                     ));
                 }
 
-                // Preserve identity in the re-read row.
                 r.id = row.id;
-
                 out.push((id, r));
             }
 
@@ -139,12 +130,9 @@ pub(crate) fn save_finished(
             if let Some(slot) = state.track_by_id_mut(id) {
                 *slot = new_row;
 
-                // metadata may have changed album grouping keys -> rebuild caches
-                state.rebuild_library_caches();
-
+                state.rebuild_library_derived_state();
                 load_inspector_from_selection(state);
             } else {
-                // Track vanished from current UI list (rescan?), but the write succeeded.
                 state.status = "Tags written, but selection changed (rescan?).".to_string();
                 state.inspector_dirty = false;
                 return Task::none();
@@ -175,9 +163,7 @@ pub(crate) fn save_finished_batch(
                 }
             }
 
-            // batch writes can change album grouping keys -> rebuild caches once
-            state.rebuild_library_caches();
-
+            state.rebuild_library_derived_state();
             load_inspector_from_selection(state);
 
             state.inspector_dirty = false;
@@ -196,10 +182,6 @@ pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
     Task::none()
 }
 
-//
-// Batch-aware row builder
-//
-
 fn build_row_from_inspector_for_id(
     state: &Sonora,
     id: TrackId,
@@ -211,33 +193,59 @@ fn build_row_from_inspector_for_id(
         .cloned()
         .ok_or_else(|| "Invalid selection (rescan?).".to_string())?;
 
-    // Numeric fields: treat "<keep>" as "do not change this number"
     let mut errs: Vec<&'static str> = Vec::new();
 
-    let track_no = parse_u32_keep(
+    let track_no = parse_u32_mixed(
+        state,
+        InspectorField::TrackNo,
         &state.inspector.track_no,
         out.track_no,
         "Track #",
         &mut errs,
     )?;
-    let track_total = parse_u32_keep(
+    let track_total = parse_u32_mixed(
+        state,
+        InspectorField::TrackTotal,
         &state.inspector.track_total,
         out.track_total,
         "Track total",
         &mut errs,
     )?;
-    let disc_no = parse_u32_keep(&state.inspector.disc_no, out.disc_no, "Disc #", &mut errs)?;
-    let disc_total = parse_u32_keep(
+    let disc_no = parse_u32_mixed(
+        state,
+        InspectorField::DiscNo,
+        &state.inspector.disc_no,
+        out.disc_no,
+        "Disc #",
+        &mut errs,
+    )?;
+    let disc_total = parse_u32_mixed(
+        state,
+        InspectorField::DiscTotal,
         &state.inspector.disc_total,
         out.disc_total,
         "Disc total",
         &mut errs,
     )?;
 
-    let year = parse_i32_keep(&state.inspector.year, out.year, "Year", &mut errs)?;
+    let year = parse_i32_mixed(
+        state,
+        InspectorField::Year,
+        &state.inspector.year,
+        out.year,
+        "Year",
+        &mut errs,
+    )?;
 
     let bpm = if state.show_extended {
-        parse_u32_keep(&state.inspector.bpm, out.bpm, "BPM", &mut errs)?
+        parse_u32_mixed(
+            state,
+            InspectorField::Bpm,
+            &state.inspector.bpm,
+            out.bpm,
+            "BPM",
+            &mut errs,
+        )?
     } else {
         out.bpm
     };
@@ -246,34 +254,43 @@ fn build_row_from_inspector_for_id(
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
     }
 
-    // Text fields: safety for batch mode
     let primary = primary_row;
 
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Title,
         &mut out.title,
         &state.inspector.title,
         is_batch,
         primary.and_then(|p| p.title.as_deref()),
     );
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Artist,
         &mut out.artist,
         &state.inspector.artist,
         is_batch,
         primary.and_then(|p| p.artist.as_deref()),
     );
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Album,
         &mut out.album,
         &state.inspector.album,
         is_batch,
         primary.and_then(|p| p.album.as_deref()),
     );
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::AlbumArtist,
         &mut out.album_artist,
         &state.inspector.album_artist,
         is_batch,
         primary.and_then(|p| p.album_artist.as_deref()),
     );
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Composer,
         &mut out.composer,
         &state.inspector.composer,
         is_batch,
@@ -286,32 +303,42 @@ fn build_row_from_inspector_for_id(
     out.disc_total = disc_total;
 
     out.year = year;
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Genre,
         &mut out.genre,
         &state.inspector.genre,
         is_batch,
         primary.and_then(|p| p.genre.as_deref()),
     );
 
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Grouping,
         &mut out.grouping,
         &state.inspector.grouping,
         is_batch,
         primary.and_then(|p| p.grouping.as_deref()),
     );
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Comment,
         &mut out.comment,
         &state.inspector.comment,
         is_batch,
         primary.and_then(|p| p.comment.as_deref()),
     );
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Lyrics,
         &mut out.lyrics,
         &state.inspector.lyrics,
         is_batch,
         primary.and_then(|p| p.lyrics.as_deref()),
     );
-    apply_opt_keep_batch(
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Lyricist,
         &mut out.lyricist,
         &state.inspector.lyricist,
         is_batch,
@@ -319,32 +346,41 @@ fn build_row_from_inspector_for_id(
     );
 
     if state.show_extended {
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Date,
             &mut out.date,
             &state.inspector.date,
             is_batch,
             primary.and_then(|p| p.date.as_deref()),
         );
-
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Conductor,
             &mut out.conductor,
             &state.inspector.conductor,
             is_batch,
             primary.and_then(|p| p.conductor.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Remixer,
             &mut out.remixer,
             &state.inspector.remixer,
             is_batch,
             primary.and_then(|p| p.remixer.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Publisher,
             &mut out.publisher,
             &state.inspector.publisher,
             is_batch,
             primary.and_then(|p| p.publisher.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Subtitle,
             &mut out.subtitle,
             &state.inspector.subtitle,
             is_batch,
@@ -352,43 +388,58 @@ fn build_row_from_inspector_for_id(
         );
 
         out.bpm = bpm;
-        apply_opt_keep_batch(
+
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Key,
             &mut out.key,
             &state.inspector.key,
             is_batch,
             primary.and_then(|p| p.key.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Mood,
             &mut out.mood,
             &state.inspector.mood,
             is_batch,
             primary.and_then(|p| p.mood.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Language,
             &mut out.language,
             &state.inspector.language,
             is_batch,
             primary.and_then(|p| p.language.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Isrc,
             &mut out.isrc,
             &state.inspector.isrc,
             is_batch,
             primary.and_then(|p| p.isrc.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::EncoderSettings,
             &mut out.encoder_settings,
             &state.inspector.encoder_settings,
             is_batch,
             primary.and_then(|p| p.encoder_settings.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::EncodedBy,
             &mut out.encoded_by,
             &state.inspector.encoded_by,
             is_batch,
             primary.and_then(|p| p.encoded_by.as_deref()),
         );
-        apply_opt_keep_batch(
+        apply_opt_mixed_batch(
+            state,
+            InspectorField::Copyright,
             &mut out.copyright,
             &state.inspector.copyright,
             is_batch,
@@ -399,36 +450,38 @@ fn build_row_from_inspector_for_id(
     Ok(out)
 }
 
-/// Applies a text input to an 'Option<String>' field.
+/// Applies a text input to an `Option<String>` field.
 ///
 /// Rules:
-/// - If input is '<keep>' -> do nothing
-/// - Else if batch mode and input matches the primary track's original value -> do nothing
-///   (interprets "unchanged inspector default" as KEEP)
-/// - Else if trimmed empty -> set 'None' (delete tag)
-/// - Else -> set 'Some(trimmed)'
-fn apply_opt_keep_batch(
+/// - If the field is still structurally mixed -> do nothing
+/// - If the input still shows the mixed placeholder -> do nothing
+/// - Else if batch mode and input still matches the primary track's original value
+///   -> conservatively do nothing
+/// - Else if trimmed empty -> set `None`
+/// - Else -> set `Some(trimmed)`
+fn apply_opt_mixed_batch(
+    state: &Sonora,
+    field: InspectorField,
     dst: &mut Option<String>,
     input: &str,
     is_batch: bool,
     primary_value: Option<&str>,
 ) {
-    let t = input.trim();
+    if state.inspector_mixed.get(&field).copied().unwrap_or(false) {
+        return;
+    }
 
-    if t == KEEP_SENTINEL {
+    let t = input.trim();
+    if is_mixed_display_value(t) {
         return;
     }
 
     if is_batch {
         if let Some(pv) = primary_value {
             if t == pv.trim() {
-                // User likely didn't intend to overwrite all; treat as KEEP.
                 return;
             }
         }
-        // If primary_value is None:
-        // - We do NOT auto-keep: user may be intentionally deleting/blanking.
-        // - So we fall through to the normal empty -> None semantics.
     }
 
     if t.is_empty() {
@@ -438,14 +491,20 @@ fn apply_opt_keep_batch(
     }
 }
 
-fn parse_u32_keep(
+fn parse_u32_mixed(
+    state: &Sonora,
+    field: InspectorField,
     input: &str,
     current: Option<u32>,
     label: &'static str,
     errs: &mut Vec<&'static str>,
 ) -> Result<Option<u32>, String> {
+    if state.inspector_mixed.get(&field).copied().unwrap_or(false) {
+        return Ok(current);
+    }
+
     let t = input.trim();
-    if t == KEEP_SENTINEL {
+    if is_mixed_display_value(t) {
         return Ok(current);
     }
     if t.is_empty() {
@@ -460,14 +519,20 @@ fn parse_u32_keep(
     Ok(v)
 }
 
-fn parse_i32_keep(
+fn parse_i32_mixed(
+    state: &Sonora,
+    field: InspectorField,
     input: &str,
     current: Option<i32>,
     label: &'static str,
     errs: &mut Vec<&'static str>,
 ) -> Result<Option<i32>, String> {
+    if state.inspector_mixed.get(&field).copied().unwrap_or(false) {
+        return Ok(current);
+    }
+
     let t = input.trim();
-    if t == KEEP_SENTINEL {
+    if is_mixed_display_value(t) {
         return Ok(current);
     }
     if t.is_empty() {
