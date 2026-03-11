@@ -62,9 +62,7 @@ impl Iterator for EngineQueueSource {
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
-            let mut pending_start: Option<TrackStart> = None;
-
-            {
+            let pending_start = {
                 let mut shared = self.shared.lock().ok()?;
                 let current = shared.current.as_mut()?;
 
@@ -74,15 +72,16 @@ impl Iterator for EngineQueueSource {
 
                 match shared.queued.pop_front() {
                     Some(next_src) => {
-                        pending_start = Some(next_src.start.clone());
+                        let start = next_src.start.clone();
                         shared.current = Some(next_src);
+                        Some(start)
                     }
                     None => {
                         shared.current = None;
                         return None;
                     }
                 }
-            }
+            };
 
             if let Some(start) = pending_start {
                 let _ = self.start_tx.send(start);
@@ -232,7 +231,6 @@ impl PlaybackEngine {
             PlayerCommand::ClearQueue | PlayerCommand::ClearNextFile => {
                 #[cfg(debug_assertions)]
                 eprintln!("[ENGINE] ClearQueue");
-
                 self.clear_upcoming_queue();
             }
 

@@ -14,7 +14,7 @@ use std::fs::File;
 use std::path::Path;
 use std::time::Duration;
 
-use symphonia::core::codecs::{CodecParameters, DecoderOptions};
+use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::{MediaSourceStream, MediaSourceStreamOptions};
 use symphonia::core::meta::MetadataOptions;

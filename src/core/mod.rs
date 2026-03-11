@@ -24,7 +24,7 @@ use types::{TrackId, TrackRow};
 
 /// Discover candidate audio files under multiple roots.
 ///
-/// - MP3-only for MVP (library enforces extension rules)
+/// - Currently MP3-only for MVP (library enforces extension rules)
 /// - De-dupes across overlapping roots by full path
 /// - Sorts paths once (core owns ordering; GUI shouldn't)
 pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
@@ -32,7 +32,7 @@ pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
     let mut out: Vec<DiscoveredFile> = Vec::new();
 
     for root in roots {
-        let files = library::scan_mp3s(root)?;
+        let files = library::scan_audio_files(root)?;
         for file in files {
             if seen.insert(file.path.clone()) {
                 out.push(file);
@@ -44,7 +44,7 @@ pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
     Ok(out)
 }
 
-/// Read tags for a set of DB-backed '(TrackId, PathBuf)' pairs.
+/// Read tags for a set of DB-backed `(TrackId, PathBuf)` pairs.
 ///
 /// - Never fails hard per-file: unreadable tags return an "empty-ish" TrackRow
 /// - Ensures every returned row has its DB-owned TrackId attached
