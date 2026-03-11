@@ -195,3 +195,64 @@ pub struct TrackRow {
     // Key = frame id (e.g. "TOPE"), Value = best-effort text value.
     pub extra_text: BTreeMap<String, String>,
 }
+
+impl TrackRow {
+    /// Construct an empty track row for a known file path.
+    ///
+    /// This is useful for unreadable / untagged files and keeps the canonical
+    /// "blank row" shape next to the type definition.
+    pub fn empty(path: PathBuf) -> Self {
+        Self {
+            id: None,
+            path,
+
+            title: None,
+            artist: None,
+            album: None,
+            album_artist: None,
+            composer: None,
+
+            track_no: None,
+            track_total: None,
+            disc_no: None,
+            disc_total: None,
+
+            year: None,
+            date: None,
+            genre: None,
+
+            grouping: None,
+            comment: None,
+            lyrics: None,
+            lyricist: None,
+            conductor: None,
+            remixer: None,
+            publisher: None,
+            subtitle: None,
+            bpm: None,
+            key: None,
+            mood: None,
+            language: None,
+            isrc: None,
+            encoder_settings: None,
+            encoded_by: None,
+            copyright: None,
+
+            artwork_count: 0,
+
+            title_sort: None,
+            artist_sort: None,
+            album_sort: None,
+            album_artist_sort: None,
+
+            duration_ms: None,
+            rating: None,
+            play_count: None,
+            compilation: None,
+
+            user_text: BTreeMap::new(),
+            urls: BTreeMap::new(),
+            extra_text: BTreeMap::new(),
+        }
+    }
+}

@@ -1,11 +1,11 @@
 //! core/tags/read.rs
-//! Read ID3 tags from an MP3 and convert them into a 'TrackRow'.
+//! Read ID3 tags from an MP3 and convert them into a `TrackRow`.
 //!
 //! - Tag reading does NOT assign identity.
-//! - 'TrackRow.id' is set by the scanning/DB layer (temporary id now; DB id later).
-//! - So this module always returns 'id: None'.
+//! - `TrackRow.id` is set by the scanning / DB layer.
+//! - This module therefore always returns `id: None`.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use id3::frame::Content;
@@ -17,7 +17,7 @@ use super::util::{parse_be_u64, parse_boolish, parse_slash_pair_u32};
 pub fn read_track_row(path: PathBuf) -> (TrackRow, bool) {
     match Tag::read_from_path(&path) {
         Ok(tag) => (build_row_from_tag(path, &tag), false),
-        Err(_) => (empty_row(path), true),
+        Err(_) => (TrackRow::empty(path), true),
     }
 }
 
@@ -56,9 +56,7 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
     let extra_text = collect_extra_text(tag);
 
     TrackRow {
-        // Identity is assigned by scan/DB layer, not tag read.
         id: None,
-
         path,
 
         title: tag
@@ -86,7 +84,6 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
 
         genre: text_frame(tag, "TCON"),
 
-        // Common extended tags
         grouping: text_frame(tag, "TIT1"),
         comment,
         lyrics,
@@ -122,75 +119,15 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
     }
 }
 
-fn empty_row(path: PathBuf) -> TrackRow {
-    TrackRow {
-        // Identity is assigned by scan/DB layer, not tag read.
-        id: None,
-
-        path,
-
-        title: None,
-        artist: None,
-        album: None,
-        album_artist: None,
-        composer: None,
-
-        track_no: None,
-        track_total: None,
-        disc_no: None,
-        disc_total: None,
-
-        year: None,
-        date: None,
-        genre: None,
-
-        grouping: None,
-        comment: None,
-        lyrics: None,
-        lyricist: None,
-        conductor: None,
-        remixer: None,
-        publisher: None,
-        subtitle: None,
-        bpm: None,
-        key: None,
-        mood: None,
-        language: None,
-        isrc: None,
-        encoder_settings: None,
-        encoded_by: None,
-        copyright: None,
-
-        artwork_count: 0,
-
-        title_sort: None,
-        artist_sort: None,
-        album_sort: None,
-        album_artist_sort: None,
-
-        duration_ms: None,
-        rating: None,
-        play_count: None,
-        compilation: None,
-
-        user_text: BTreeMap::new(),
-        urls: BTreeMap::new(),
-        extra_text: BTreeMap::new(),
-    }
-}
-
 /// Get a best-effort string value from a frame id.
-/// This is intentionally defensive: some frames that are "text-ish" may not be Content::Text.
+/// This is intentionally defensive: some frames that are "text-ish"
+/// may not be represented as `Content::Text`.
 fn text_frame(tag: &Tag, id: &str) -> Option<String> {
     let frame = tag.get(id)?;
+
     match frame.content() {
         Content::Text(s) => Some(s.clone()),
-
-        // Some builds/crate versions surface a string via link frames too.
         Content::Link(s) => Some(s.clone()),
-
-        // If id3 ever decides to represent certain things as "unknown but decodable",
-        // we still ignore it rather than guessing.
         _ => None,
     }
 }
@@ -263,6 +200,7 @@ fn popm_rating_and_count(tag: &Tag) -> (Option<u8>, Option<u64>) {
             }
         }
     }
+
     (None, None)
 }
 
@@ -271,26 +209,21 @@ fn pcnt_count(tag: &Tag) -> Option<u64> {
         if frame.id() != "PCNT" {
             continue;
         }
+
         let unk = frame.content().to_unknown().ok()?;
         return parse_be_u64(unk.as_ref().data.as_slice());
     }
+
     None
 }
 
 fn collect_extra_text(tag: &Tag) -> BTreeMap<String, String> {
-    let known: HashSet<&'static str> = HashSet::from([
-        "TIT2", "TPE1", "TALB", "TPE2", "TRCK", "TPOS", "TYER", "TDRC", "TCON", "TCOM", "TEXT",
-        "TPE3", "TPE4", "TPUB", "TIT1", "TIT3", "TBPM", "TKEY", "TMOO", "TLAN", "TSRC", "TSSE",
-        "TENC", "TCOP", "TSOT", "TSOP", "TSOA", "TSO2", "TLEN", "TCMP", "TXXX", "COMM", "USLT",
-        "POPM", "PCNT", "APIC", "PIC",
-    ]);
-
     let mut out = BTreeMap::new();
 
     for frame in tag.frames() {
         let id = frame.id();
 
-        if !id.starts_with('T') || known.contains(id) {
+        if !id.starts_with('T') || is_known_text_frame(id) {
             continue;
         }
 
@@ -300,4 +233,47 @@ fn collect_extra_text(tag: &Tag) -> BTreeMap<String, String> {
     }
 
     out
+}
+
+fn is_known_text_frame(id: &str) -> bool {
+    matches!(
+        id,
+        "TIT2"
+            | "TPE1"
+            | "TALB"
+            | "TPE2"
+            | "TRCK"
+            | "TPOS"
+            | "TYER"
+            | "TDRC"
+            | "TCON"
+            | "TCOM"
+            | "TEXT"
+            | "TPE3"
+            | "TPE4"
+            | "TPUB"
+            | "TIT1"
+            | "TIT3"
+            | "TBPM"
+            | "TKEY"
+            | "TMOO"
+            | "TLAN"
+            | "TSRC"
+            | "TSSE"
+            | "TENC"
+            | "TCOP"
+            | "TSOT"
+            | "TSOP"
+            | "TSOA"
+            | "TSO2"
+            | "TLEN"
+            | "TCMP"
+            | "TXXX"
+            | "COMM"
+            | "USLT"
+            | "POPM"
+            | "PCNT"
+            | "APIC"
+            | "PIC"
+    )
 }

@@ -2,10 +2,13 @@
 //! Small parsing helpers shared by tag reading/writing.
 
 /// Parse strings like:
-/// - "3" -> (Some(3), None)
-/// - "3/12" -> (Some(3), Some(12))
+/// - `"3"` -> `(Some(3), None)`
+/// - `"3/12"` -> `(Some(3), Some(12))`
 pub(crate) fn parse_slash_pair_u32(s: Option<&str>) -> (Option<u32>, Option<u32>) {
-    let Some(s) = s else { return (None, None) };
+    let Some(s) = s else {
+        return (None, None);
+    };
+
     let s = s.trim();
     if s.is_empty() {
         return (None, None);
@@ -18,7 +21,7 @@ pub(crate) fn parse_slash_pair_u32(s: Option<&str>) -> (Option<u32>, Option<u32>
 }
 
 /// Parse common boolean-shaped tags.
-/// Accepts: "1", "0", "true", "false", "yes", "no", "y", "n"
+/// Accepts: `"1"`, `"0"`, `"true"`, `"false"`, `"yes"`, `"no"`, `"y"`, `"n"`
 pub(crate) fn parse_boolish(s: &str) -> Option<bool> {
     match s.trim().to_ascii_lowercase().as_str() {
         "1" | "true" | "yes" | "y" => Some(true),
@@ -27,7 +30,7 @@ pub(crate) fn parse_boolish(s: &str) -> Option<bool> {
     }
 }
 
-/// Parse a variable-length big-endian integer into u64 (ID3 PCNT format).
+/// Parse a variable-length big-endian integer into `u64` (ID3 PCNT format).
 pub(crate) fn parse_be_u64(bytes: &[u8]) -> Option<u64> {
     if bytes.is_empty() {
         return None;
