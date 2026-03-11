@@ -15,7 +15,7 @@ pub struct PlaybackController {
 }
 
 impl PlaybackController {
-    /// Best-effort send. If the engine died, the command is dropped.
+    /// Best-effort send. If the engine thread has exited, the command is dropped.
     pub fn send(&self, cmd: PlayerCommand) {
         let _ = self.command_tx.send(cmd);
     }
@@ -23,16 +23,17 @@ impl PlaybackController {
 
 #[derive(Debug)]
 pub enum PlayerCommand {
-    /// Clear current sink/queue and begin playback immediately.
+    /// Clear current playback and start this file immediately.
     PlayFile(PathBuf),
 
-    /// Append a file to the current logical queue.
+    /// Append a file to the upcoming queue.
     QueueFile(PathBuf),
 
-    /// Clear queued upcoming files, but do not stop the currently playing file.
+    /// Clear queued upcoming files without stopping the current track.
     ClearQueue,
 
-    /// Compatibility aliases for older GUI code.
+    /// Temporary compatibility aliases for legacy GUI code.
+    /// Remove once the GUI is fully migrated to QueueFile / ClearQueue.
     SetNextFile(PathBuf),
     ClearNextFile,
 
@@ -73,7 +74,7 @@ pub enum PlayerEvent {
     Error(String),
 }
 
-/// Spawns playback thread and returns:
+/// Spawns the playback engine thread and returns:
 /// - PlaybackController (store in GUI state)
 /// - Receiver<PlayerEvent> (polled by GUI on a timer tick)
 pub fn start_playback() -> (PlaybackController, Receiver<PlayerEvent>) {

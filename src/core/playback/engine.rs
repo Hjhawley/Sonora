@@ -43,7 +43,10 @@ struct EngineQueueSource {
 
 impl EngineQueueSource {
     fn new(shared: Arc<Mutex<SharedQueue>>, boundary_tx: Sender<TrackBoundary>) -> Self {
-        Self { shared, boundary_tx }
+        Self {
+            shared,
+            boundary_tx,
+        }
     }
 }
 
