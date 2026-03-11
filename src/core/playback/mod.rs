@@ -23,7 +23,19 @@ impl PlaybackController {
 
 #[derive(Debug)]
 pub enum PlayerCommand {
+    /// Clear current sink/queue and begin playback immediately.
     PlayFile(PathBuf),
+
+    /// Append a file to the current sink queue.
+    QueueFile(PathBuf),
+
+    /// Clear queued upcoming files, but do not stop the currently playing file.
+    ClearQueue,
+
+    /// Compatibility aliases for older GUI code.
+    SetNextFile(PathBuf),
+    ClearNextFile,
+
     Pause,
     Resume,
     Stop,
@@ -38,7 +50,7 @@ pub enum PlayerEvent {
         playback_id: u64,
         path: PathBuf,
         duration_ms: Option<u64>,
-        /// The position the engine started from (0 normally, nonzero when seeking)
+        /// Position the current track started from (0 normally, nonzero when seeking).
         start_ms: u64,
     },
     Paused {
@@ -54,6 +66,7 @@ pub enum PlayerEvent {
         playback_id: u64,
         position_ms: u64,
     },
+    /// Emitted only when the entire queue is exhausted.
     TrackEnded {
         playback_id: u64,
     },

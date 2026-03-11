@@ -4,6 +4,11 @@
 //! Robust seeking strategy:
 //! - Try Symphonia demuxer seek (coarse, timestamp-based).
 //! - If seek undershoots (or fails), decode-skip the remaining delta.
+//!
+//! Gapless note:
+//! - Symphonia does NOT enable gapless handling by default.
+//! - We explicitly enable it in FormatOptions so encoder delay / end padding
+//!   can be removed when container/codec metadata supports it.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -20,7 +25,7 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::{Time, TimeBase};
 
-/// Construct a new seekable rodio Source from 'path', starting at 'start_ms'.
+/// Construct a new seekable rodio Source from `path`, starting at `start_ms`.
 pub fn open_source_at_ms(
     path: &Path,
     start_ms: u64,
@@ -33,13 +38,11 @@ pub fn open_source_at_ms(
         hint.with_extension(ext);
     }
 
+    let mut format_opts = FormatOptions::default();
+    format_opts.enable_gapless = true;
+
     let probed = symphonia::default::get_probe()
-        .format(
-            &hint,
-            mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
+        .format(&hint, mss, &format_opts, &MetadataOptions::default())
         .map_err(|e| format!("Format probe failed: {e}"))?;
 
     let mut format = probed.format;
@@ -77,7 +80,7 @@ pub fn open_source_at_ms(
                 SeekMode::Coarse,
                 SeekTo::TimeStamp {
                     ts: required_ts,
-                    track_id, // <-- symphonia 0.5.5 expects u32 here
+                    track_id,
                 },
             ) {
                 Ok(seeked) => {
@@ -112,7 +115,7 @@ pub fn open_source_at_ms(
                 SeekMode::Coarse,
                 SeekTo::Time {
                     time: requested_time,
-                    track_id: Some(track_id), // <-- symphonia 0.5.5 expects Option<u32>
+                    track_id: Some(track_id),
                 },
             ) {
                 Ok(_seeked) => {
@@ -255,7 +258,7 @@ impl SymphoniaSource {
                 continue;
             }
 
-            // ---- IMPORTANT: keep decoded + its borrows inside this block ----
+            // keep decoded + its borrows inside this block
             let (sr, ch, mut samples): (u32, u16, Vec<f32>) = {
                 let decoded = match self.decoder.decode(&packet) {
                     Ok(d) => d,
@@ -304,9 +307,9 @@ impl SymphoniaSource {
                     }
                 }
             };
-            // ---- decoded dropped here; decoder borrow released ----
+            // decoded dropped here; decoder borrow released
 
-            // If decoder hit EOF-ish via IoError above, end cleanly.
+            // If decoder hit EOF via IoError above, end cleanly
             if samples.is_empty() {
                 self.ended = true;
                 return Ok(());

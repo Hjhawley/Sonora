@@ -1,12 +1,13 @@
 //! gui/update/playback.rs
 //! GUI-playback engine bridge
 //!
-//! - 'now_playing' and selection are 'TrackId', not Vec indices.
-//! - 'PlayTrack' accepts a 'TrackId' and looks up the current row by id.
+//! - `now_playing` and selection are `TrackId`, not Vec indices.
+//! - `PlayTrack` accepts a `TrackId` and looks up the current row by id.
 //!
 //! Design goals:
 //! - GUI never touches rodio/symphonia directly.
 //! - All IO / timing is driven by the engine + TickPlayback polling.
+//! - Engine owns continuous playback; GUI provides queue policy.
 
 use iced::Task;
 use rand::seq::SliceRandom;
@@ -260,14 +261,25 @@ fn set_context_album(state: &mut Sonora, key: AlbumKey) {
     }
 }
 
+/// Tell the engine what the immediate next track should be.
+/// This keeps queue policy in the GUI while continuous playback lives in the engine.
+fn refresh_next_queue_hint(state: &mut Sonora) {
+    let next_path = next_track_id(state)
+        .and_then(|next_id| state.track_by_id(next_id))
+        .map(|row| row.path.clone());
+
+    if let Some(controller) = &state.playback {
+        controller.send(PlayerCommand::ClearQueue);
+
+        if let Some(path) = next_path {
+            controller.send(PlayerCommand::QueueFile(path));
+        }
+    }
+}
+
 fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     ensure_engine(state);
     sync_shuffled_ids(state);
-
-    let Some(controller) = &state.playback else {
-        state.status = "Playback engine failed to initialize.".into();
-        return Task::none();
-    };
 
     let Some(row) = state.track_by_id(id) else {
         state.status = "Play failed: selected track not found (rescan?).".into();
@@ -279,10 +291,15 @@ fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     #[cfg(debug_assertions)]
     eprintln!("[GUI] PlayTrack id={} path={}", id, path.display());
 
+    let Some(controller) = &state.playback else {
+        state.status = "Playback engine failed to initialize.".into();
+        return Task::none();
+    };
+
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
-    // Playback should not hijack selection
-    // We do not trust any older non-Started transport events after this
+    // Playback should not hijack selection.
+    // We do not trust any older non-Started transport events after this.
     state.awaiting_started = true;
     state.now_playing = Some(id);
     state.is_playing = true;
@@ -290,6 +307,9 @@ fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     state.duration_ms = None;
     state.seek_preview_ratio = None;
     state.status = format!("Playing: {}", path.display());
+
+    // Queue exactly one next track hint after current track.
+    refresh_next_queue_hint(state);
 
     Task::none()
 }
@@ -386,6 +406,7 @@ pub(crate) fn toggle_shuffle(state: &mut Sonora) -> Task<Message> {
         }
     };
 
+    refresh_next_queue_hint(state);
     Task::none()
 }
 
@@ -402,6 +423,7 @@ pub(crate) fn cycle_repeat_mode(state: &mut Sonora) -> Task<Message> {
         RepeatMode::One => "Repeat one.".to_string(),
     };
 
+    refresh_next_queue_hint(state);
     Task::none()
 }
 
@@ -441,6 +463,7 @@ pub(crate) fn stop(state: &mut Sonora) -> Task<Message> {
     ensure_engine(state);
 
     if let Some(controller) = &state.playback {
+        controller.send(PlayerCommand::ClearQueue);
         controller.send(PlayerCommand::Stop);
     }
 
@@ -514,7 +537,7 @@ pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
 
     let mut target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
 
-    // Seeking to the end tends to produce EOF weirdness, so clamp slightly
+    // Seeking to the end tends to produce EOF weirdness, so clamp slightly.
     if target_ms >= dur_ms {
         target_ms = dur_ms.saturating_sub(1);
     }
@@ -525,13 +548,14 @@ pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
         ratio, dur_ms, target_ms
     );
 
-    // Seek reopens the source inside the engine,
-    // so we should expect a fresh Started event
     state.awaiting_started = true;
+    controller.send(PlayerCommand::ClearQueue);
     controller.send(PlayerCommand::Seek(target_ms));
 
-    // Optimistic UI update; engine will confirm via Started/Position
     state.position_ms = target_ms;
+
+    // Refresh the one-track lookahead after seek.
+    refresh_next_queue_hint(state);
 
     Task::none()
 }
@@ -604,6 +628,10 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             state.position_ms = start_ms;
             state.seek_preview_ratio = None;
             state.status = format!("Now playing: {}", path.display());
+
+            // Whenever engine advances into a new queued track, compute and queue
+            // the next logical track so continuous playback can keep going.
+            refresh_next_queue_hint(state);
         }
 
         PlayerEvent::Paused { playback_id } => {
@@ -621,8 +649,6 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
         }
 
         PlayerEvent::Stopped { playback_id } => {
-            // UI already handles Stop optimistically
-            // Ignore stale stops, and also ignore matching stops while a new Started is pending
             if state.awaiting_started || !event_matches_active(state, playback_id) {
                 return Task::none();
             }
@@ -646,10 +672,6 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
         PlayerEvent::TrackEnded { playback_id } => {
             if state.awaiting_started || !event_matches_active(state, playback_id) {
                 return Task::none();
-            }
-
-            if let Some(next_id) = next_track_id(state) {
-                return play_track_internal(state, next_id);
             }
 
             clear_playback_ui(state);
