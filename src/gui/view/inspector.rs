@@ -4,42 +4,67 @@
 //! - Selection is TrackId-based.
 //! - We resolve id -> TrackRow on demand for display.
 
-use iced::Alignment;
-use iced::Length;
-use iced::widget::Row;
+use iced::widget::text_input::{Status as TextInputStatus, Style as TextInputStyle};
 use iced::widget::{
-    Column, button, checkbox, column, container, row, scrollable, text, text_input,
+    Column, Row, button, checkbox, column, container, row, scrollable, text, text_input,
 };
+use iced::{Alignment, Color, Length, Theme};
 
-use super::super::state::{InspectorField as Field, Message, Sonora};
-use super::widgets::fmt_duration;
-
+use super::super::state::{InspectorField as Field, Message, Sonora, mixed_display_string};
 use super::constants::LABEL_W;
+use super::widgets::fmt_duration;
 use crate::core::types::TrackId;
 
-/// Field row that appends " (mixed)" to the label when mixed.
-fn field_row_mixed<'a>(
+/// Bright teal used for mixed-field placeholder text.
+const MIXED_TEAL: Color = Color::from_rgb8(0x2C, 0xE8, 0xD3);
+
+fn is_mixed(state: &Sonora, field: Field) -> bool {
+    state.inspector_mixed.get(&field).copied().unwrap_or(false)
+}
+
+/// Text input used by the inspector.
+/// If the field is mixed:
+/// - show empty value
+/// - render `<mixed>` as placeholder
+/// - color the placeholder bright teal
+fn inspector_input<'a>(
+    value: &'a str,
+    mixed: bool,
+    on_input: impl Fn(String) -> Message + 'a,
+) -> iced::widget::TextInput<'a, Message> {
+    let display_value = if mixed { "" } else { value };
+    let placeholder = if mixed { mixed_display_string() } else { "" };
+
+    text_input(placeholder, display_value)
+        .on_input(on_input)
+        .style(move |theme: &Theme, status: TextInputStatus| {
+            let mut style = iced::widget::text_input::default(theme, status);
+
+            if mixed {
+                style.placeholder = MIXED_TEAL;
+            }
+
+            style
+        })
+}
+
+/// Standard field row
+fn field_row<'a>(
     label: &'a str,
     value: &'a str,
     mixed: bool,
     on_input: impl Fn(String) -> Message + 'a,
 ) -> Row<'a, Message> {
-    let label = if mixed {
-        format!("{label} (mixed)")
-    } else {
-        label.to_string()
-    };
-
     row![
         text(label).width(Length::Fixed(LABEL_W)),
-        text_input("", value).on_input(on_input).width(Length::Fill),
+        inspector_input(value, mixed, on_input).width(Length::Fill),
     ]
     .spacing(8)
     .align_y(Alignment::Center)
 }
 
-/// Numeric pair row with " (mixed)" on the label if either side is mixed.
-fn num_pair_row_mixed<'a>(
+/// Numeric pair row
+fn num_pair_row<'a>(
     label: &'a str,
     left: &'a str,
     left_mixed: bool,
@@ -48,33 +73,18 @@ fn num_pair_row_mixed<'a>(
     right_mixed: bool,
     right_on: impl Fn(String) -> Message + 'a,
 ) -> Row<'a, Message> {
-    let label = if left_mixed || right_mixed {
-        format!("{label} (mixed)")
-    } else {
-        label.to_string()
-    };
-
     row![
         text(label).width(Length::Fixed(LABEL_W)),
-        text_input("", left)
-            .on_input(left_on)
-            .width(Length::Fixed(70.0)),
+        inspector_input(left, left_mixed, left_on).width(Length::Fixed(70.0)),
         text("/"),
-        text_input("", right)
-            .on_input(right_on)
-            .width(Length::Fixed(70.0)),
+        inspector_input(right, right_mixed, right_on).width(Length::Fixed(70.0)),
     ]
     .spacing(6)
     .align_y(Alignment::Center)
 }
 
-fn is_mixed(state: &Sonora, field: Field) -> bool {
-    state.inspector_mixed.get(&field).copied().unwrap_or(false)
-}
-
 pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
-    // If nothing selected, show empty editor prompt.
-    if state.selected_tracks.is_empty() && state.selected_track.is_none() {
+    if !state.has_selection() {
         return container(
             column![
                 text("Metadata editor").size(18),
@@ -85,7 +95,6 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
         .padding(12);
     }
 
-    // Primary id for the header/path: prefer selected_track, else first selected_tracks.
     let primary_id: Option<TrackId> = state
         .selected_track
         .or_else(|| state.selected_tracks.iter().next().copied());
@@ -131,37 +140,37 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     .spacing(6);
 
     let core: Column<'_, Message> = column![
-        field_row_mixed(
+        field_row(
             "Title",
             &state.inspector.title,
             is_mixed(state, Field::Title),
             |s| Message::InspectorChanged(Field::Title, s)
         ),
-        field_row_mixed(
+        field_row(
             "Artist",
             &state.inspector.artist,
             is_mixed(state, Field::Artist),
             |s| Message::InspectorChanged(Field::Artist, s)
         ),
-        field_row_mixed(
+        field_row(
             "Album",
             &state.inspector.album,
             is_mixed(state, Field::Album),
             |s| Message::InspectorChanged(Field::Album, s)
         ),
-        field_row_mixed(
+        field_row(
             "Album Artist",
             &state.inspector.album_artist,
             is_mixed(state, Field::AlbumArtist),
             |s| Message::InspectorChanged(Field::AlbumArtist, s)
         ),
-        field_row_mixed(
+        field_row(
             "Composer",
             &state.inspector.composer,
             is_mixed(state, Field::Composer),
             |s| Message::InspectorChanged(Field::Composer, s)
         ),
-        num_pair_row_mixed(
+        num_pair_row(
             "Track",
             &state.inspector.track_no,
             is_mixed(state, Field::TrackNo),
@@ -170,7 +179,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             is_mixed(state, Field::TrackTotal),
             |s| Message::InspectorChanged(Field::TrackTotal, s),
         ),
-        num_pair_row_mixed(
+        num_pair_row(
             "Disc",
             &state.inspector.disc_no,
             is_mixed(state, Field::DiscNo),
@@ -179,37 +188,37 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             is_mixed(state, Field::DiscTotal),
             |s| Message::InspectorChanged(Field::DiscTotal, s),
         ),
-        field_row_mixed(
+        field_row(
             "Year",
             &state.inspector.year,
             is_mixed(state, Field::Year),
             |s| Message::InspectorChanged(Field::Year, s)
         ),
-        field_row_mixed(
+        field_row(
             "Genre",
             &state.inspector.genre,
             is_mixed(state, Field::Genre),
             |s| Message::InspectorChanged(Field::Genre, s)
         ),
-        field_row_mixed(
+        field_row(
             "Grouping",
             &state.inspector.grouping,
             is_mixed(state, Field::Grouping),
             |s| Message::InspectorChanged(Field::Grouping, s)
         ),
-        field_row_mixed(
+        field_row(
             "Comment",
             &state.inspector.comment,
             is_mixed(state, Field::Comment),
             |s| Message::InspectorChanged(Field::Comment, s)
         ),
-        field_row_mixed(
+        field_row(
             "Lyrics",
             &state.inspector.lyrics,
             is_mixed(state, Field::Lyrics),
             |s| Message::InspectorChanged(Field::Lyrics, s)
         ),
-        field_row_mixed(
+        field_row(
             "Lyricist",
             &state.inspector.lyricist,
             is_mixed(state, Field::Lyricist),
@@ -224,79 +233,79 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
 
     let extended: Column<'_, Message> = if state.show_extended {
         column![
-            field_row_mixed(
+            field_row(
                 "Date",
                 &state.inspector.date,
                 is_mixed(state, Field::Date),
                 |s| Message::InspectorChanged(Field::Date, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Conductor",
                 &state.inspector.conductor,
                 is_mixed(state, Field::Conductor),
                 |s| Message::InspectorChanged(Field::Conductor, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Remixer",
                 &state.inspector.remixer,
                 is_mixed(state, Field::Remixer),
                 |s| Message::InspectorChanged(Field::Remixer, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Publisher",
                 &state.inspector.publisher,
                 is_mixed(state, Field::Publisher),
                 |s| Message::InspectorChanged(Field::Publisher, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Subtitle",
                 &state.inspector.subtitle,
                 is_mixed(state, Field::Subtitle),
                 |s| Message::InspectorChanged(Field::Subtitle, s)
             ),
-            field_row_mixed(
+            field_row(
                 "BPM",
                 &state.inspector.bpm,
                 is_mixed(state, Field::Bpm),
                 |s| Message::InspectorChanged(Field::Bpm, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Key",
                 &state.inspector.key,
                 is_mixed(state, Field::Key),
                 |s| Message::InspectorChanged(Field::Key, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Mood",
                 &state.inspector.mood,
                 is_mixed(state, Field::Mood),
                 |s| Message::InspectorChanged(Field::Mood, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Language",
                 &state.inspector.language,
                 is_mixed(state, Field::Language),
                 |s| Message::InspectorChanged(Field::Language, s)
             ),
-            field_row_mixed(
+            field_row(
                 "ISRC",
                 &state.inspector.isrc,
                 is_mixed(state, Field::Isrc),
                 |s| Message::InspectorChanged(Field::Isrc, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Encoder",
                 &state.inspector.encoder_settings,
                 is_mixed(state, Field::EncoderSettings),
                 |s| Message::InspectorChanged(Field::EncoderSettings, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Encoded by",
                 &state.inspector.encoded_by,
                 is_mixed(state, Field::EncodedBy),
                 |s| Message::InspectorChanged(Field::EncodedBy, s)
             ),
-            field_row_mixed(
+            field_row(
                 "Copyright",
                 &state.inspector.copyright,
                 is_mixed(state, Field::Copyright),
@@ -323,5 +332,6 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     let buttons = row![save_btn, revert_btn].spacing(8);
 
     let editor = scrollable(column![top, core, toggle, extended].spacing(12)).height(Length::Fill);
+
     container(column![editor, buttons].spacing(12)).padding(12)
 }
