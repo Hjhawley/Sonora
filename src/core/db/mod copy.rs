@@ -16,11 +16,6 @@ use rusqlite::{Connection, OptionalExtension, params};
 use crate::core::library::DiscoveredFile;
 use crate::core::types::TrackId;
 
-mod paths;
-mod schema;
-
-pub use paths::default_db_path;
-
 const APP_STATE_VOLUME_KEY: &str = "volume";
 
 pub struct Db {
@@ -35,19 +30,62 @@ impl Db {
         db.init_schema()?;
         Ok(db)
     }
-}
 
-impl Db {
+    fn init_schema(&self) -> Result<(), String> {
+        self.conn
+            .execute_batch(
+                r#"
+                PRAGMA journal_mode = WAL;
+                PRAGMA foreign_keys = ON;
+
+                CREATE TABLE IF NOT EXISTS tracks (
+                    id      INTEGER PRIMARY KEY,
+                    path    TEXT NOT NULL UNIQUE
+                );
+
+                CREATE TABLE IF NOT EXISTS app_state (
+                    key     TEXT PRIMARY KEY,
+                    value   TEXT NOT NULL
+                );
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+
+        self.ensure_column("tracks", "present", "INTEGER NOT NULL DEFAULT 1")?;
+        self.ensure_column("tracks", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
+        self.ensure_column("tracks", "mtime", "INTEGER")?;
+        self.ensure_column("tracks", "size", "INTEGER")?;
+
+        Ok(())
+    }
+
+    fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<(), String> {
+        let pragma = format!("PRAGMA table_info({table})");
+        let mut stmt = self.conn.prepare(&pragma).map_err(|e| e.to_string())?;
+        let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+
+        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
+            let name: String = row.get(1).map_err(|e| e.to_string())?;
+            if name == column {
+                return Ok(());
+            }
+        }
+
+        let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
+        self.conn.execute(&sql, []).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
     /// Upsert all discovered files.
     ///
     /// Behavior:
-    /// - Mark everything missing first (`present = 0`)
+    /// - Mark everything missing first ('present = 0')
     /// - For discovered files:
     ///   - INSERT OR IGNORE by path
-    ///   - set `present = 1`
+    ///   - set 'present = 1'
     ///   - update mtime/size
-    /// - preserve `hidden`
-    /// - return `(TrackId, PathBuf)` in the same order as discovered input
+    /// - preserve 'hidden'
+    /// - return '(TrackId, PathBuf)' in the same order as discovered input
     pub fn upsert_discovered(
         &mut self,
         files: &[DiscoveredFile],
@@ -192,7 +230,7 @@ impl Db {
         Ok(out)
     }
 
-    /// Future UI support: hide / unhide without touching the file.
+    /// Future UI support: hide / unhide without touching the file
     pub fn set_hidden(&self, id: TrackId, hidden: bool) -> Result<(), String> {
         self.conn
             .execute(
@@ -202,10 +240,8 @@ impl Db {
             .map_err(|e| e.to_string())?;
         Ok(())
     }
-}
 
-impl Db {
-    /// Load persisted master volume (0.0..=1.0), if present and valid.
+    /// Load persisted master volume (0.0..=1.0), if present and valid
     pub fn load_volume(&self) -> Result<Option<f32>, String> {
         let raw: Option<String> = self
             .conn
@@ -225,10 +261,9 @@ impl Db {
         Ok(Some(parsed.clamp(0.0, 1.0)))
     }
 
-    /// Persist master volume (clamped to 0.0..=1.0).
+    /// Persist master volume (clamped to 0.0..=1.0)
     pub fn save_volume(&self, volume: f32) -> Result<(), String> {
         let volume = volume.clamp(0.0, 1.0);
-
         self.conn
             .execute(
                 r#"
@@ -239,7 +274,52 @@ impl Db {
                 params![APP_STATE_VOLUME_KEY, volume.to_string()],
             )
             .map_err(|e| e.to_string())?;
-
         Ok(())
+    }
+}
+
+pub fn default_db_path() -> Result<PathBuf, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let base = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA not set".to_string())?;
+        let mut dir = PathBuf::from(base);
+        dir.push("Sonora");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        dir.push("sonora.sqlite3");
+        return Ok(dir);
+    }
+
+    // macOS, not yet implemented
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var_os("HOME").ok_or("HOME not set".to_string())?;
+        let mut dir = PathBuf::from(home);
+        dir.push("Library");
+        dir.push("Application Support");
+        dir.push("Sonora");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        dir.push("sonora.sqlite3");
+        return Ok(dir);
+    }
+
+    // Linux, not yet implemented
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let base = std::env::var_os("XDG_DATA_HOME")
+            .or_else(|| {
+                std::env::var_os("HOME").map(|h| {
+                    let mut p = PathBuf::from(h);
+                    p.push(".local");
+                    p.push("share");
+                    p.into_os_string()
+                })
+            })
+            .ok_or("No HOME/XDG_DATA_HOME set".to_string())?;
+
+        let mut dir = PathBuf::from(base);
+        dir.push("sonora");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        dir.push("sonora.sqlite3");
+        return Ok(dir);
     }
 }
