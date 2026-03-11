@@ -26,7 +26,7 @@ pub enum PlayerCommand {
     /// Clear current sink/queue and begin playback immediately.
     PlayFile(PathBuf),
 
-    /// Append a file to the current sink queue.
+    /// Append a file to the current logical queue.
     QueueFile(PathBuf),
 
     /// Clear queued upcoming files, but do not stop the currently playing file.
@@ -81,7 +81,6 @@ pub fn start_playback() -> (PlaybackController, Receiver<PlayerEvent>) {
     let (event_tx, event_rx) = mpsc::channel::<PlayerEvent>();
 
     thread::spawn(move || {
-        // Keep a clone for init-failure reporting
         let event_tx_fail = event_tx.clone();
 
         match PlaybackEngine::new(event_tx) {

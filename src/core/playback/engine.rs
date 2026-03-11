@@ -3,10 +3,11 @@
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use rodio::{OutputStream, OutputStreamBuilder, Sink};
+use rodio::{OutputStream, OutputStreamBuilder, Sink, Source};
 
 use super::decoder::open_source_at_ms;
 use super::{PlayerCommand, PlayerEvent};
@@ -14,10 +15,112 @@ use super::{PlayerCommand, PlayerEvent};
 const TICK_MS: u64 = 200;
 
 #[derive(Debug, Clone)]
-struct QueuedTrack {
+struct TrackBoundary {
+    playback_id: u64,
     path: PathBuf,
     duration_ms: Option<u64>,
     start_ms: u64,
+}
+
+struct QueuedSource {
+    source: Box<dyn Source<Item = f32> + Send>,
+    boundary: TrackBoundary,
+}
+
+#[derive(Default)]
+struct SharedQueue {
+    current: Option<QueuedSource>,
+    queued: VecDeque<QueuedSource>,
+}
+
+/// Single source appended to rodio sink. It internally walks:
+/// current source -> queued source -> queued source...
+/// and emits an exact boundary notification when it switches tracks.
+struct EngineQueueSource {
+    shared: Arc<Mutex<SharedQueue>>,
+    boundary_tx: Sender<TrackBoundary>,
+}
+
+impl EngineQueueSource {
+    fn new(shared: Arc<Mutex<SharedQueue>>, boundary_tx: Sender<TrackBoundary>) -> Self {
+        Self { shared, boundary_tx }
+    }
+}
+
+impl Iterator for EngineQueueSource {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            let mut pending_boundary: Option<TrackBoundary> = None;
+
+            {
+                let mut shared = self.shared.lock().ok()?;
+                let current = shared.current.as_mut()?;
+
+                if let Some(sample) = current.source.next() {
+                    return Some(sample);
+                }
+
+                let next = shared.queued.pop_front();
+                match next {
+                    Some(next_src) => {
+                        pending_boundary = Some(next_src.boundary.clone());
+                        shared.current = Some(next_src);
+                    }
+                    None => {
+                        shared.current = None;
+                        return None;
+                    }
+                }
+            }
+
+            if let Some(boundary) = pending_boundary {
+                let _ = self.boundary_tx.send(boundary);
+            }
+        }
+    }
+}
+
+impl Source for EngineQueueSource {
+    fn current_span_len(&self) -> Option<usize> {
+        let Ok(shared) = self.shared.lock() else {
+            return None;
+        };
+
+        shared
+            .current
+            .as_ref()
+            .and_then(|q| q.source.current_span_len())
+    }
+
+    fn channels(&self) -> u16 {
+        let Ok(shared) = self.shared.lock() else {
+            return 2;
+        };
+
+        shared
+            .current
+            .as_ref()
+            .map(|q| q.source.channels())
+            .unwrap_or(2)
+    }
+
+    fn sample_rate(&self) -> u32 {
+        let Ok(shared) = self.shared.lock() else {
+            return 44_100;
+        };
+
+        shared
+            .current
+            .as_ref()
+            .map(|q| q.source.sample_rate())
+            .unwrap_or(44_100)
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
 }
 
 pub struct PlaybackEngine {
@@ -27,6 +130,13 @@ pub struct PlaybackEngine {
     // One persistent sink per playback session.
     sink: Option<Sink>,
 
+    // Shared logical queue consumed by EngineQueueSource.
+    shared_queue: Option<Arc<Mutex<SharedQueue>>>,
+
+    // Exact boundary notifications from EngineQueueSource.
+    boundary_rx: Receiver<TrackBoundary>,
+    boundary_tx: Sender<TrackBoundary>,
+
     // Current track metadata.
     current_path: Option<PathBuf>,
     current_duration_ms: Option<u64>,
@@ -35,14 +145,7 @@ pub struct PlaybackEngine {
     // Absolute sink position (ms) when the current track began.
     current_track_sink_origin_ms: u64,
 
-    // How long the current queued segment actually plays inside the sink.
-    // For a seeked track, this is duration - start_ms.
-    current_track_playback_len_ms: Option<u64>,
-
-    // Upcoming appended tracks.
-    queued_tracks: VecDeque<QueuedTrack>,
-
-    // Monotonic id for each logical track/session transition.
+    // Monotonic id for each logical track transition.
     next_playback_id: u64,
     current_playback_id: Option<u64>,
 
@@ -60,15 +163,18 @@ impl PlaybackEngine {
         let stream = OutputStreamBuilder::open_default_stream()
             .map_err(|e| format!("Audio init failed: {e}"))?;
 
+        let (boundary_tx, boundary_rx) = mpsc::channel::<TrackBoundary>();
+
         Ok(Self {
             stream,
             sink: None,
+            shared_queue: None,
+            boundary_rx,
+            boundary_tx,
             current_path: None,
             current_duration_ms: None,
             current_start_ms: 0,
             current_track_sink_origin_ms: 0,
-            current_track_playback_len_ms: None,
-            queued_tracks: VecDeque::new(),
             next_playback_id: 1,
             current_playback_id: None,
             volume: 1.0,
@@ -125,7 +231,7 @@ impl PlaybackEngine {
             PlayerCommand::ClearQueue | PlayerCommand::ClearNextFile => {
                 #[cfg(debug_assertions)]
                 eprintln!("[ENGINE] ClearQueue");
-                self.queued_tracks.clear();
+                self.clear_queue_only();
             }
 
             PlayerCommand::Pause => {
@@ -206,15 +312,40 @@ impl PlaybackEngine {
     }
 
     fn tick(&mut self) {
-        let Some(playback_id) = self.current_playback_id else {
+        let Some(sink) = &self.sink else {
             return;
         };
 
-        let (sink_pos_ms, sink_empty) = {
-            let Some(sink) = &self.sink else {
-                return;
-            };
-            (sink.get_pos().as_millis() as u64, sink.empty())
+        let sink_pos_ms = sink.get_pos().as_millis() as u64;
+        let sink_empty = sink.empty();
+
+        // Drain exact source-boundary notifications first.
+        while let Ok(boundary) = self.boundary_rx.try_recv() {
+            self.current_track_sink_origin_ms = sink_pos_ms;
+            self.current_path = Some(boundary.path.clone());
+            self.current_duration_ms = boundary.duration_ms;
+            self.current_start_ms = boundary.start_ms;
+            self.current_playback_id = Some(boundary.playback_id);
+            self.ended_emitted = false;
+
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "[ENGINE] Exact boundary playback_id={} path={} duration_ms={:?}",
+                boundary.playback_id,
+                boundary.path.display(),
+                boundary.duration_ms
+            );
+
+            let _ = self.event_tx.send(PlayerEvent::Started {
+                playback_id: boundary.playback_id,
+                path: boundary.path,
+                duration_ms: boundary.duration_ms,
+                start_ms: boundary.start_ms,
+            });
+        }
+
+        let Some(playback_id) = self.current_playback_id else {
+            return;
         };
 
         let rel_ms = sink_pos_ms.saturating_sub(self.current_track_sink_origin_ms);
@@ -225,77 +356,37 @@ impl PlaybackEngine {
             position_ms,
         });
 
-        // Advance logical track metadata if the sink has already crossed into queued sources.
-        while let Some(cur_playback_len) = self.current_track_playback_len_ms {
-            let rel_ms = sink_pos_ms.saturating_sub(self.current_track_sink_origin_ms);
-
-            if rel_ms < cur_playback_len {
-                break;
-            }
-
-            let Some(next_track) = self.queued_tracks.pop_front() else {
-                break;
-            };
-
-            self.current_track_sink_origin_ms = self
-                .current_track_sink_origin_ms
-                .saturating_add(cur_playback_len);
-
-            self.current_path = Some(next_track.path.clone());
-            self.current_duration_ms = next_track.duration_ms;
-            self.current_start_ms = next_track.start_ms;
-            self.current_track_playback_len_ms = next_track
-                .duration_ms
-                .map(|d| d.saturating_sub(next_track.start_ms));
-
-            let next_playback_id = self.alloc_playback_id();
-            self.current_playback_id = Some(next_playback_id);
-
-            #[cfg(debug_assertions)]
-            eprintln!(
-                "[ENGINE] Advanced to queued track playback_id={} path={} duration_ms={:?}",
-                next_playback_id,
-                next_track.path.display(),
-                next_track.duration_ms
-            );
-
-            let _ = self.event_tx.send(PlayerEvent::Started {
-                playback_id: next_playback_id,
-                path: next_track.path,
-                duration_ms: next_track.duration_ms,
-                start_ms: next_track.start_ms,
-            });
-        }
-
-        // Entire sink exhausted = whole queue finished.
+        // Entire queue exhausted.
         if sink_empty && self.current_path.is_some() && !self.ended_emitted {
             self.ended_emitted = true;
-            let final_id = self.current_playback_id.unwrap_or(playback_id);
-            let _ = self.event_tx.send(PlayerEvent::TrackEnded {
-                playback_id: final_id,
-            });
+            let _ = self.event_tx.send(PlayerEvent::TrackEnded { playback_id });
             self.stop_internal();
         }
     }
 
     fn queue_file(&mut self, path: PathBuf) -> Result<(), String> {
-        // If nothing is currently playing, QueueFile acts like PlayFile.
-        if self.sink.is_none() || self.current_path.is_none() {
+        if self.sink.is_none() || self.shared_queue.is_none() || self.current_path.is_none() {
             return self.play_file_at(path, 0, true);
         }
 
-        let Some(sink) = &self.sink else {
-            return self.play_file_at(path, 0, true);
+        let (src, duration_ms) = open_source_at_ms(&path, 0)?;
+        let playback_id = self.alloc_playback_id();
+
+        let queued = QueuedSource {
+            source: Box::new(src),
+            boundary: TrackBoundary {
+                playback_id,
+                path,
+                duration_ms,
+                start_ms: 0,
+            },
         };
 
-        let (src, duration_ms) = open_source_at_ms(&path, 0)?;
-        sink.append(src);
-
-        self.queued_tracks.push_back(QueuedTrack {
-            path,
-            duration_ms,
-            start_ms: 0,
-        });
+        if let Some(shared) = &self.shared_queue {
+            if let Ok(mut shared) = shared.lock() {
+                shared.queued.push_back(queued);
+            }
+        }
 
         Ok(())
     }
@@ -308,12 +399,28 @@ impl PlaybackEngine {
     ) -> Result<(), String> {
         self.stop_internal();
 
+        let (src, duration_ms) = open_source_at_ms(&path, start_ms)?;
+        let playback_id = self.alloc_playback_id();
+
+        let shared = Arc::new(Mutex::new(SharedQueue {
+            current: Some(QueuedSource {
+                source: Box::new(src),
+                boundary: TrackBoundary {
+                    playback_id,
+                    path: path.clone(),
+                    duration_ms,
+                    start_ms,
+                },
+            }),
+            queued: VecDeque::new(),
+        }));
+
         let sink = Sink::connect_new(self.stream.mixer());
         sink.set_volume(self.volume);
-
-        // decoder is responsible for seek + any fallback skipping.
-        let (src, duration_ms) = open_source_at_ms(&path, start_ms)?;
-        sink.append(src);
+        sink.append(EngineQueueSource::new(
+            shared.clone(),
+            self.boundary_tx.clone(),
+        ));
 
         if resume_playing {
             sink.play();
@@ -321,16 +428,14 @@ impl PlaybackEngine {
             sink.pause();
         }
 
-        let playback_id = self.alloc_playback_id();
-
         self.sink = Some(sink);
+        self.shared_queue = Some(shared);
+
         self.current_path = Some(path.clone());
         self.current_duration_ms = duration_ms;
         self.current_start_ms = start_ms;
         self.current_track_sink_origin_ms = 0;
-        self.current_track_playback_len_ms = duration_ms.map(|d| d.saturating_sub(start_ms));
         self.current_playback_id = Some(playback_id);
-        self.queued_tracks.clear();
         self.ended_emitted = false;
 
         #[cfg(debug_assertions)]
@@ -358,18 +463,27 @@ impl PlaybackEngine {
         id
     }
 
+    fn clear_queue_only(&mut self) {
+        if let Some(shared) = &self.shared_queue {
+            if let Ok(mut shared) = shared.lock() {
+                shared.queued.clear();
+            }
+        }
+    }
+
     fn stop_internal(&mut self) {
         if let Some(sink) = self.sink.take() {
             sink.stop();
         }
 
+        self.shared_queue = None;
         self.current_path = None;
         self.current_duration_ms = None;
         self.current_start_ms = 0;
         self.current_track_sink_origin_ms = 0;
-        self.current_track_playback_len_ms = None;
         self.current_playback_id = None;
-        self.queued_tracks.clear();
         self.ended_emitted = false;
+
+        while self.boundary_rx.try_recv().is_ok() {}
     }
 }

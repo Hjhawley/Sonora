@@ -12,6 +12,7 @@
 use iced::Task;
 use rand::seq::SliceRandom;
 use std::collections::BTreeSet;
+use std::path::Path;
 
 use super::super::state::{AlbumKey, Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
@@ -84,9 +85,6 @@ fn ordered_album_track_ids(state: &Sonora, key: &AlbumKey) -> Vec<TrackId> {
     ids
 }
 
-/// Returns the current ordered playback context before shuffle is applied.
-///
-/// This is intentionally driven by explicit playback state, not view state.
 fn context_track_ids(state: &Sonora) -> Vec<TrackId> {
     match &state.playback_context {
         PlaybackContext::Library => visible_track_ids(state),
@@ -101,8 +99,6 @@ fn context_track_ids(state: &Sonora) -> Vec<TrackId> {
     }
 }
 
-/// Keep only ids that are still valid for the current playback context,
-/// preserve relative order, and append any newly-added ids at the end.
 fn sync_shuffled_ids(state: &mut Sonora) {
     let context_ids = context_track_ids(state);
     if context_ids.is_empty() {
@@ -125,12 +121,6 @@ fn sync_shuffled_ids(state: &mut Sonora) {
     }
 }
 
-/// Build a fresh shuffled order for the current playback context.
-///
-/// Behavior:
-/// - shuffle only within the active playback context
-/// - if there is an anchor (now playing or selected), keep it at the same index
-///   it occupied in the unshuffled context when possible
 fn rebuild_shuffle_order(state: &mut Sonora) {
     let mut ids = context_track_ids(state);
     if ids.is_empty() {
@@ -261,8 +251,14 @@ fn set_context_album(state: &mut Sonora, key: AlbumKey) {
     }
 }
 
-/// Tell the engine what the immediate next track should be.
-/// This keeps queue policy in the GUI while continuous playback lives in the engine.
+fn track_id_by_path(state: &Sonora, path: &Path) -> Option<TrackId> {
+    state
+        .tracks
+        .iter()
+        .find(|t| t.path == path)
+        .and_then(|t| t.id)
+}
+
 fn refresh_next_queue_hint(state: &mut Sonora) {
     let next_path = next_track_id(state)
         .and_then(|next_id| state.track_by_id(next_id))
@@ -298,8 +294,6 @@ fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
 
     controller.send(PlayerCommand::PlayFile(path.clone()));
 
-    // Playback should not hijack selection.
-    // We do not trust any older non-Started transport events after this.
     state.awaiting_started = true;
     state.now_playing = Some(id);
     state.is_playing = true;
@@ -308,7 +302,6 @@ fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     state.seek_preview_ratio = None;
     state.status = format!("Playing: {}", path.display());
 
-    // Queue exactly one next track hint after current track.
     refresh_next_queue_hint(state);
 
     Task::none()
@@ -497,7 +490,6 @@ pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
     play_track_internal(state, prev_id)
 }
 
-/// Seek slider changed: preview only (UI updates, no engine command).
 pub(crate) fn seek_preview(state: &mut Sonora, ratio: f32) -> Task<Message> {
     let Some(dur_ms) = state.duration_ms else {
         return Task::none();
@@ -537,7 +529,6 @@ pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
 
     let mut target_ms = ((ratio as f64) * (dur_ms as f64)).round() as u64;
 
-    // Seeking to the end tends to produce EOF weirdness, so clamp slightly.
     if target_ms >= dur_ms {
         target_ms = dur_ms.saturating_sub(1);
     }
@@ -551,10 +542,8 @@ pub(crate) fn seek_commit(state: &mut Sonora) -> Task<Message> {
     state.awaiting_started = true;
     controller.send(PlayerCommand::ClearQueue);
     controller.send(PlayerCommand::Seek(target_ms));
-
     state.position_ms = target_ms;
 
-    // Refresh the one-track lookahead after seek.
     refresh_next_queue_hint(state);
 
     Task::none()
@@ -627,10 +616,12 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             state.duration_ms = duration_ms;
             state.position_ms = start_ms;
             state.seek_preview_ratio = None;
-            state.status = format!("Now playing: {}", path.display());
 
-            // Whenever engine advances into a new queued track, compute and queue
-            // the next logical track so continuous playback can keep going.
+            if let Some(id) = track_id_by_path(state, &path) {
+                state.now_playing = Some(id);
+            }
+
+            state.status = format!("Now playing: {}", path.display());
             refresh_next_queue_hint(state);
         }
 
