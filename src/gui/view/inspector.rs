@@ -77,28 +77,29 @@ fn num_pair_row<'a>(
     .align_y(Alignment::Center)
 }
 
-pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
-    if !state.has_selection() {
-        return container(
-            iced::widget::column![
-                text("Metadata editor").size(18),
-                text("Select one or more tracks (center panel)."),
-            ]
-            .spacing(8),
-        )
-        .padding(12);
-    }
+fn section_heading<'a>(label: &'a str) -> iced::widget::Text<'a> {
+    text(label).size(14)
+}
 
+fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     let primary_id: Option<TrackId> = state
         .selected_track
         .or_else(|| state.selected_tracks.iter().next().copied());
 
     let Some(id) = primary_id else {
-        return container(text("No selection.")).padding(12);
+        return iced::widget::column![
+            text("Metadata editor").size(18),
+            text("No selection.").size(12)
+        ]
+        .spacing(6);
     };
 
     let Some(i) = state.index_of_id(id) else {
-        return container(text("Invalid selection (rescan?).")).padding(12);
+        return iced::widget::column![
+            text("Metadata editor").size(18),
+            text("Invalid selection (rescan?).").size(12)
+        ]
+        .spacing(6);
     };
 
     let t = &state.tracks[i];
@@ -110,7 +111,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
         1
     };
 
-    let top = iced::widget::column![
+    iced::widget::column![
         text("Metadata editor").size(18),
         text(format!("Selected: {sel_count}")).size(12),
         text("File path").size(12),
@@ -131,9 +132,12 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
         ))
         .size(12),
     ]
-    .spacing(6);
+    .spacing(6)
+}
 
-    let fields: Column<'_, Message> = iced::widget::column![
+fn build_basic_fields(state: &Sonora) -> Column<'_, Message> {
+    iced::widget::column![
+        section_heading("Basic"),
         field_row(
             "Title",
             &state.inspector.title,
@@ -200,6 +204,13 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             is_mixed(state, Field::Grouping),
             |s| Message::InspectorChanged(Field::Grouping, s)
         ),
+    ]
+    .spacing(8)
+}
+
+fn build_content_fields(state: &Sonora) -> Column<'_, Message> {
+    iced::widget::column![
+        section_heading("Content"),
         field_row(
             "Comment",
             &state.inspector.comment,
@@ -225,6 +236,31 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             |s| Message::InspectorChanged(Field::Date, s)
         ),
         field_row(
+            "Subtitle",
+            &state.inspector.subtitle,
+            is_mixed(state, Field::Subtitle),
+            |s| Message::InspectorChanged(Field::Subtitle, s)
+        ),
+        field_row(
+            "Mood",
+            &state.inspector.mood,
+            is_mixed(state, Field::Mood),
+            |s| Message::InspectorChanged(Field::Mood, s)
+        ),
+        field_row(
+            "Language",
+            &state.inspector.language,
+            is_mixed(state, Field::Language),
+            |s| Message::InspectorChanged(Field::Language, s)
+        ),
+    ]
+    .spacing(8)
+}
+
+fn build_credits_and_tech_fields(state: &Sonora) -> Column<'_, Message> {
+    iced::widget::column![
+        section_heading("Credits / Technical"),
+        field_row(
             "Conductor",
             &state.inspector.conductor,
             is_mixed(state, Field::Conductor),
@@ -243,12 +279,6 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             |s| Message::InspectorChanged(Field::Publisher, s)
         ),
         field_row(
-            "Subtitle",
-            &state.inspector.subtitle,
-            is_mixed(state, Field::Subtitle),
-            |s| Message::InspectorChanged(Field::Subtitle, s)
-        ),
-        field_row(
             "BPM",
             &state.inspector.bpm,
             is_mixed(state, Field::Bpm),
@@ -259,18 +289,6 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             &state.inspector.key,
             is_mixed(state, Field::Key),
             |s| Message::InspectorChanged(Field::Key, s)
-        ),
-        field_row(
-            "Mood",
-            &state.inspector.mood,
-            is_mixed(state, Field::Mood),
-            |s| Message::InspectorChanged(Field::Mood, s)
-        ),
-        field_row(
-            "Language",
-            &state.inspector.language,
-            is_mixed(state, Field::Language),
-            |s| Message::InspectorChanged(Field::Language, s)
         ),
         field_row(
             "ISRC",
@@ -297,7 +315,25 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
             |s| Message::InspectorChanged(Field::Copyright, s)
         ),
     ]
-    .spacing(8);
+    .spacing(8)
+}
+
+pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'_, Message> {
+    if !state.has_selection() {
+        return container(
+            iced::widget::column![
+                text("Metadata editor").size(18),
+                text("Select one or more tracks (center panel)."),
+            ]
+            .spacing(8),
+        )
+        .padding(12);
+    }
+
+    let top = build_inspector_header(state);
+    let basic = build_basic_fields(state);
+    let content = build_content_fields(state);
+    let credits_and_tech = build_credits_and_tech_fields(state);
 
     let save_btn = if state.scanning || !state.inspector_dirty {
         button("Save edits")
@@ -313,7 +349,9 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
 
     let buttons = row![save_btn, revert_btn].spacing(8);
 
-    let editor = scrollable(iced::widget::column![top, fields].spacing(12)).height(Length::Fill);
+    let editor =
+        scrollable(iced::widget::column![top, basic, content, credits_and_tech].spacing(16))
+            .height(Length::Fill);
 
     container(iced::widget::column![editor, buttons].spacing(12)).padding(12)
 }
