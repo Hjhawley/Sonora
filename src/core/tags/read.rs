@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use id3::frame::Content;
 use id3::{Tag, TagLike};
 
+use super::super::probe::{AudioProperties, probe_audio_properties};
 use super::super::types::TrackRow;
 use super::util::{
     extract_year_from_release_date, normalize_release_date, parse_be_u64, parse_boolish,
@@ -18,13 +19,21 @@ use super::util::{
 };
 
 pub fn read_track_row(path: PathBuf) -> (TrackRow, bool) {
+    let audio = probe_audio_properties(&path).unwrap_or_default();
+
     match Tag::read_from_path(&path) {
-        Ok(tag) => (build_row_from_tag(path, &tag), false),
-        Err(_) => (TrackRow::empty(path), true),
+        Ok(tag) => (build_row_from_tag(path, &tag, audio), false),
+        Err(_) => (build_probe_only_row(path, audio), true),
     }
 }
 
-fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
+fn build_probe_only_row(path: PathBuf, audio: AudioProperties) -> TrackRow {
+    let mut row = TrackRow::empty(path);
+    apply_audio_properties(&mut row, audio);
+    row
+}
+
+fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> TrackRow {
     let (track_no_from_text, track_total) =
         parse_slash_pair_u32(text_frame(tag, "TRCK").as_deref());
     let (disc_no_from_text, disc_total) = parse_slash_pair_u32(text_frame(tag, "TPOS").as_deref());
@@ -57,7 +66,8 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
     let pcnt_count = pcnt_count(tag);
     let play_count = popm_count.or(pcnt_count);
 
-    let duration_ms = text_frame(tag, "TLEN").and_then(|s| s.trim().parse::<u32>().ok());
+    let tlen_duration_ms = text_frame(tag, "TLEN").and_then(|s| s.trim().parse::<u32>().ok());
+    let duration_ms = audio.duration_ms.or(tlen_duration_ms);
 
     let extra_text = collect_extra_text(tag);
 
@@ -115,6 +125,9 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
         album_artist_sort: text_frame(tag, "TSO2"),
 
         duration_ms,
+        bitrate_kbps: audio.bitrate_kbps,
+        sample_rate_hz: audio.sample_rate_hz,
+        channels: audio.channels,
         rating,
         play_count,
         compilation,
@@ -123,6 +136,13 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
         urls,
         extra_text,
     }
+}
+
+fn apply_audio_properties(row: &mut TrackRow, audio: AudioProperties) {
+    row.duration_ms = audio.duration_ms;
+    row.bitrate_kbps = audio.bitrate_kbps;
+    row.sample_rate_hz = audio.sample_rate_hz;
+    row.channels = audio.channels;
 }
 
 /// Get a best-effort string value from a frame id.

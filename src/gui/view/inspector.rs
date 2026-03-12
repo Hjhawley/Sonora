@@ -12,6 +12,7 @@ use super::super::state::{InspectorField as Field, Message, Sonora, mixed_displa
 use super::constants::LABEL_W;
 use super::widgets::fmt_duration;
 use crate::core::types::TrackId;
+use crate::gui::util::{fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 
 /// Bright teal used for mixed-field placeholder text.
 const MIXED_TEAL: Color = Color::from_rgb8(0x2C, 0xE8, 0xD3);
@@ -107,26 +108,35 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
         1
     };
 
+    let technical_line = format!(
+        "Artwork: {} | Len: {} | Bitrate: {} | Sample Rate: {} | Channels: {}",
+        t.artwork_count,
+        fmt_duration(t.duration_ms),
+        fmt_bitrate_kbps(t.bitrate_kbps),
+        fmt_sample_rate_hz(t.sample_rate_hz),
+        fmt_channels(t.channels),
+    );
+
+    let library_line = format!(
+        "Rating: {} | Plays: {} | Compilation: {}",
+        t.rating
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".into()),
+        t.play_count
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".into()),
+        t.compilation
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".into()),
+    );
+
     iced::widget::column![
         text("Metadata editor").size(18),
         text(format!("Selected: {sel_count}")).size(12),
         text("File path").size(12),
         text(path_line).size(12),
-        text(format!(
-            "Artwork: {} | Len: {} | Rating: {} | Plays: {} | Compilation: {}",
-            t.artwork_count,
-            fmt_duration(t.duration_ms),
-            t.rating
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "-".into()),
-            t.play_count
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "-".into()),
-            t.compilation
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "-".into()),
-        ))
-        .size(12),
+        text(technical_line).size(12),
+        text(library_line).size(12),
     ]
     .spacing(6)
 }

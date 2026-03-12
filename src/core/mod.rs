@@ -3,6 +3,7 @@
 //! The brain of the app:
 //! - Discover candidate audio file paths (filesystem walk)
 //! - Read/write tags (metadata IO)
+//! - Probe read-only technical media properties
 //! - Return plain data structs for the GUI to render
 //!
 //! Scan / load pipeline boundary:
@@ -13,6 +14,7 @@
 pub mod db;
 pub mod library;
 pub mod playback;
+pub mod probe;
 pub mod tags;
 pub mod types;
 
@@ -44,7 +46,7 @@ pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
     Ok(out)
 }
 
-/// Read tags for a set of DB-backed `(TrackId, PathBuf)` pairs.
+/// Read tags + probed technical properties for a set of DB-backed '(TrackId, PathBuf)' pairs.
 ///
 /// - Never fails hard per-file: unreadable tags return an "empty-ish" TrackRow
 /// - Ensures every returned row has its DB-owned TrackId attached

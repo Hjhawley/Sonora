@@ -173,11 +173,19 @@ pub struct TrackRow {
     // Album artist sort (ID3: 'TSO2')
     pub album_artist_sort: Option<String>,
 
-    // Library/stats-ish fields
-    // Duration in milliseconds (ID3: 'TLEN').
-    //
-    // Many files/libraries do not store this reliably; treat as optional hint.
+    // Read-only fields
+    // Prefer stream/container-probed duration when available.
+    // Tag-side 'TLEN' is only a fallback hint.
     pub duration_ms: Option<u32>,
+
+    // Average / declared encoded bitrate in kbps, when probeable.
+    pub bitrate_kbps: Option<u32>,
+
+    // Stream sample rate in Hz (e.g. 44100, 48000).
+    pub sample_rate_hz: Option<u32>,
+
+    // Channel count (e.g. 1 = mono, 2 = stereo).
+    pub channels: Option<u8>,
 
     // Rating (0–255 in 'POPM'; stored as raw byte).
     pub rating: Option<u8>,
@@ -252,6 +260,9 @@ impl TrackRow {
             album_artist_sort: None,
 
             duration_ms: None,
+            bitrate_kbps: None,
+            sample_rate_hz: None,
+            channels: None,
             rating: None,
             play_count: None,
             compilation: None,
