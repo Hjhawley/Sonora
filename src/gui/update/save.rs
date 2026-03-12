@@ -33,30 +33,19 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
-    let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
-        state.selected_tracks.iter().copied().collect()
-    } else if let Some(id) = state.selected_track {
-        vec![id]
-    } else {
-        vec![]
-    };
-
-    ids.sort_unstable();
-    ids.dedup();
-
+    let ids = selected_ids_for_save(state);
     if ids.is_empty() {
         state.status = "Select a track first.".to_string();
         return Task::none();
     }
 
     let is_batch = ids.len() > 1;
-    let primary_id = state.selected_track;
-    let primary_row: Option<&TrackRow> = primary_id.and_then(|id| state.track_by_id(id));
+    let primary_row: Option<&TrackRow> = state.selected_track.and_then(|id| state.track_by_id(id));
 
     let mut rows_to_write: Vec<(TrackId, TrackRow)> = Vec::with_capacity(ids.len());
     for &id in &ids {
         match build_row_from_inspector_for_id(state, id, is_batch, primary_row) {
-            Ok(r) => rows_to_write.push((id, r)),
+            Ok(row) => rows_to_write.push((id, row)),
             Err(e) => {
                 state.status = e;
                 return Task::none();
@@ -75,18 +64,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         let (id, row_to_write) = rows_to_write.remove(0);
 
         return Task::perform(
-            spawn_blocking(move || {
-                crate::core::tags::write_track_row(&row_to_write, true).and_then(|_| {
-                    let (mut r, failed) =
-                        crate::core::tags::read_track_row(row_to_write.path.clone());
-                    if failed {
-                        Err("Wrote tags, but failed to re-read them".to_string())
-                    } else {
-                        r.id = row_to_write.id;
-                        Ok(r)
-                    }
-                })
-            }),
+            spawn_blocking(move || write_and_reread_row(row_to_write)),
             move |res| Message::SaveFinished(id, res),
         );
     }
@@ -96,18 +74,9 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
             let mut out: Vec<(TrackId, TrackRow)> = Vec::new();
 
             for (id, row) in rows_to_write {
-                crate::core::tags::write_track_row(&row, true)
-                    .map_err(|e| format!("Write failed for track {id}: {e}"))?;
-
-                let (mut r, failed) = crate::core::tags::read_track_row(row.path.clone());
-                if failed {
-                    return Err(format!(
-                        "Wrote tags for track {id}, but failed to re-read them"
-                    ));
-                }
-
-                r.id = row.id;
-                out.push((id, r));
+                let reread = write_and_reread_row(row)
+                    .map_err(|e| format!("Save failed for track {id}: {e}"))?;
+                out.push((id, reread));
             }
 
             Ok(out)
@@ -179,6 +148,32 @@ pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
     Task::none()
 }
 
+fn selected_ids_for_save(state: &Sonora) -> Vec<TrackId> {
+    let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
+        state.selected_tracks.iter().copied().collect()
+    } else if let Some(id) = state.selected_track {
+        vec![id]
+    } else {
+        vec![]
+    };
+
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
+fn write_and_reread_row(row_to_write: TrackRow) -> Result<TrackRow, String> {
+    crate::core::tags::write_track_row(&row_to_write, true)?;
+
+    let (mut reread, failed) = crate::core::tags::read_track_row(row_to_write.path.clone());
+    if failed {
+        return Err("Wrote tags, but failed to re-read them".to_string());
+    }
+
+    reread.id = row_to_write.id;
+    Ok(reread)
+}
+
 fn build_row_from_inspector_for_id(
     state: &Sonora,
     id: TrackId,
@@ -192,7 +187,7 @@ fn build_row_from_inspector_for_id(
 
     let mut errs: Vec<&'static str> = Vec::new();
 
-    let track_no = parse_u32_mixed(
+    out.track_no = parse_u32_mixed(
         state,
         InspectorField::TrackNo,
         &state.inspector.track_no,
@@ -200,7 +195,7 @@ fn build_row_from_inspector_for_id(
         "Track #",
         &mut errs,
     )?;
-    let track_total = parse_u32_mixed(
+    out.track_total = parse_u32_mixed(
         state,
         InspectorField::TrackTotal,
         &state.inspector.track_total,
@@ -208,7 +203,7 @@ fn build_row_from_inspector_for_id(
         "Track total",
         &mut errs,
     )?;
-    let disc_no = parse_u32_mixed(
+    out.disc_no = parse_u32_mixed(
         state,
         InspectorField::DiscNo,
         &state.inspector.disc_no,
@@ -216,7 +211,7 @@ fn build_row_from_inspector_for_id(
         "Disc #",
         &mut errs,
     )?;
-    let disc_total = parse_u32_mixed(
+    out.disc_total = parse_u32_mixed(
         state,
         InspectorField::DiscTotal,
         &state.inspector.disc_total,
@@ -224,7 +219,7 @@ fn build_row_from_inspector_for_id(
         "Disc total",
         &mut errs,
     )?;
-    let year = parse_i32_mixed(
+    out.year = parse_i32_mixed(
         state,
         InspectorField::Year,
         &state.inspector.year,
@@ -232,7 +227,7 @@ fn build_row_from_inspector_for_id(
         "Year",
         &mut errs,
     )?;
-    let bpm = parse_u32_mixed(
+    out.bpm = parse_u32_mixed(
         state,
         InspectorField::Bpm,
         &state.inspector.bpm,
@@ -245,15 +240,25 @@ fn build_row_from_inspector_for_id(
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
     }
 
-    let primary = primary_row;
+    apply_basic_text_fields(state, &mut out, is_batch, primary_row);
+    apply_extended_text_fields(state, &mut out, is_batch, primary_row);
 
+    Ok(out)
+}
+
+fn apply_basic_text_fields(
+    state: &Sonora,
+    out: &mut TrackRow,
+    is_batch: bool,
+    primary_row: Option<&TrackRow>,
+) {
     apply_opt_mixed_batch(
         state,
         InspectorField::Title,
         &mut out.title,
         &state.inspector.title,
         is_batch,
-        primary.and_then(|p| p.title.as_deref()),
+        primary_row.and_then(|p| p.title.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -261,7 +266,7 @@ fn build_row_from_inspector_for_id(
         &mut out.artist,
         &state.inspector.artist,
         is_batch,
-        primary.and_then(|p| p.artist.as_deref()),
+        primary_row.and_then(|p| p.artist.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -269,7 +274,7 @@ fn build_row_from_inspector_for_id(
         &mut out.album,
         &state.inspector.album,
         is_batch,
-        primary.and_then(|p| p.album.as_deref()),
+        primary_row.and_then(|p| p.album.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -277,7 +282,7 @@ fn build_row_from_inspector_for_id(
         &mut out.album_artist,
         &state.inspector.album_artist,
         is_batch,
-        primary.and_then(|p| p.album_artist.as_deref()),
+        primary_row.and_then(|p| p.album_artist.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -285,22 +290,15 @@ fn build_row_from_inspector_for_id(
         &mut out.composer,
         &state.inspector.composer,
         is_batch,
-        primary.and_then(|p| p.composer.as_deref()),
+        primary_row.and_then(|p| p.composer.as_deref()),
     );
-
-    out.track_no = track_no;
-    out.track_total = track_total;
-    out.disc_no = disc_no;
-    out.disc_total = disc_total;
-    out.year = year;
-
     apply_opt_mixed_batch(
         state,
         InspectorField::Genre,
         &mut out.genre,
         &state.inspector.genre,
         is_batch,
-        primary.and_then(|p| p.genre.as_deref()),
+        primary_row.and_then(|p| p.genre.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -308,7 +306,7 @@ fn build_row_from_inspector_for_id(
         &mut out.grouping,
         &state.inspector.grouping,
         is_batch,
-        primary.and_then(|p| p.grouping.as_deref()),
+        primary_row.and_then(|p| p.grouping.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -316,7 +314,7 @@ fn build_row_from_inspector_for_id(
         &mut out.comment,
         &state.inspector.comment,
         is_batch,
-        primary.and_then(|p| p.comment.as_deref()),
+        primary_row.and_then(|p| p.comment.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -324,7 +322,7 @@ fn build_row_from_inspector_for_id(
         &mut out.lyrics,
         &state.inspector.lyrics,
         is_batch,
-        primary.and_then(|p| p.lyrics.as_deref()),
+        primary_row.and_then(|p| p.lyrics.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -332,16 +330,23 @@ fn build_row_from_inspector_for_id(
         &mut out.lyricist,
         &state.inspector.lyricist,
         is_batch,
-        primary.and_then(|p| p.lyricist.as_deref()),
+        primary_row.and_then(|p| p.lyricist.as_deref()),
     );
+}
 
+fn apply_extended_text_fields(
+    state: &Sonora,
+    out: &mut TrackRow,
+    is_batch: bool,
+    primary_row: Option<&TrackRow>,
+) {
     apply_opt_mixed_batch(
         state,
         InspectorField::Date,
         &mut out.date,
         &state.inspector.date,
         is_batch,
-        primary.and_then(|p| p.date.as_deref()),
+        primary_row.and_then(|p| p.date.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -349,7 +354,7 @@ fn build_row_from_inspector_for_id(
         &mut out.conductor,
         &state.inspector.conductor,
         is_batch,
-        primary.and_then(|p| p.conductor.as_deref()),
+        primary_row.and_then(|p| p.conductor.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -357,7 +362,7 @@ fn build_row_from_inspector_for_id(
         &mut out.remixer,
         &state.inspector.remixer,
         is_batch,
-        primary.and_then(|p| p.remixer.as_deref()),
+        primary_row.and_then(|p| p.remixer.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -365,7 +370,7 @@ fn build_row_from_inspector_for_id(
         &mut out.publisher,
         &state.inspector.publisher,
         is_batch,
-        primary.and_then(|p| p.publisher.as_deref()),
+        primary_row.and_then(|p| p.publisher.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -373,18 +378,15 @@ fn build_row_from_inspector_for_id(
         &mut out.subtitle,
         &state.inspector.subtitle,
         is_batch,
-        primary.and_then(|p| p.subtitle.as_deref()),
+        primary_row.and_then(|p| p.subtitle.as_deref()),
     );
-
-    out.bpm = bpm;
-
     apply_opt_mixed_batch(
         state,
         InspectorField::Key,
         &mut out.key,
         &state.inspector.key,
         is_batch,
-        primary.and_then(|p| p.key.as_deref()),
+        primary_row.and_then(|p| p.key.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -392,7 +394,7 @@ fn build_row_from_inspector_for_id(
         &mut out.mood,
         &state.inspector.mood,
         is_batch,
-        primary.and_then(|p| p.mood.as_deref()),
+        primary_row.and_then(|p| p.mood.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -400,7 +402,7 @@ fn build_row_from_inspector_for_id(
         &mut out.language,
         &state.inspector.language,
         is_batch,
-        primary.and_then(|p| p.language.as_deref()),
+        primary_row.and_then(|p| p.language.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -408,7 +410,7 @@ fn build_row_from_inspector_for_id(
         &mut out.isrc,
         &state.inspector.isrc,
         is_batch,
-        primary.and_then(|p| p.isrc.as_deref()),
+        primary_row.and_then(|p| p.isrc.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -416,7 +418,7 @@ fn build_row_from_inspector_for_id(
         &mut out.encoder_settings,
         &state.inspector.encoder_settings,
         is_batch,
-        primary.and_then(|p| p.encoder_settings.as_deref()),
+        primary_row.and_then(|p| p.encoder_settings.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -424,7 +426,7 @@ fn build_row_from_inspector_for_id(
         &mut out.encoded_by,
         &state.inspector.encoded_by,
         is_batch,
-        primary.and_then(|p| p.encoded_by.as_deref()),
+        primary_row.and_then(|p| p.encoded_by.as_deref()),
     );
     apply_opt_mixed_batch(
         state,
@@ -432,10 +434,8 @@ fn build_row_from_inspector_for_id(
         &mut out.copyright,
         &state.inspector.copyright,
         is_batch,
-        primary.and_then(|p| p.copyright.as_deref()),
+        primary_row.and_then(|p| p.copyright.as_deref()),
     );
-
-    Ok(out)
 }
 
 fn apply_opt_mixed_batch(
