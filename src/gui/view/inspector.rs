@@ -20,11 +20,6 @@ fn is_mixed(state: &Sonora, field: Field) -> bool {
     state.inspector_mixed.get(&field).copied().unwrap_or(false)
 }
 
-/// Text input used by the inspector.
-/// If the field is mixed:
-/// - show empty value
-/// - render '<mixed>' as placeholder
-/// - color the placeholder bright teal
 fn inspector_input<'a>(
     value: &'a str,
     mixed: bool,
@@ -75,10 +70,6 @@ fn num_pair_row<'a>(
     ]
     .spacing(6)
     .align_y(Alignment::Center)
-}
-
-fn section_heading<'a>(label: &'a str) -> iced::widget::Text<'a> {
-    text(label).size(14)
 }
 
 fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
@@ -135,9 +126,8 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     .spacing(6)
 }
 
-fn build_basic_fields(state: &Sonora) -> Column<'_, Message> {
+fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
     iced::widget::column![
-        section_heading("Basic"),
         field_row(
             "Title",
             &state.inspector.title,
@@ -188,9 +178,9 @@ fn build_basic_fields(state: &Sonora) -> Column<'_, Message> {
         ),
         field_row(
             "Release Date",
-            &state.inspector.release_date,
-            is_mixed(state, Field::ReleaseDate),
-            |s| Message::InspectorChanged(Field::ReleaseDate, s)
+            &state.inspector.date,
+            is_mixed(state, Field::Date),
+            |s| Message::InspectorChanged(Field::Date, s)
         ),
         field_row(
             "Genre",
@@ -204,13 +194,6 @@ fn build_basic_fields(state: &Sonora) -> Column<'_, Message> {
             is_mixed(state, Field::Grouping),
             |s| Message::InspectorChanged(Field::Grouping, s)
         ),
-    ]
-    .spacing(8)
-}
-
-fn build_content_fields(state: &Sonora) -> Column<'_, Message> {
-    iced::widget::column![
-        section_heading("Content"),
         field_row(
             "Comment",
             &state.inspector.comment,
@@ -247,13 +230,6 @@ fn build_content_fields(state: &Sonora) -> Column<'_, Message> {
             is_mixed(state, Field::Language),
             |s| Message::InspectorChanged(Field::Language, s)
         ),
-    ]
-    .spacing(8)
-}
-
-fn build_credits_and_tech_fields(state: &Sonora) -> Column<'_, Message> {
-    iced::widget::column![
-        section_heading("Credits / Technical"),
         field_row(
             "Conductor",
             &state.inspector.conductor,
@@ -325,9 +301,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     }
 
     let top = build_inspector_header(state);
-    let basic = build_basic_fields(state);
-    let content = build_content_fields(state);
-    let credits_and_tech = build_credits_and_tech_fields(state);
+    let fields = build_all_fields(state);
 
     let save_btn = if state.scanning || !state.inspector_dirty {
         button("Save edits")
@@ -343,9 +317,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
 
     let buttons = row![save_btn, revert_btn].spacing(8);
 
-    let editor =
-        scrollable(iced::widget::column![top, basic, content, credits_and_tech].spacing(16))
-            .height(Length::Fill);
+    let editor = scrollable(iced::widget::column![top, fields].spacing(12)).height(Length::Fill);
 
     container(iced::widget::column![editor, buttons].spacing(12)).padding(12)
 }

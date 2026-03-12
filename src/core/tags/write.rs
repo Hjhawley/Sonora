@@ -1,5 +1,5 @@
 //! core/tags/write.rs
-//! Write selected ID3 tags back to an MP3, based on a 'TrackRow'.
+//! Write selected ID3 tags back to an MP3, based on a `TrackRow`.
 //!
 //! Sonora currently writes a curated subset of fields.
 //! Unknown frames are generally preserved unless they share an ID with fields
@@ -9,10 +9,10 @@ use id3::frame::{Comment, Lyrics};
 use id3::{Tag, TagLike, Version};
 
 use super::super::types::TrackRow;
-use super::util::{extract_year_from_release_date, normalize_release_date};
+use super::util::normalize_release_date;
 
 /// Remove all frames with a given id.
-/// ('TagLike::remove' returns 'Vec<Frame>'; discard it.)
+/// (`TagLike::remove` returns `Vec<Frame>`; discard it.)
 fn remove_all(tag: &mut Tag, id: &str) {
     let _ = tag.remove(id);
 }
@@ -30,7 +30,7 @@ fn set_or_remove_text_frame(tag: &mut Tag, id: &str, value: &Option<String>) {
     }
 }
 
-/// Write 'TRCK' / 'TPOS' as '"n"' or '"n/total"', or remove if absent.
+/// Write `TRCK` / `TPOS` as `"n"` or `"n/total"`, or remove if absent.
 fn set_slash_pair(tag: &mut Tag, id: &str, n: Option<u32>, total: Option<u32>) {
     match n {
         None => remove_all(tag, id),
@@ -44,7 +44,7 @@ fn set_slash_pair(tag: &mut Tag, id: &str, n: Option<u32>, total: Option<u32>) {
     }
 }
 
-/// Replace all 'COMM' frames with one comment, or remove them if absent.
+/// Replace all `COMM` frames with one comment, or remove them if absent.
 /// This intentionally collapses multi-language / multi-description comment state
 /// into Sonora's single editable comment field.
 fn set_comment_opt(tag: &mut Tag, value: &Option<String>) {
@@ -61,7 +61,7 @@ fn set_comment_opt(tag: &mut Tag, value: &Option<String>) {
     }
 }
 
-/// Replace all 'USLT' frames with one lyrics frame, or remove them if absent.
+/// Replace all `USLT` frames with one lyrics frame, or remove them if absent.
 /// This intentionally collapses multi-language / multi-description lyrics state
 /// into Sonora's single editable lyrics field.
 fn set_lyrics_opt(tag: &mut Tag, value: &Option<String>) {
@@ -88,55 +88,40 @@ fn set_or_remove_numeric_text<T: ToString>(tag: &mut Tag, id: &str, value: Optio
     }
 }
 
-/// Write Sonora's canonical release-date field.
+/// Write Sonora's single release-date concept to ID3.
 ///
 /// Policy:
-/// - Canonical user-facing field is 'release_date'.
-/// - Accepted canonical shapes are 'YYYY' or 'YYYY-MM-DD'.
-/// - 'TDRC' is written exactly as the normalized canonical value.
-/// - 'TYER' is mirrored as the 4-digit year for compatibility.
-/// - If release date is absent/blank, both 'TDRC' and 'TYER' are removed.
+/// - Sonora owns one canonical user-facing field: `row.date`
+/// - accepted values are normalized to:
+///   - `YYYY`
+///   - `YYYY-MM-DD`
+/// - old `TYER` is cleared to avoid duplicate year displays in other tools
+/// - `row.year` is treated as a derived/helper field, not a second source of truth
 fn write_release_date(tag: &mut Tag, row: &TrackRow) {
-    let normalized = row.release_date.as_deref().and_then(normalize_release_date);
+    remove_all(tag, "TDRC");
+    remove_all(tag, "TYER");
 
-    match normalized {
-        Some(ref release_date) => {
-            remove_all(tag, "TDRC");
-            tag.set_text("TDRC", release_date.clone());
+    let release_date = row
+        .date
+        .as_deref()
+        .and_then(normalize_release_date)
+        .or_else(|| row.year.map(|y| y.to_string()));
 
-            if let Some(year) = extract_year_from_release_date(Some(release_date.as_str())) {
-                tag.set_year(year);
-                remove_all(tag, "TYER");
-                tag.set_text("TYER", year.to_string());
-            } else {
-                tag.remove_year();
-                remove_all(tag, "TYER");
-            }
-        }
-        None => {
-            tag.remove_year();
-            remove_all(tag, "TYER");
-            remove_all(tag, "TDRC");
-        }
+    if let Some(date) = release_date {
+        tag.set_text("TDRC", date);
     }
 }
 
-/// Write tags for a single file, based on the desired contents of 'row'.
-///
-/// - Always writes "standard" fields (visible by default in UI).
-/// - Writes "extended" fields only if 'write_extended == true'.
+/// Write tags for a single file, based on the desired contents of `row`.
 ///
 /// Semantics:
-/// - 'None' (or empty/whitespace string) => remove that frame from the file.
-pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), String> {
+/// - `None` (or empty/whitespace string) => remove that frame from the file.
+pub fn write_track_row(row: &TrackRow, _write_extended: bool) -> Result<(), String> {
     let path = &row.path;
 
     // Load existing tag if possible; otherwise start fresh.
     let mut tag = Tag::read_from_path(path).unwrap_or_else(|_| Tag::new());
 
-    //
-    // Standard (always written)
-    //
     set_or_remove_text_frame(&mut tag, "TIT2", &row.title);
     set_or_remove_text_frame(&mut tag, "TPE1", &row.artist);
     set_or_remove_text_frame(&mut tag, "TALB", &row.album);
@@ -147,7 +132,6 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
     set_slash_pair(&mut tag, "TRCK", row.track_no, row.track_total);
     set_slash_pair(&mut tag, "TPOS", row.disc_no, row.disc_total);
 
-    // Release date is now a standard always-written field.
     write_release_date(&mut tag, row);
 
     set_or_remove_text_frame(&mut tag, "TIT1", &row.grouping);
@@ -155,29 +139,22 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
     set_lyrics_opt(&mut tag, &row.lyrics);
     set_or_remove_text_frame(&mut tag, "TEXT", &row.lyricist);
 
-    //
-    // Extended (toggleable)
-    //
-    if write_extended {
-        set_or_remove_text_frame(&mut tag, "TPE3", &row.conductor);
-        set_or_remove_text_frame(&mut tag, "TPE4", &row.remixer);
-        set_or_remove_text_frame(&mut tag, "TPUB", &row.publisher);
-        set_or_remove_text_frame(&mut tag, "TIT3", &row.subtitle);
+    set_or_remove_text_frame(&mut tag, "TPE3", &row.conductor);
+    set_or_remove_text_frame(&mut tag, "TPE4", &row.remixer);
+    set_or_remove_text_frame(&mut tag, "TPUB", &row.publisher);
+    set_or_remove_text_frame(&mut tag, "TIT3", &row.subtitle);
 
-        set_or_remove_numeric_text(&mut tag, "TBPM", row.bpm);
+    set_or_remove_numeric_text(&mut tag, "TBPM", row.bpm);
 
-        set_or_remove_text_frame(&mut tag, "TKEY", &row.key);
-        set_or_remove_text_frame(&mut tag, "TMOO", &row.mood);
-        set_or_remove_text_frame(&mut tag, "TLAN", &row.language);
-        set_or_remove_text_frame(&mut tag, "TSRC", &row.isrc);
-        set_or_remove_text_frame(&mut tag, "TSSE", &row.encoder_settings);
-        set_or_remove_text_frame(&mut tag, "TENC", &row.encoded_by);
-        set_or_remove_text_frame(&mut tag, "TCOP", &row.copyright);
-    }
+    set_or_remove_text_frame(&mut tag, "TKEY", &row.key);
+    set_or_remove_text_frame(&mut tag, "TMOO", &row.mood);
+    set_or_remove_text_frame(&mut tag, "TLAN", &row.language);
+    set_or_remove_text_frame(&mut tag, "TSRC", &row.isrc);
+    set_or_remove_text_frame(&mut tag, "TSSE", &row.encoder_settings);
+    set_or_remove_text_frame(&mut tag, "TENC", &row.encoded_by);
+    set_or_remove_text_frame(&mut tag, "TCOP", &row.copyright);
 
-    // Write back to file:
-    // - Prefer v2.4 (modern frames like TDRC).
-    // - If that fails, fall back to v2.3.
+    // Prefer v2.4. If that fails, fall back to v2.3.
     if let Err(e) = tag.write_to_path(path, Version::Id3v24) {
         tag.write_to_path(path, Version::Id3v23)
             .map_err(|e2| format!("write_to_path failed: v2.4={e} ; v2.3={e2}"))?;
