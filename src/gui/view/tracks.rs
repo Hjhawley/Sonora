@@ -1,8 +1,8 @@
 //! gui/view/tracks.rs
 //! Track view (table list).
 //!
-//! - Row identity is 'TrackId', not 'Vec' index.
-//! - We still iterate 'state.tracks' in display order, but clicks emit messages by id.
+//! - Row identity is `TrackId`, not `Vec` index.
+//! - We still iterate `state.tracks` in display order, but clicks emit messages by id.
 
 use iced::widget::{Column, column, container, mouse_area, row, scrollable, text};
 use iced::{Alignment, Length};
@@ -52,7 +52,6 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         };
 
         let is_selected = state.selected_tracks.contains(&id);
-        let is_primary_selected = state.selected_track == Some(id);
         let is_now_playing = state.now_playing == Some(id);
 
         let marker = if is_now_playing {
@@ -92,19 +91,13 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         .spacing(10)
         .align_y(Alignment::Center);
 
-        let msg = if is_primary_selected {
-            Message::PlayTrack(id)
-        } else {
-            Message::SelectTrack(id)
-        };
-
         let row_widget = mouse_area(
             container(row_cells)
                 .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
                 .height(Length::Fixed(TRACK_ROW_H))
                 .width(Length::Fill),
         )
-        .on_press(msg);
+        .on_press(Message::TrackPressed(id));
 
         col = col.push(row_widget);
     }

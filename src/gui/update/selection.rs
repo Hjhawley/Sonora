@@ -91,6 +91,7 @@ pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message>
         state.selected_album = None;
         state.selected_track = None;
         state.selected_tracks.clear();
+        state.selection_anchor = None;
         state.last_clicked_track = None;
         clear_inspector(state);
         return preload_album_covers(state);
@@ -98,6 +99,7 @@ pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message>
 
     state.selected_track = None;
     state.selected_tracks.clear();
+    state.selection_anchor = None;
     state.last_clicked_track = None;
     state.selected_album = None;
 
@@ -125,6 +127,7 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     }
 
     state.selected_track = state.selected_tracks.iter().next().copied();
+    state.selection_anchor = state.selected_track;
     state.last_clicked_track = state.selected_track;
 
     if state.selected_track.is_some() {
@@ -139,32 +142,26 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
 }
 
 pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
-    let Some(idx) = state.index_of_id(id) else {
-        return Task::none();
-    };
+    select_single_track(state, id)
+}
 
-    if state.view_mode == ViewMode::Albums {
-        let clicked_key = album_key_for_index(state, idx);
+pub(crate) fn track_pressed(state: &mut Sonora, id: TrackId) -> Task<Message> {
+    let shift = state.modifiers.shift();
+    let ctrl = state.modifiers.control();
 
-        let keep_album_open = state.selected_album.as_ref().is_some_and(|k| {
-            k.album_artist == clicked_key.album_artist && k.album == clicked_key.album
-        });
-
-        if !keep_album_open {
-            state.selected_album = None;
-        }
-    } else {
-        state.selected_album = None;
+    if shift {
+        return select_range_to_track(state, id);
     }
 
-    state.selected_tracks.clear();
-    state.selected_tracks.insert(id);
-    state.selected_track = Some(id);
-    state.last_clicked_track = Some(id);
+    if ctrl {
+        return toggle_track_selection(state, id);
+    }
 
-    load_inspector_from_selection(state);
+    if state.selected_track == Some(id) && state.selected_tracks.len() <= 1 {
+        return playback::play_track(state, id);
+    }
 
-    maybe_load_cover_for_track(state, id)
+    select_single_track(state, id)
 }
 
 pub(crate) fn album_tile_pressed(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
@@ -196,7 +193,7 @@ pub(crate) fn album_header_pressed(state: &mut Sonora, key: AlbumKey) -> Task<Me
 pub(crate) fn album_track_pressed(state: &mut Sonora, key: AlbumKey, id: TrackId) -> Task<Message> {
     let is_double = register_album_press(state, AlbumPressTarget::Track(key.clone(), id));
 
-    let select_task = select_track(state, id);
+    let select_task = track_pressed(state, id);
 
     if is_double {
         let play_task = playback::play_album_from_track(state, key, id);
@@ -204,6 +201,48 @@ pub(crate) fn album_track_pressed(state: &mut Sonora, key: AlbumKey, id: TrackId
     } else {
         select_task
     }
+}
+
+pub(crate) fn select_adjacent_track(
+    state: &mut Sonora,
+    delta: isize,
+    extend: bool,
+) -> Task<Message> {
+    let ids = ordered_selectable_track_ids(state);
+    if ids.is_empty() {
+        return Task::none();
+    }
+
+    let current = state
+        .selected_track
+        .or_else(|| state.selected_tracks.iter().next().copied());
+
+    let current_index = current
+        .and_then(|id| ids.iter().position(|&x| x == id))
+        .unwrap_or(if delta >= 0 {
+            0
+        } else {
+            ids.len().saturating_sub(1)
+        });
+
+    let next_index = if delta < 0 {
+        current_index.saturating_sub(delta.unsigned_abs())
+    } else {
+        (current_index + delta as usize).min(ids.len().saturating_sub(1))
+    };
+
+    let next_id = ids[next_index];
+
+    if extend {
+        select_range_to_track(state, next_id)
+    } else {
+        select_single_track(state, next_id)
+    }
+}
+
+pub(crate) fn clear_selection(state: &mut Sonora) -> Task<Message> {
+    clear_selection_and_inspector(state);
+    Task::none()
 }
 
 pub(crate) fn hide_selected(state: &mut Sonora) -> Task<Message> {
@@ -284,7 +323,6 @@ pub(crate) fn cover_loaded(
 }
 
 /// Preload representative cover art for every album currently in the dataset.
-/// This makes the album grid feel alive immediately, instead of only loading after click.
 pub(crate) fn preload_album_covers(state: &mut Sonora) -> Task<Message> {
     let rep_ids: Vec<TrackId> = state
         .album_groups
@@ -321,6 +359,154 @@ fn selected_ids(state: &Sonora) -> Vec<TrackId> {
     ids.sort_unstable();
     ids.dedup();
     ids
+}
+
+fn ordered_album_track_ids(state: &Sonora, key: &AlbumKey) -> Vec<TrackId> {
+    let Some(ids) = state.album_groups.get(key) else {
+        return Vec::new();
+    };
+
+    let mut ids = ids.clone();
+
+    ids.sort_by(|a, b| {
+        let ta = state.track_by_id(*a);
+        let tb = state.track_by_id(*b);
+
+        match (ta, tb) {
+            (Some(ta), Some(tb)) => (
+                ta.disc_no.unwrap_or(0),
+                ta.track_no.unwrap_or(0),
+                ta.title.clone().unwrap_or_default(),
+                *a,
+            )
+                .cmp(&(
+                    tb.disc_no.unwrap_or(0),
+                    tb.track_no.unwrap_or(0),
+                    tb.title.clone().unwrap_or_default(),
+                    *b,
+                )),
+            _ => a.cmp(b),
+        }
+    });
+
+    ids
+}
+
+fn ordered_selectable_track_ids(state: &Sonora) -> Vec<TrackId> {
+    match state.view_mode {
+        ViewMode::Tracks => state.tracks.iter().filter_map(|t| t.id).collect(),
+        ViewMode::Albums => {
+            if let Some(key) = &state.selected_album {
+                ordered_album_track_ids(state, key)
+            } else {
+                Vec::new()
+            }
+        }
+    }
+}
+
+fn select_single_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
+    let Some(idx) = state.index_of_id(id) else {
+        return Task::none();
+    };
+
+    if state.view_mode == ViewMode::Albums {
+        let clicked_key = album_key_for_index(state, idx);
+
+        let keep_album_open = state.selected_album.as_ref().is_some_and(|k| {
+            k.album_artist == clicked_key.album_artist && k.album == clicked_key.album
+        });
+
+        if !keep_album_open {
+            state.selected_album = None;
+        }
+    } else {
+        state.selected_album = None;
+    }
+
+    state.selected_tracks.clear();
+    state.selected_tracks.insert(id);
+    state.selected_track = Some(id);
+    state.selection_anchor = Some(id);
+    state.last_clicked_track = Some(id);
+
+    load_inspector_from_selection(state);
+
+    maybe_load_cover_for_track(state, id)
+}
+
+fn toggle_track_selection(state: &mut Sonora, id: TrackId) -> Task<Message> {
+    let Some(idx) = state.index_of_id(id) else {
+        return Task::none();
+    };
+
+    if state.view_mode == ViewMode::Albums {
+        let clicked_key = album_key_for_index(state, idx);
+
+        let keep_album_open = state.selected_album.as_ref().is_some_and(|k| {
+            k.album_artist == clicked_key.album_artist && k.album == clicked_key.album
+        });
+
+        if !keep_album_open {
+            state.selected_album = None;
+        }
+    } else {
+        state.selected_album = None;
+    }
+
+    if state.selected_tracks.contains(&id) {
+        state.selected_tracks.remove(&id);
+        if state.selected_track == Some(id) {
+            state.selected_track = state.selected_tracks.iter().next_back().copied();
+        }
+    } else {
+        state.selected_tracks.insert(id);
+        state.selected_track = Some(id);
+        state.selection_anchor = Some(id);
+    }
+
+    state.last_clicked_track = Some(id);
+
+    if state.has_selection() {
+        load_inspector_from_selection(state);
+    } else {
+        clear_inspector(state);
+    }
+
+    maybe_load_cover_for_track(state, id)
+}
+
+fn select_range_to_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
+    let ids = ordered_selectable_track_ids(state);
+    if ids.is_empty() {
+        return select_single_track(state, id);
+    }
+
+    let anchor = state
+        .selection_anchor
+        .or(state.selected_track)
+        .unwrap_or(id);
+
+    let Some(anchor_idx) = ids.iter().position(|&x| x == anchor) else {
+        return select_single_track(state, id);
+    };
+    let Some(target_idx) = ids.iter().position(|&x| x == id) else {
+        return select_single_track(state, id);
+    };
+
+    let start = anchor_idx.min(target_idx);
+    let end = anchor_idx.max(target_idx);
+
+    state.selected_tracks.clear();
+    for &track_id in &ids[start..=end] {
+        state.selected_tracks.insert(track_id);
+    }
+
+    state.selected_track = Some(id);
+    state.last_clicked_track = Some(id);
+
+    load_inspector_from_selection(state);
+    maybe_load_cover_for_track(state, id)
 }
 
 fn register_album_press(state: &mut Sonora, target: AlbumPressTarget) -> bool {
@@ -381,6 +567,7 @@ fn load_cover_handle_from_path(path: &Path) -> Option<iced::widget::image::Handl
 pub(crate) fn clear_selection_and_inspector(state: &mut Sonora) {
     state.selected_track = None;
     state.selected_tracks.clear();
+    state.selection_anchor = None;
     state.last_clicked_track = None;
     state.selected_album = None;
     state.last_album_press = None;

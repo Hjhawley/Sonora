@@ -255,7 +255,11 @@ pub(crate) struct Sonora {
 
     pub selected_tracks: BTreeSet<TrackId>,
     pub selected_track: Option<TrackId>,
+    pub selection_anchor: Option<TrackId>,
     pub last_clicked_track: Option<TrackId>,
+
+    /// Current modifier keys, updated from keyboard events.
+    pub modifiers: iced::keyboard::Modifiers,
 
     /// Album-view double click bookkeeping.
     pub last_album_press: Option<(AlbumPressTarget, Instant)>,
@@ -275,12 +279,6 @@ pub(crate) struct Sonora {
 
 impl Sonora {
     /// Real application startup constructor.
-    ///
-    /// This does a little light startup work:
-    /// - spin up playback engine
-    /// - restore saved volume
-    /// - load visible library rows from DB
-    /// - rebuild derived indexes/caches
     pub fn new() -> Self {
         let (playback_controller, playback_events) = start_playback();
 
@@ -358,7 +356,11 @@ impl Sonora {
 
             selected_tracks: BTreeSet::new(),
             selected_track: None,
+            selection_anchor: None,
             last_clicked_track: None,
+
+            modifiers: iced::keyboard::Modifiers::default(),
+
             last_album_press: None,
 
             inspector: InspectorDraft::default(),
@@ -405,14 +407,6 @@ impl Sonora {
             .and_then(|ids| ids.first().copied())
     }
 
-    /// Rebuild all derived library state after replacing or mutating `self.tracks`.
-    ///
-    /// This currently refreshes:
-    /// - `track_index`
-    /// - `album_groups`
-    /// - `shuffled_ids` validity
-    /// - invalid `playback_context`
-    /// - invalid `selected_album`
     pub fn rebuild_library_derived_state(&mut self) {
         self.track_index.clear();
         self.album_groups.clear();
@@ -473,6 +467,17 @@ impl Sonora {
         if matches!(&self.selected_album, Some(key) if !self.album_groups.contains_key(key)) {
             self.selected_album = None;
         }
+
+        if matches!(self.selected_track, Some(id) if !self.track_index.contains_key(&id)) {
+            self.selected_track = None;
+        }
+
+        self.selected_tracks
+            .retain(|id| self.track_index.contains_key(id));
+
+        if matches!(self.selection_anchor, Some(id) if !self.track_index.contains_key(&id)) {
+            self.selection_anchor = None;
+        }
     }
 
     #[inline]
@@ -495,6 +500,9 @@ pub(crate) enum Message {
     /// Periodic tick to drain playback events.
     TickPlayback,
 
+    /// Global keyboard events.
+    KeyboardEvent(iced::keyboard::Event),
+
     // Roots
     RootInputChanged(String),
     AddRootPressed,
@@ -512,8 +520,10 @@ pub(crate) enum Message {
     SetViewMode(ViewMode),
     SelectAlbum(AlbumKey),
     SelectTrack(TrackId),
+    TrackPressed(TrackId),
+    ClearSelection,
 
-    // Album-view click handling (single-click select, double-click play)
+    // Album-view click handling
     AlbumTilePressed(AlbumKey),
     AlbumHeaderPressed(AlbumKey),
     AlbumTrackPressed(AlbumKey, TrackId),

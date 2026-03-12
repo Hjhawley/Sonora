@@ -163,7 +163,6 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         .map(|h| cover_thumb(Some(h), ALBUM_DETAIL_COVER))
         .unwrap_or_else(|| cover_thumb(None, ALBUM_DETAIL_COVER));
 
-    // Clicking the album header re-selects the whole album
     let header_content = row![
         big_cover,
         column![
@@ -200,13 +199,12 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         let artist = t.artist.clone().unwrap_or_else(|| "Unknown".into());
         let dur = fmt_duration(t.duration_ms);
 
-        let is_primary = state.selected_track == Some(id);
         let is_selected = state.selected_tracks.contains(&id);
         let is_now_playing = state.now_playing == Some(id);
 
         let marker = if is_now_playing {
             "▶"
-        } else if is_selected || is_primary {
+        } else if is_selected {
             "●"
         } else {
             ""

@@ -1,15 +1,22 @@
 //! gui/subscription.rs
-//! Poll playback events by emitting a periodic TickPlayback message.
+//! Poll playback events and listen for global keyboard events.
 
-use iced::{Subscription, time};
+use iced::{Subscription, event, time};
 use std::time::Duration;
 
 use super::state::{Message, Sonora};
 
 pub(crate) fn subscription(state: &Sonora) -> Subscription<Message> {
-    if state.playback_events.is_none() {
-        return Subscription::none();
-    }
+    let tick = if state.playback_events.is_some() {
+        time::every(Duration::from_millis(200)).map(|_| Message::TickPlayback)
+    } else {
+        Subscription::none()
+    };
 
-    time::every(Duration::from_millis(200)).map(|_| Message::TickPlayback)
+    let keyboard = event::listen().map(|event| match event {
+        iced::Event::Keyboard(key_event) => Message::KeyboardEvent(key_event),
+        _ => Message::Noop,
+    });
+
+    Subscription::batch(vec![tick, keyboard])
 }

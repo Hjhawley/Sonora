@@ -1,7 +1,7 @@
 //! gui/update/mod.rs
 //! Update logic (router).
 //!
-//! route by TrackId, never by Vec index.
+//! Route by TrackId, never by Vec index.
 //! This module should stay dumb: it just dispatches messages to the right handler.
 
 use iced::Task;
@@ -9,6 +9,7 @@ use iced::Task;
 use super::state::{Message, Sonora};
 
 mod inspector;
+mod keyboard;
 mod playback;
 mod roots;
 mod save;
@@ -21,6 +22,9 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::Noop => Task::none(),
 
         Message::TickPlayback => playback::drain_events(state),
+
+        // Global keyboard
+        Message::KeyboardEvent(event) => keyboard::handle_event(state, event),
 
         // Roots
         Message::RootInputChanged(s) => roots::root_input_changed(state, s),
@@ -39,9 +43,11 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SetViewMode(mode) => selection::set_view_mode(state, mode),
         Message::SelectAlbum(key) => selection::select_album(state, key),
         Message::SelectTrack(id) => selection::select_track(state, id),
+        Message::TrackPressed(id) => selection::track_pressed(state, id),
         Message::AlbumTilePressed(key) => selection::album_tile_pressed(state, key),
         Message::AlbumHeaderPressed(key) => selection::album_header_pressed(state, key),
         Message::AlbumTrackPressed(key, id) => selection::album_track_pressed(state, key, id),
+        Message::ClearSelection => selection::clear_selection(state),
 
         // Cover
         Message::CoverLoaded(id, handle) => selection::cover_loaded(state, id, handle),
