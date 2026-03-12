@@ -4,15 +4,18 @@
 //! - Selection is stored as TrackId(s).
 //! - We resolve ids -> indices only when we need to read TrackRow(s).
 //! - Mixed-state is tracked structurally in `state.inspector_mixed`.
+//! - The draft may display `<mixed>`, but that is only a UI placeholder.
 
 use iced::Task;
 use std::collections::BTreeMap;
 
-use super::super::state::{InspectorDraft, InspectorField, Message, Sonora, mixed_display_string};
+use super::super::state::{InspectorDraft, InspectorField, Message, Sonora};
 use super::super::util::filename_stem;
 use crate::core::types::TrackId;
 
 pub(crate) fn toggle_extended(state: &mut Sonora, v: bool) -> Task<Message> {
+    // Kept only for compatibility while the rest of the GUI still references it.
+    // The inspector now always shows all fields.
     state.show_extended = v;
     Task::none()
 }
@@ -33,7 +36,6 @@ pub(crate) fn inspector_changed(
 /// Update a single inspector string field based on `InspectorField`.
 fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String) {
     match field {
-        // Standard (visible by default)
         InspectorField::Title => state.inspector.title = value,
         InspectorField::Artist => state.inspector.artist = value,
         InspectorField::Album => state.inspector.album = value,
@@ -53,13 +55,11 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
         InspectorField::Lyrics => state.inspector.lyrics = value,
         InspectorField::Lyricist => state.inspector.lyricist = value,
 
-        // Extended (toggleable)
         InspectorField::Date => state.inspector.date = value,
         InspectorField::Conductor => state.inspector.conductor = value,
         InspectorField::Remixer => state.inspector.remixer = value,
         InspectorField::Publisher => state.inspector.publisher = value,
         InspectorField::Subtitle => state.inspector.subtitle = value,
-
         InspectorField::Bpm => state.inspector.bpm = value,
         InspectorField::Key => state.inspector.key = value,
         InspectorField::Mood => state.inspector.mood = value,
@@ -80,7 +80,6 @@ pub(crate) fn clear_inspector(state: &mut Sonora) {
 /// Load inspector fields from the current selection.
 /// - Works for single-track and multi-track selection.
 /// - Writes `<mixed>` into fields that disagree across selected tracks.
-/// - Clears extended fields (for now) to avoid stale values.
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
@@ -201,7 +200,56 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         .map(|&i| opt_str(&state.tracks[i].lyricist))
         .collect();
 
-    // Apply + compute mixed flags
+    let dates: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].date))
+        .collect();
+    let conductors: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].conductor))
+        .collect();
+    let remixers: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].remixer))
+        .collect();
+    let publishers: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].publisher))
+        .collect();
+    let subtitles: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].subtitle))
+        .collect();
+    let bpms: Vec<String> = idxs.iter().map(|&i| opt_u32(state.tracks[i].bpm)).collect();
+    let keys: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].key))
+        .collect();
+    let moods: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].mood))
+        .collect();
+    let languages: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].language))
+        .collect();
+    let isrcs: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].isrc))
+        .collect();
+    let encoder_settings: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].encoder_settings))
+        .collect();
+    let encoded_by: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].encoded_by))
+        .collect();
+    let copyrights: Vec<String> = idxs
+        .iter()
+        .map(|&i| opt_str(&state.tracks[i].copyright))
+        .collect();
+
     let mut map_mixed: BTreeMap<InspectorField, bool> = BTreeMap::new();
 
     apply_field(
@@ -298,40 +346,85 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         lyricist,
     );
 
-    state.inspector_mixed = map_mixed;
-
-    // Avoid stale extended values until you implement aggregation/mixed support for them too.
-    state.inspector.date = mixed_display_string().to_string();
-    state.inspector.conductor = mixed_display_string().to_string();
-    state.inspector.remixer = mixed_display_string().to_string();
-    state.inspector.publisher = mixed_display_string().to_string();
-    state.inspector.subtitle = mixed_display_string().to_string();
-    state.inspector.bpm = mixed_display_string().to_string();
-    state.inspector.key = mixed_display_string().to_string();
-    state.inspector.mood = mixed_display_string().to_string();
-    state.inspector.language = mixed_display_string().to_string();
-    state.inspector.isrc = mixed_display_string().to_string();
-    state.inspector.encoder_settings = mixed_display_string().to_string();
-    state.inspector.encoded_by = mixed_display_string().to_string();
-    state.inspector.copyright = mixed_display_string().to_string();
-
-    for field in [
+    apply_field(
+        &mut state.inspector.date,
+        &mut map_mixed,
         InspectorField::Date,
+        dates,
+    );
+    apply_field(
+        &mut state.inspector.conductor,
+        &mut map_mixed,
         InspectorField::Conductor,
+        conductors,
+    );
+    apply_field(
+        &mut state.inspector.remixer,
+        &mut map_mixed,
         InspectorField::Remixer,
+        remixers,
+    );
+    apply_field(
+        &mut state.inspector.publisher,
+        &mut map_mixed,
         InspectorField::Publisher,
+        publishers,
+    );
+    apply_field(
+        &mut state.inspector.subtitle,
+        &mut map_mixed,
         InspectorField::Subtitle,
+        subtitles,
+    );
+    apply_field(
+        &mut state.inspector.bpm,
+        &mut map_mixed,
         InspectorField::Bpm,
+        bpms,
+    );
+    apply_field(
+        &mut state.inspector.key,
+        &mut map_mixed,
         InspectorField::Key,
+        keys,
+    );
+    apply_field(
+        &mut state.inspector.mood,
+        &mut map_mixed,
         InspectorField::Mood,
+        moods,
+    );
+    apply_field(
+        &mut state.inspector.language,
+        &mut map_mixed,
         InspectorField::Language,
+        languages,
+    );
+    apply_field(
+        &mut state.inspector.isrc,
+        &mut map_mixed,
         InspectorField::Isrc,
+        isrcs,
+    );
+    apply_field(
+        &mut state.inspector.encoder_settings,
+        &mut map_mixed,
         InspectorField::EncoderSettings,
+        encoder_settings,
+    );
+    apply_field(
+        &mut state.inspector.encoded_by,
+        &mut map_mixed,
         InspectorField::EncodedBy,
+        encoded_by,
+    );
+    apply_field(
+        &mut state.inspector.copyright,
+        &mut map_mixed,
         InspectorField::Copyright,
-    ] {
-        state.inspector_mixed.insert(field, true);
-    }
+        copyrights,
+    );
 
+    state.inspector_mixed = map_mixed;
     state.inspector_dirty = false;
 }

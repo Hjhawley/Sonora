@@ -271,9 +271,6 @@ pub(crate) struct Sonora {
     /// The inspector draft may display `MIXED_SENTINEL`, but save logic should rely
     /// on this structure rather than trusting the raw string.
     pub inspector_mixed: BTreeMap<InspectorField, bool>,
-
-    // UI toggles
-    pub show_extended: bool,
 }
 
 impl Sonora {
@@ -368,8 +365,6 @@ impl Sonora {
             inspector_dirty: false,
             saving: false,
             inspector_mixed: BTreeMap::new(),
-
-            show_extended: false,
         };
 
         s.rebuild_library_derived_state();
@@ -457,10 +452,6 @@ impl Sonora {
                 .push(id);
         }
 
-        // Keep the shuffle queue valid across scans/scope changes:
-        // - drop ids that no longer exist
-        // - dedupe defensively
-        // - append any newly visible ids at the end
         let valid_ids: BTreeSet<TrackId> = visible_ids.iter().copied().collect();
 
         let mut seen: BTreeSet<TrackId> = BTreeSet::new();
@@ -484,7 +475,6 @@ impl Sonora {
         }
     }
 
-    /// Compatibility wrapper for older call sites.
     #[inline]
     pub fn rebuild_library_caches(&mut self) {
         self.rebuild_library_derived_state();
@@ -549,7 +539,6 @@ pub(crate) enum Message {
     PlaybackEvent(PlayerEvent),
 
     // Inspector edits
-    ToggleExtended(bool),
     InspectorChanged(InspectorField, String),
 
     // Actions

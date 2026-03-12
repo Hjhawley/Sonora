@@ -71,7 +71,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         format!("Writing tags to {} files...", ids.len())
     };
 
-    let write_extended = state.show_extended;
+    let write_extended = true;
 
     if rows_to_write.len() == 1 {
         let (id, row_to_write) = rows_to_write.remove(0);
@@ -227,7 +227,6 @@ fn build_row_from_inspector_for_id(
         "Disc total",
         &mut errs,
     )?;
-
     let year = parse_i32_mixed(
         state,
         InspectorField::Year,
@@ -236,19 +235,14 @@ fn build_row_from_inspector_for_id(
         "Year",
         &mut errs,
     )?;
-
-    let bpm = if state.show_extended {
-        parse_u32_mixed(
-            state,
-            InspectorField::Bpm,
-            &state.inspector.bpm,
-            out.bpm,
-            "BPM",
-            &mut errs,
-        )?
-    } else {
-        out.bpm
-    };
+    let bpm = parse_u32_mixed(
+        state,
+        InspectorField::Bpm,
+        &state.inspector.bpm,
+        out.bpm,
+        "BPM",
+        &mut errs,
+    )?;
 
     if !errs.is_empty() {
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
@@ -301,8 +295,8 @@ fn build_row_from_inspector_for_id(
     out.track_total = track_total;
     out.disc_no = disc_no;
     out.disc_total = disc_total;
-
     out.year = year;
+
     apply_opt_mixed_batch(
         state,
         InspectorField::Genre,
@@ -311,7 +305,6 @@ fn build_row_from_inspector_for_id(
         is_batch,
         primary.and_then(|p| p.genre.as_deref()),
     );
-
     apply_opt_mixed_batch(
         state,
         InspectorField::Grouping,
@@ -345,107 +338,105 @@ fn build_row_from_inspector_for_id(
         primary.and_then(|p| p.lyricist.as_deref()),
     );
 
-    if state.show_extended {
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Date,
-            &mut out.date,
-            &state.inspector.date,
-            is_batch,
-            primary.and_then(|p| p.date.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Conductor,
-            &mut out.conductor,
-            &state.inspector.conductor,
-            is_batch,
-            primary.and_then(|p| p.conductor.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Remixer,
-            &mut out.remixer,
-            &state.inspector.remixer,
-            is_batch,
-            primary.and_then(|p| p.remixer.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Publisher,
-            &mut out.publisher,
-            &state.inspector.publisher,
-            is_batch,
-            primary.and_then(|p| p.publisher.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Subtitle,
-            &mut out.subtitle,
-            &state.inspector.subtitle,
-            is_batch,
-            primary.and_then(|p| p.subtitle.as_deref()),
-        );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Date,
+        &mut out.date,
+        &state.inspector.date,
+        is_batch,
+        primary.and_then(|p| p.date.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Conductor,
+        &mut out.conductor,
+        &state.inspector.conductor,
+        is_batch,
+        primary.and_then(|p| p.conductor.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Remixer,
+        &mut out.remixer,
+        &state.inspector.remixer,
+        is_batch,
+        primary.and_then(|p| p.remixer.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Publisher,
+        &mut out.publisher,
+        &state.inspector.publisher,
+        is_batch,
+        primary.and_then(|p| p.publisher.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Subtitle,
+        &mut out.subtitle,
+        &state.inspector.subtitle,
+        is_batch,
+        primary.and_then(|p| p.subtitle.as_deref()),
+    );
 
-        out.bpm = bpm;
+    out.bpm = bpm;
 
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Key,
-            &mut out.key,
-            &state.inspector.key,
-            is_batch,
-            primary.and_then(|p| p.key.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Mood,
-            &mut out.mood,
-            &state.inspector.mood,
-            is_batch,
-            primary.and_then(|p| p.mood.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Language,
-            &mut out.language,
-            &state.inspector.language,
-            is_batch,
-            primary.and_then(|p| p.language.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Isrc,
-            &mut out.isrc,
-            &state.inspector.isrc,
-            is_batch,
-            primary.and_then(|p| p.isrc.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::EncoderSettings,
-            &mut out.encoder_settings,
-            &state.inspector.encoder_settings,
-            is_batch,
-            primary.and_then(|p| p.encoder_settings.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::EncodedBy,
-            &mut out.encoded_by,
-            &state.inspector.encoded_by,
-            is_batch,
-            primary.and_then(|p| p.encoded_by.as_deref()),
-        );
-        apply_opt_mixed_batch(
-            state,
-            InspectorField::Copyright,
-            &mut out.copyright,
-            &state.inspector.copyright,
-            is_batch,
-            primary.and_then(|p| p.copyright.as_deref()),
-        );
-    }
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Key,
+        &mut out.key,
+        &state.inspector.key,
+        is_batch,
+        primary.and_then(|p| p.key.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Mood,
+        &mut out.mood,
+        &state.inspector.mood,
+        is_batch,
+        primary.and_then(|p| p.mood.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Language,
+        &mut out.language,
+        &state.inspector.language,
+        is_batch,
+        primary.and_then(|p| p.language.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Isrc,
+        &mut out.isrc,
+        &state.inspector.isrc,
+        is_batch,
+        primary.and_then(|p| p.isrc.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::EncoderSettings,
+        &mut out.encoder_settings,
+        &state.inspector.encoder_settings,
+        is_batch,
+        primary.and_then(|p| p.encoder_settings.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::EncodedBy,
+        &mut out.encoded_by,
+        &state.inspector.encoded_by,
+        is_batch,
+        primary.and_then(|p| p.encoded_by.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::Copyright,
+        &mut out.copyright,
+        &state.inspector.copyright,
+        is_batch,
+        primary.and_then(|p| p.copyright.as_deref()),
+    );
 
     Ok(out)
 }
