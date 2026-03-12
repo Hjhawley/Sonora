@@ -2,9 +2,9 @@
 //! Metadata IO boundary (tag read/write + art extraction).
 //!
 //! Public surface area is intentionally small:
-//! - `read_track_row(path) -> (TrackRow, failed)`
-//! - `write_track_row(row, write_extended) -> Result<(), String>`
-//! - `read_embedded_art(path) -> Result<Option<(bytes, mime)>, String>`
+//! - 'read_track_row(path) -> (TrackRow, failed)'
+//! - 'write_track_row(row, write_extended) -> Result<(), String>'
+//! - 'read_embedded_art(path) -> Result<Option<(bytes, mime)>, String>'
 //! - crate-visible release-date helpers re-exported for higher layers that need
 //!   the same normalization rules as the tag backend
 //!

@@ -137,10 +137,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
     let first_idx = idxs[0];
     let first = &state.tracks[first_idx];
 
-    let year = first
-        .year
-        .map(|y| y.to_string())
-        .unwrap_or_else(|| "-".into());
+    let release_date = first.release_date.clone().unwrap_or_else(|| "-".into());
     let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
     let total_tracks = idxs.len();
@@ -151,7 +148,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         / 1000
         / 60;
 
-    let back_btn = button("← Back to albums")
+    let back_btn = button("◀︎ Back to albums")
         .on_press(Message::SetViewMode(super::super::state::ViewMode::Albums));
 
     let play_album_btn = button("Play Album").on_press(Message::PlayAlbum(key.clone()));
@@ -167,7 +164,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         column![
             text(key.album.clone()).size(30),
             text(key.album_artist.clone()).size(20),
-            text(format!("{genre} • {year}")).size(14),
+            text(format!("{release_date}")).size(14),
             text(format!("{total_tracks} tracks • {total_minutes} min")).size(13),
             play_album_btn,
         ]

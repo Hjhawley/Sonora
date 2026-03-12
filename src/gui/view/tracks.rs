@@ -37,7 +37,9 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
         text("Album Artist")
             .size(HEADER_TEXT)
             .width(Length::Fixed(170.0)),
-        text("Year").size(HEADER_TEXT).width(Length::Fixed(70.0)),
+        text("Release Date")
+            .size(HEADER_TEXT)
+            .width(Length::Fixed(110.0)),
         text("Genre").size(HEADER_TEXT).width(Length::Fixed(140.0)),
         text("Len").size(HEADER_TEXT).width(Length::Fixed(70.0)),
     ]
@@ -46,7 +48,7 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
 
     let mut col = column![header].spacing(TRACK_LIST_SPACING);
 
-    for t in state.tracks.iter() {
+    for t in &state.tracks {
         let Some(id) = t.id else {
             continue;
         };
@@ -71,7 +73,7 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
             .clone()
             .or_else(|| t.artist.clone())
             .unwrap_or_else(|| "Unknown".into());
-        let year = t.year.map(|y| y.to_string()).unwrap_or_default();
+        let release_date = t.release_date.clone().unwrap_or_default();
         let genre = t.genre.clone().unwrap_or_default();
         let len = fmt_duration(t.duration_ms);
 
@@ -84,7 +86,9 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
             text(album_artist)
                 .size(ROW_TEXT)
                 .width(Length::Fixed(170.0)),
-            text(year).size(ROW_TEXT).width(Length::Fixed(70.0)),
+            text(release_date)
+                .size(ROW_TEXT)
+                .width(Length::Fixed(110.0)),
             text(genre).size(ROW_TEXT).width(Length::Fixed(140.0)),
             text(len).size(ROW_TEXT).width(Length::Fixed(70.0)),
         ]

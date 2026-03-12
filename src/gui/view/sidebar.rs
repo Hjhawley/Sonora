@@ -8,7 +8,7 @@ use super::super::state::{LibraryScope, Message, Sonora, ViewMode};
 
 pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let busy = state.scanning || state.saving;
-    let has_selection = state.selected_track.is_some() || !state.selected_tracks.is_empty();
+    let has_selection = state.has_selection();
 
     let scan_btn = if state.scanning {
         button("Scanning...")
