@@ -128,6 +128,12 @@ pub struct TrackRow {
     // Publisher / label (ID3: 'TPUB')
     pub publisher: Option<String>,
 
+    // Encoder settings / software profile (ID3: 'TSSE')
+    pub encoder_settings: Option<String>,
+
+    // Encoded-by (human/organization) (ID3: 'TENC')
+    pub encoded_by: Option<String>,
+
     // Subtitle / refinement (ID3: 'TIT3')
     pub subtitle: Option<String>,
 
@@ -145,12 +151,6 @@ pub struct TrackRow {
 
     // ISRC (recording code) (ID3: 'TSRC')
     pub isrc: Option<String>,
-
-    // Encoder settings / software profile (ID3: 'TSSE')
-    pub encoder_settings: Option<String>,
-
-    // Encoded-by (human/organization) (ID3: 'TENC')
-    pub encoded_by: Option<String>,
 
     // Copyright (ID3: 'TCOP')
     pub copyright: Option<String>,

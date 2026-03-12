@@ -48,14 +48,14 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
         InspectorField::Conductor => state.inspector.conductor = value,
         InspectorField::Remixer => state.inspector.remixer = value,
         InspectorField::Publisher => state.inspector.publisher = value,
+        InspectorField::EncoderSettings => state.inspector.encoder_settings = value,
+        InspectorField::EncodedBy => state.inspector.encoded_by = value,
         InspectorField::Subtitle => state.inspector.subtitle = value,
         InspectorField::Bpm => state.inspector.bpm = value,
         InspectorField::Key => state.inspector.key = value,
         InspectorField::Mood => state.inspector.mood = value,
         InspectorField::Language => state.inspector.language = value,
         InspectorField::Isrc => state.inspector.isrc = value,
-        InspectorField::EncoderSettings => state.inspector.encoder_settings = value,
-        InspectorField::EncodedBy => state.inspector.encoded_by = value,
         InspectorField::Copyright => state.inspector.copyright = value,
     }
 }
@@ -346,6 +346,18 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         publishers,
     );
     apply_field(
+        &mut state.inspector.encoder_settings,
+        &mut map_mixed,
+        InspectorField::EncoderSettings,
+        encoder_settings,
+    );
+    apply_field(
+        &mut state.inspector.encoded_by,
+        &mut map_mixed,
+        InspectorField::EncodedBy,
+        encoded_by,
+    );
+    apply_field(
         &mut state.inspector.subtitle,
         &mut map_mixed,
         InspectorField::Subtitle,
@@ -380,18 +392,6 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         &mut map_mixed,
         InspectorField::Isrc,
         isrcs,
-    );
-    apply_field(
-        &mut state.inspector.encoder_settings,
-        &mut map_mixed,
-        InspectorField::EncoderSettings,
-        encoder_settings,
-    );
-    apply_field(
-        &mut state.inspector.encoded_by,
-        &mut map_mixed,
-        InspectorField::EncodedBy,
-        encoded_by,
     );
     apply_field(
         &mut state.inspector.copyright,

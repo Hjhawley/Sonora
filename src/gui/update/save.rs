@@ -368,6 +368,22 @@ fn apply_extended_text_fields(
     );
     apply_opt_mixed_batch(
         state,
+        InspectorField::EncoderSettings,
+        &mut out.encoder_settings,
+        &state.inspector.encoder_settings,
+        is_batch,
+        primary_row.and_then(|p| p.encoder_settings.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
+        InspectorField::EncodedBy,
+        &mut out.encoded_by,
+        &state.inspector.encoded_by,
+        is_batch,
+        primary_row.and_then(|p| p.encoded_by.as_deref()),
+    );
+    apply_opt_mixed_batch(
+        state,
         InspectorField::Subtitle,
         &mut out.subtitle,
         &state.inspector.subtitle,
@@ -405,22 +421,6 @@ fn apply_extended_text_fields(
         &state.inspector.isrc,
         is_batch,
         primary_row.and_then(|p| p.isrc.as_deref()),
-    );
-    apply_opt_mixed_batch(
-        state,
-        InspectorField::EncoderSettings,
-        &mut out.encoder_settings,
-        &state.inspector.encoder_settings,
-        is_batch,
-        primary_row.and_then(|p| p.encoder_settings.as_deref()),
-    );
-    apply_opt_mixed_batch(
-        state,
-        InspectorField::EncodedBy,
-        &mut out.encoded_by,
-        &state.inspector.encoded_by,
-        is_batch,
-        primary_row.and_then(|p| p.encoded_by.as_deref()),
     );
     apply_opt_mixed_batch(
         state,

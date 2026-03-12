@@ -236,6 +236,18 @@ fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
             |s| Message::InspectorChanged(Field::Publisher, s)
         ),
         field_row(
+            "Encoder",
+            &state.inspector.encoder_settings,
+            is_mixed(state, Field::EncoderSettings),
+            |s| Message::InspectorChanged(Field::EncoderSettings, s)
+        ),
+        field_row(
+            "Encoded by",
+            &state.inspector.encoded_by,
+            is_mixed(state, Field::EncodedBy),
+            |s| Message::InspectorChanged(Field::EncodedBy, s)
+        ),
+        field_row(
             "Subtitle",
             &state.inspector.subtitle,
             is_mixed(state, Field::Subtitle),
@@ -270,18 +282,6 @@ fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
             &state.inspector.isrc,
             is_mixed(state, Field::Isrc),
             |s| Message::InspectorChanged(Field::Isrc, s)
-        ),
-        field_row(
-            "Encoder",
-            &state.inspector.encoder_settings,
-            is_mixed(state, Field::EncoderSettings),
-            |s| Message::InspectorChanged(Field::EncoderSettings, s)
-        ),
-        field_row(
-            "Encoded by",
-            &state.inspector.encoded_by,
-            is_mixed(state, Field::EncodedBy),
-            |s| Message::InspectorChanged(Field::EncodedBy, s)
         ),
         field_row(
             "Copyright",

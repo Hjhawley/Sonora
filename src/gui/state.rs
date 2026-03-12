@@ -179,14 +179,14 @@ pub(crate) enum InspectorField {
     Conductor,
     Remixer,
     Publisher,
+    EncoderSettings,
+    EncodedBy,
     Subtitle,
     Bpm,
     Key,
     Mood,
     Language,
     Isrc,
-    EncoderSettings,
-    EncodedBy,
     Copyright,
 }
 
