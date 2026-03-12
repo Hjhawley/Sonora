@@ -1,5 +1,5 @@
 //! core/tags/write.rs
-//! Write selected ID3 tags back to an MP3, based on a `TrackRow`.
+//! Write selected ID3 tags back to an MP3, based on a 'TrackRow'.
 //!
 //! Sonora currently writes a curated subset of fields.
 //! Unknown frames are generally preserved unless they share an ID with fields
@@ -12,7 +12,7 @@ use super::super::types::TrackRow;
 use super::util::normalize_release_date;
 
 /// Remove all frames with a given id.
-/// (`TagLike::remove` returns `Vec<Frame>`; discard it.)
+/// ('TagLike::remove' returns 'Vec<Frame>'; discard it.)
 fn remove_all(tag: &mut Tag, id: &str) {
     let _ = tag.remove(id);
 }
@@ -30,7 +30,7 @@ fn set_or_remove_text_frame(tag: &mut Tag, id: &str, value: &Option<String>) {
     }
 }
 
-/// Write `TRCK` / `TPOS` as `"n"` or `"n/total"`, or remove if absent.
+/// Write 'TRCK' / 'TPOS' as '"n"' or '"n/total"', or remove if absent.
 fn set_slash_pair(tag: &mut Tag, id: &str, n: Option<u32>, total: Option<u32>) {
     match n {
         None => remove_all(tag, id),
@@ -44,7 +44,7 @@ fn set_slash_pair(tag: &mut Tag, id: &str, n: Option<u32>, total: Option<u32>) {
     }
 }
 
-/// Replace all `COMM` frames with one comment, or remove them if absent.
+/// Replace all 'COMM' frames with one comment, or remove them if absent.
 /// This intentionally collapses multi-language / multi-description comment state
 /// into Sonora's single editable comment field.
 fn set_comment_opt(tag: &mut Tag, value: &Option<String>) {
@@ -61,7 +61,7 @@ fn set_comment_opt(tag: &mut Tag, value: &Option<String>) {
     }
 }
 
-/// Replace all `USLT` frames with one lyrics frame, or remove them if absent.
+/// Replace all 'USLT' frames with one lyrics frame, or remove them if absent.
 /// This intentionally collapses multi-language / multi-description lyrics state
 /// into Sonora's single editable lyrics field.
 fn set_lyrics_opt(tag: &mut Tag, value: &Option<String>) {
@@ -88,34 +88,34 @@ fn set_or_remove_numeric_text<T: ToString>(tag: &mut Tag, id: &str, value: Optio
     }
 }
 
-/// Write Sonora's single release-date concept to ID3.
+/// Write Sonora's single canonical release-date field.
 ///
 /// Policy:
-/// - Sonora owns one canonical user-facing field: `row.date`
-/// - accepted values are normalized to:
-///   - `YYYY`
-///   - `YYYY-MM-DD`
-/// - old `TYER` is cleared to avoid duplicate year displays in other tools
-/// - `row.year` is treated as a derived/helper field, not a second source of truth
+/// - Sonora owns one user-facing date field: 'release_date'
+/// - normalized accepted values:
+///   - 'YYYY'
+///   - 'YYYY-MM-DD'
+/// - write only 'TDRC'
+/// - clear legacy 'TYER' to avoid duplicate displays like '1994\\1994'
 fn write_release_date(tag: &mut Tag, row: &TrackRow) {
     remove_all(tag, "TDRC");
     remove_all(tag, "TYER");
 
-    let release_date = row
-        .date
+    let normalized = row
+        .release_date
         .as_deref()
         .and_then(normalize_release_date)
         .or_else(|| row.year.map(|y| y.to_string()));
 
-    if let Some(date) = release_date {
-        tag.set_text("TDRC", date);
+    if let Some(value) = normalized {
+        tag.set_text("TDRC", value);
     }
 }
 
-/// Write tags for a single file, based on the desired contents of `row`.
+/// Write tags for a single file, based on the desired contents of 'row'.
 ///
 /// Semantics:
-/// - `None` (or empty/whitespace string) => remove that frame from the file.
+/// - 'None' (or empty/whitespace string) => remove that frame from the file.
 pub fn write_track_row(row: &TrackRow, _write_extended: bool) -> Result<(), String> {
     let path = &row.path;
 
@@ -154,7 +154,9 @@ pub fn write_track_row(row: &TrackRow, _write_extended: bool) -> Result<(), Stri
     set_or_remove_text_frame(&mut tag, "TENC", &row.encoded_by);
     set_or_remove_text_frame(&mut tag, "TCOP", &row.copyright);
 
-    // Prefer v2.4. If that fails, fall back to v2.3.
+    // Write back to file:
+    // - Prefer v2.4 (modern frames like TDRC).
+    // - If that fails, fall back to v2.3.
     if let Err(e) = tag.write_to_path(path, Version::Id3v24) {
         tag.write_to_path(path, Version::Id3v23)
             .map_err(|e2| format!("write_to_path failed: v2.4={e} ; v2.3={e2}"))?;

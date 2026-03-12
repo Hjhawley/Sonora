@@ -20,6 +20,11 @@ fn is_mixed(state: &Sonora, field: Field) -> bool {
     state.inspector_mixed.get(&field).copied().unwrap_or(false)
 }
 
+/// Text input used by the inspector.
+/// If the field is mixed:
+/// - show empty value
+/// - render `<mixed>` as placeholder
+/// - color the placeholder bright teal
 fn inspector_input<'a>(
     value: &'a str,
     mixed: bool,
@@ -178,9 +183,9 @@ fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
         ),
         field_row(
             "Release Date",
-            &state.inspector.date,
-            is_mixed(state, Field::Date),
-            |s| Message::InspectorChanged(Field::Date, s)
+            &state.inspector.release_date,
+            is_mixed(state, Field::ReleaseDate),
+            |s| Message::InspectorChanged(Field::ReleaseDate, s)
         ),
         field_row(
             "Genre",
@@ -213,24 +218,6 @@ fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
             |s| Message::InspectorChanged(Field::Lyricist, s)
         ),
         field_row(
-            "Subtitle",
-            &state.inspector.subtitle,
-            is_mixed(state, Field::Subtitle),
-            |s| Message::InspectorChanged(Field::Subtitle, s)
-        ),
-        field_row(
-            "Mood",
-            &state.inspector.mood,
-            is_mixed(state, Field::Mood),
-            |s| Message::InspectorChanged(Field::Mood, s)
-        ),
-        field_row(
-            "Language",
-            &state.inspector.language,
-            is_mixed(state, Field::Language),
-            |s| Message::InspectorChanged(Field::Language, s)
-        ),
-        field_row(
             "Conductor",
             &state.inspector.conductor,
             is_mixed(state, Field::Conductor),
@@ -249,6 +236,12 @@ fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
             |s| Message::InspectorChanged(Field::Publisher, s)
         ),
         field_row(
+            "Subtitle",
+            &state.inspector.subtitle,
+            is_mixed(state, Field::Subtitle),
+            |s| Message::InspectorChanged(Field::Subtitle, s)
+        ),
+        field_row(
             "BPM",
             &state.inspector.bpm,
             is_mixed(state, Field::Bpm),
@@ -259,6 +252,18 @@ fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
             &state.inspector.key,
             is_mixed(state, Field::Key),
             |s| Message::InspectorChanged(Field::Key, s)
+        ),
+        field_row(
+            "Mood",
+            &state.inspector.mood,
+            is_mixed(state, Field::Mood),
+            |s| Message::InspectorChanged(Field::Mood, s)
+        ),
+        field_row(
+            "Language",
+            &state.inspector.language,
+            is_mixed(state, Field::Language),
+            |s| Message::InspectorChanged(Field::Language, s)
         ),
         field_row(
             "ISRC",
