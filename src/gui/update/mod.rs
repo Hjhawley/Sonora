@@ -57,17 +57,13 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::Next => playback::next(state),
         Message::Prev => playback::prev(state),
 
-        // Seek: preview vs commit
         Message::SeekTo(ratio) => playback::seek_preview(state, ratio),
         Message::SeekCommit => playback::seek_commit(state),
-
         Message::SetVolume(vol) => playback::set_volume(state, vol),
 
-        // Playback (optional path)
         Message::PlaybackEvent(ev) => playback::handle_event(state, ev),
 
         // Inspector
-        Message::ToggleExtended(v) => inspector::toggle_extended(state, v),
         Message::InspectorChanged(field, value) => {
             inspector::inspector_changed(state, field, value)
         }

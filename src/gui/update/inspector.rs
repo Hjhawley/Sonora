@@ -13,27 +13,17 @@ use super::super::state::{InspectorDraft, InspectorField, Message, Sonora};
 use super::super::util::filename_stem;
 use crate::core::types::TrackId;
 
-pub(crate) fn toggle_extended(state: &mut Sonora, v: bool) -> Task<Message> {
-    // Kept only for compatibility while the rest of the GUI still references it.
-    // The inspector now always shows all fields.
-    state.show_extended = v;
-    Task::none()
-}
-
 pub(crate) fn inspector_changed(
     state: &mut Sonora,
     field: InspectorField,
     value: String,
 ) -> Task<Message> {
-    // Any explicit edit replaces mixed display state with a real value.
     state.inspector_mixed.insert(field, false);
-
     set_inspector_field(state, field, value);
     state.inspector_dirty = true;
     Task::none()
 }
 
-/// Update a single inspector string field based on `InspectorField`.
 fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String) {
     match field {
         InspectorField::Title => state.inspector.title = value,

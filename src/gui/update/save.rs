@@ -129,7 +129,6 @@ pub(crate) fn save_finished(
         Ok(new_row) => {
             if let Some(slot) = state.track_by_id_mut(id) {
                 *slot = new_row;
-
                 state.rebuild_library_derived_state();
                 load_inspector_from_selection(state);
             } else {
@@ -441,15 +440,6 @@ fn build_row_from_inspector_for_id(
     Ok(out)
 }
 
-/// Applies a text input to an `Option<String>` field.
-///
-/// Rules:
-/// - If the field is still structurally mixed -> do nothing
-/// - If the input still shows the mixed placeholder -> do nothing
-/// - Else if batch mode and input still matches the primary track's original value
-///   -> conservatively do nothing
-/// - Else if trimmed empty -> set `None`
-/// - Else -> set `Some(trimmed)`
 fn apply_opt_mixed_batch(
     state: &Sonora,
     field: InspectorField,
