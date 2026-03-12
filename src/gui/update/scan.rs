@@ -3,7 +3,7 @@
 //!
 //! Scan pipeline:
 //! - discover current filesystem paths + file facts
-//! - upsert them into SQLite, updating 'present', 'mtime', 'size'
+//! - upsert them into SQLite, updating `present`, `mtime`, `size`
 //! - load hydrated TrackRows with stable DB-backed ids
 
 use iced::Task;
@@ -25,7 +25,7 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     state.status = "Scanning...".to_string();
 
     // Selection becomes invalid once new results arrive, but keeping tracks visible
-    // during scan is nicer UX (and avoids an empty UI if scan fails)
+    // during scan is nicer UX (and avoids an empty UI if scan fails).
     clear_selection_and_inspector(state);
 
     let roots_to_scan: Vec<PathBuf> = if state.roots.is_empty() {
@@ -36,15 +36,12 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
 
     Task::perform(
         spawn_blocking(move || {
-            // discover files on disk
             let discovered = core::scan_paths(&roots_to_scan)?;
 
-            // DB-backed identity + present/missing update
             let db_path = core::db::default_db_path()?;
             let mut db = core::db::Db::open(&db_path)?;
             let id_paths = db.upsert_discovered(&discovered)?;
 
-            // hydrate rows by reading tags from the discovered files
             let (rows, failures) = core::hydrate_tracks(id_paths);
 
             Ok((rows, failures))
@@ -72,7 +69,7 @@ pub(crate) fn scan_finished(
             };
 
             state.tracks = rows;
-            state.rebuild_library_caches();
+            state.rebuild_library_derived_state();
             clear_selection_and_inspector(state);
 
             if state.view_mode == ViewMode::Albums {
@@ -80,7 +77,6 @@ pub(crate) fn scan_finished(
             }
         }
         Err(e) => {
-            // Keep previous tracks; just report error
             state.status = format!("Scan error: {e}");
             clear_selection_and_inspector(state);
         }

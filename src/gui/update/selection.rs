@@ -2,10 +2,10 @@
 //!
 //! Selection + scope + view-mode transitions.
 //!
-//! - All selection is keyed by 'TrackId' (stable), not 'Vec' indices.
-//! - Album View is now:
-//!   - grid when 'selected_album == None'
-//!   - album detail screen when 'selected_album == Some(...)'
+//! - All selection is keyed by `TrackId` (stable), not `Vec` indices.
+//! - Album View:
+//!   - grid when `selected_album == None`
+//!   - album detail screen when `selected_album == Some(...)`
 //! - Hidden/unhide is DB-backed and never touches the underlying file.
 
 use iced::Task;
@@ -48,7 +48,7 @@ pub(crate) fn scope_loaded(
         Ok((scope, rows, failures)) => {
             state.library_scope = scope;
             state.tracks = rows;
-            state.rebuild_library_caches();
+            state.rebuild_library_derived_state();
             clear_selection_and_inspector(state);
 
             state.status = match (scope, state.tracks.len(), failures) {
@@ -83,12 +83,10 @@ pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message>
     state.view_mode = mode;
     state.last_album_press = None;
 
-    // When explicitly switching into Track View, leave album detail entirely
     if mode == ViewMode::Tracks {
         state.selected_album = None;
     }
 
-    // When explicitly switching into Album View, go back to the album grid
     if mode == ViewMode::Albums && !was_albums {
         state.selected_album = None;
         state.selected_track = None;
@@ -117,8 +115,6 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         state.view_mode = ViewMode::Albums;
     }
 
-    // If we're already looking at this album detail screen, interpret this as:
-    // "re-select all tracks in this album"
     state.selected_album = Some(key.clone());
     state.selected_tracks.clear();
 
@@ -128,7 +124,6 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         }
     }
 
-    // Primary = first track in album, stable by TrackId ordering in the set
     state.selected_track = state.selected_tracks.iter().next().copied();
     state.last_clicked_track = state.selected_track;
 
@@ -148,8 +143,6 @@ pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
         return Task::none();
     };
 
-    // In Album View, keep the detail screen open
-    // if the clicked track belongs to the open album
     if state.view_mode == ViewMode::Albums {
         let clicked_key = album_key_for_index(state, idx);
 
@@ -342,8 +335,6 @@ fn register_album_press(state: &mut Sonora, target: AlbumPressTarget) -> bool {
     state.last_album_press = Some((target, now));
     is_double
 }
-
-// Helpers
 
 fn album_key_for_index(state: &Sonora, idx: usize) -> AlbumKey {
     let t = &state.tracks[idx];

@@ -71,14 +71,12 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
         format!("Writing tags to {} files...", ids.len())
     };
 
-    let write_extended = true;
-
     if rows_to_write.len() == 1 {
         let (id, row_to_write) = rows_to_write.remove(0);
 
         return Task::perform(
             spawn_blocking(move || {
-                crate::core::tags::write_track_row(&row_to_write, write_extended).and_then(|_| {
+                crate::core::tags::write_track_row(&row_to_write, true).and_then(|_| {
                     let (mut r, failed) =
                         crate::core::tags::read_track_row(row_to_write.path.clone());
                     if failed {
@@ -98,7 +96,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
             let mut out: Vec<(TrackId, TrackRow)> = Vec::new();
 
             for (id, row) in rows_to_write {
-                crate::core::tags::write_track_row(&row, write_extended)
+                crate::core::tags::write_track_row(&row, true)
                     .map_err(|e| format!("Write failed for track {id}: {e}"))?;
 
                 let (mut r, failed) = crate::core::tags::read_track_row(row.path.clone());
