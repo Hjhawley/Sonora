@@ -240,6 +240,31 @@ pub(crate) fn select_adjacent_track(
     }
 }
 
+pub(crate) fn select_all_in_context(state: &mut Sonora) -> Task<Message> {
+    let ids = ordered_selectable_track_ids(state);
+
+    if ids.is_empty() {
+        return Task::none();
+    }
+
+    state.selected_tracks.clear();
+    for &id in &ids {
+        state.selected_tracks.insert(id);
+    }
+
+    state.selected_track = ids.first().copied();
+    state.selection_anchor = state.selected_track;
+    state.last_clicked_track = ids.last().copied();
+
+    load_inspector_from_selection(state);
+
+    if let Some(primary_id) = state.selected_track {
+        maybe_load_cover_for_track(state, primary_id)
+    } else {
+        Task::none()
+    }
+}
+
 pub(crate) fn clear_selection(state: &mut Sonora) -> Task<Message> {
     clear_selection_and_inspector(state);
     Task::none()
