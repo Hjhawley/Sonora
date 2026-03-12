@@ -19,7 +19,7 @@
 // Conventions (important):
 // - 'None' means "absent / unknown / unreadable"
 // - 'Some(s)' should be non-empty and trimmed (normalized for UI sanity)
-//   (i.e., treat empty/whitespace as 'None' during read + inspector parsing)
+//   (i.e. treat empty/whitespace as 'None' during read + inspector parsing)
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -87,18 +87,24 @@ pub struct TrackRow {
     // Total discs (ID3: 'TPOS', "1/2" -> 2)
     pub disc_total: Option<u32>,
 
-    // Year (best effort) (ID3: 'TYER' / 'TDRC')
-    pub year: Option<i32>,
-
-    // Full date string when available (often "YYYY-MM-DD") (ID3: 'TDRC').
+    // Canonical user-facing release date string.
     //
-    // Stored as a 'String' because formats vary wildly in the wild.
-    pub date: Option<String>,
+    // Sonora normalizes this to either:
+    // - 'YYYY'
+    // - 'YYYY-MM-DD'
+    //
+    // This is the single editable/displayed release-date field.
+    pub release_date: Option<String>,
+
+    // Derived convenience year for sorting/grouping/filtering.
+    //
+    // This is usually derived from 'release_date', not edited independently.
+    pub year: Option<i32>,
 
     // Genre (ID3: 'TCON')
     pub genre: Option<String>,
 
-    // Common extended tags (usually behind a UI toggle)
+    // Common extended tags
     // Grouping / content group (ID3: 'TIT1')
     pub grouping: Option<String>,
 
@@ -149,7 +155,7 @@ pub struct TrackRow {
     // Copyright (ID3: 'TCOP')
     pub copyright: Option<String>,
 
-    // Artwork + sort fields (important for UX correctness)
+    // Artwork + sort fields
     // Embedded album artwork count (ID3: 'APIC' / 'PIC' frames).
     // We store count only to keep 'TrackRow' lightweight. Actual image bytes
     // are fetched on-demand (e.g. cover thumbnails).
@@ -167,7 +173,7 @@ pub struct TrackRow {
     // Album artist sort (ID3: 'TSO2')
     pub album_artist_sort: Option<String>,
 
-    // Library/stats-ish fields (not always present, but useful)
+    // Library/stats-ish fields
     // Duration in milliseconds (ID3: 'TLEN').
     //
     // Many files/libraries do not store this reliably; treat as optional hint.
@@ -217,8 +223,8 @@ impl TrackRow {
             disc_no: None,
             disc_total: None,
 
+            release_date: None,
             year: None,
-            date: None,
             genre: None,
 
             grouping: None,

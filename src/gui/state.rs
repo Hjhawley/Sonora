@@ -7,8 +7,8 @@
 //! - no update code (state transitions)
 //! - no blocking IO except light startup library restore
 //!
-//! If you’re looking for "how things change", that lives in `gui/update/*`.
-//! If you’re looking for "how things look", that lives in `gui/view/*`.
+//! If you’re looking for "how things change", that lives in 'gui/update/*'.
+//! If you’re looking for "how things look", that lives in 'gui/view/*'.
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,7 +27,7 @@ pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
 ///
 /// Important:
 /// - This is a UI display string, not the true source of mixed-state meaning.
-/// - Real mixed-state is tracked structurally in `Sonora::inspector_mixed`.
+/// - Real mixed-state is tracked structurally in 'Sonora::inspector_mixed'.
 /// - The view can render this in a distinct style/color so it cannot be mistaken
 ///   for a real user-entered literal value.
 pub(crate) const MIXED_SENTINEL: &str = "<mixed>";
@@ -93,7 +93,7 @@ pub(crate) enum PlaybackContext {
 /// Grouping key for Album View.
 ///
 /// Important: This is a UI grouping key, not a DB key.
-/// It’s derived from `TrackRow` values using grouping rules.
+/// It’s derived from 'TrackRow' values using grouping rules.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
     pub album_artist: String,
@@ -110,8 +110,8 @@ pub(crate) enum AlbumPressTarget {
 
 /// Draft editable metadata (strings so the user can type anything).
 ///
-/// Mixed-state is tracked separately in `Sonora::inspector_mixed`.
-/// When a field is mixed, the draft typically contains `MIXED_SENTINEL` for display.
+/// Mixed-state is tracked separately in 'Sonora::inspector_mixed'.
+/// When a field is mixed, the draft typically contains 'MIXED_SENTINEL' for display.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct InspectorDraft {
     pub title: String,
@@ -125,7 +125,7 @@ pub(crate) struct InspectorDraft {
     pub disc_no: String,
     pub disc_total: String,
 
-    pub year: String,
+    pub release_date: String,
     pub genre: String,
 
     pub grouping: String,
@@ -133,7 +133,6 @@ pub(crate) struct InspectorDraft {
     pub lyrics: String,
     pub lyricist: String,
 
-    pub date: String,
     pub conductor: String,
     pub remixer: String,
     pub publisher: String,
@@ -169,7 +168,7 @@ pub(crate) enum InspectorField {
     DiscNo,
     DiscTotal,
 
-    Year,
+    ReleaseDate,
     Genre,
 
     Grouping,
@@ -177,7 +176,6 @@ pub(crate) enum InspectorField {
     Lyrics,
     Lyricist,
 
-    Date,
     Conductor,
     Remixer,
     Publisher,
@@ -204,25 +202,25 @@ pub(crate) struct Sonora {
     // Library (display order)
     pub tracks: Vec<TrackRow>,
 
-    /// Cache: `TrackId` -> current `Vec` index.
+    /// Cache: 'TrackId' -> current 'Vec' index.
     pub track_index: BTreeMap<TrackId, usize>,
 
-    /// Cache: `AlbumKey` -> ordered list of `TrackId`s in that album group.
+    /// Cache: 'AlbumKey' -> ordered list of 'TrackId's in that album group.
     pub album_groups: BTreeMap<AlbumKey, Vec<TrackId>>,
 
-    /// Cache: `TrackId` -> decoded cover image handle (for quick UI rendering).
+    /// Cache: 'TrackId' -> decoded cover image handle (for quick UI rendering).
     pub cover_cache: BTreeMap<TrackId, iced::widget::image::Handle>,
 
     // Playback (core handle + UI state)
     pub playback: Option<PlaybackController>,
 
-    /// Receiver of engine events (polled via `TickPlayback`).
+    /// Receiver of engine events (polled via 'TickPlayback').
     pub playback_events: Option<RefCell<Receiver<PlayerEvent>>>,
 
     /// Current engine playback session id.
     pub active_playback_id: Option<u64>,
 
-    /// True after issuing a PlayFile/Seek that should produce a fresh `Started` event.
+    /// True after issuing a PlayFile/Seek that should produce a fresh 'Started' event.
     /// While this is true, stale non-Started transport events are ignored.
     pub awaiting_started: bool,
 
@@ -241,7 +239,7 @@ pub(crate) struct Sonora {
     pub repeat_mode: RepeatMode,
     pub playback_context: PlaybackContext,
 
-    /// Persistent queue order used only when `play_order == PlayOrder::Shuffle`.
+    /// Persistent queue order used only when 'play_order == PlayOrder::Shuffle'.
     pub shuffled_ids: Vec<TrackId>,
 
     // Selection / navigation
@@ -249,8 +247,8 @@ pub(crate) struct Sonora {
     pub library_scope: LibraryScope,
 
     /// In Album View:
-    /// - `None` => album grid
-    /// - `Some(key)` => album detail screen
+    /// - 'None' => album grid
+    /// - 'Some(key)' => album detail screen
     pub selected_album: Option<AlbumKey>,
 
     pub selected_tracks: BTreeSet<TrackId>,
@@ -269,10 +267,10 @@ pub(crate) struct Sonora {
     pub inspector_dirty: bool,
     pub saving: bool,
 
-    /// `true` means "selected files disagree on this field".
+    /// 'true' means "selected files disagree on this field".
     ///
     /// This is the authoritative mixed-state signal.
-    /// The inspector draft may display `MIXED_SENTINEL`, but save logic should rely
+    /// The inspector draft may display 'MIXED_SENTINEL', but save logic should rely
     /// on this structure rather than trusting the raw string.
     pub inspector_mixed: BTreeMap<InspectorField, bool>,
 }

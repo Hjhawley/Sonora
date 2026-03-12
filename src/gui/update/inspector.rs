@@ -3,8 +3,8 @@
 //!
 //! - Selection is stored as TrackId(s).
 //! - We resolve ids -> indices only when we need to read TrackRow(s).
-//! - Mixed-state is tracked structurally in `state.inspector_mixed`.
-//! - The draft may display `<mixed>`, but that is only a UI placeholder.
+//! - Mixed-state is tracked structurally in 'state.inspector_mixed'.
+//! - The draft may display '<mixed>', but that is only a UI placeholder.
 
 use iced::Task;
 use std::collections::BTreeMap;
@@ -37,7 +37,7 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
         InspectorField::DiscNo => state.inspector.disc_no = value,
         InspectorField::DiscTotal => state.inspector.disc_total = value,
 
-        InspectorField::Year => state.inspector.year = value,
+        InspectorField::ReleaseDate => state.inspector.release_date = value,
         InspectorField::Genre => state.inspector.genre = value,
 
         InspectorField::Grouping => state.inspector.grouping = value,
@@ -45,7 +45,6 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
         InspectorField::Lyrics => state.inspector.lyrics = value,
         InspectorField::Lyricist => state.inspector.lyricist = value,
 
-        InspectorField::Date => state.inspector.date = value,
         InspectorField::Conductor => state.inspector.conductor = value,
         InspectorField::Remixer => state.inspector.remixer = value,
         InspectorField::Publisher => state.inspector.publisher = value,
@@ -69,7 +68,7 @@ pub(crate) fn clear_inspector(state: &mut Sonora) {
 
 /// Load inspector fields from the current selection.
 /// - Works for single-track and multi-track selection.
-/// - Writes `<mixed>` into fields that disagree across selected tracks.
+/// - Writes '<mixed>' into fields that disagree across selected tracks.
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
@@ -96,10 +95,6 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
 
     fn opt_u32(v: Option<u32>) -> String {
         v.map(|n| n.to_string()).unwrap_or_default()
-    }
-
-    fn opt_year_i32(v: Option<i32>) -> String {
-        v.map(|y| y.to_string()).unwrap_or_default()
     }
 
     fn apply_field(
@@ -164,9 +159,9 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         .map(|&i| opt_u32(state.tracks[i].disc_total))
         .collect();
 
-    let years: Vec<String> = idxs
+    let release_dates: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_year_i32(state.tracks[i].year))
+        .map(|&i| opt_str(&state.tracks[i].release_date))
         .collect();
     let genres: Vec<String> = idxs
         .iter()
@@ -190,10 +185,6 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         .map(|&i| opt_str(&state.tracks[i].lyricist))
         .collect();
 
-    let dates: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].date))
-        .collect();
     let conductors: Vec<String> = idxs
         .iter()
         .map(|&i| opt_str(&state.tracks[i].conductor))
@@ -299,10 +290,10 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     );
 
     apply_field(
-        &mut state.inspector.year,
+        &mut state.inspector.release_date,
         &mut map_mixed,
-        InspectorField::Year,
-        years,
+        InspectorField::ReleaseDate,
+        release_dates,
     );
     apply_field(
         &mut state.inspector.genre,
@@ -336,12 +327,6 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         lyricist,
     );
 
-    apply_field(
-        &mut state.inspector.date,
-        &mut map_mixed,
-        InspectorField::Date,
-        dates,
-    );
     apply_field(
         &mut state.inspector.conductor,
         &mut map_mixed,

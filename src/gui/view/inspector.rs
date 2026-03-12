@@ -23,7 +23,7 @@ fn is_mixed(state: &Sonora, field: Field) -> bool {
 /// Text input used by the inspector.
 /// If the field is mixed:
 /// - show empty value
-/// - render `<mixed>` as placeholder
+/// - render '<mixed>' as placeholder
 /// - color the placeholder bright teal
 fn inspector_input<'a>(
     value: &'a str,
@@ -187,10 +187,10 @@ fn build_basic_fields(state: &Sonora) -> Column<'_, Message> {
             |s| Message::InspectorChanged(Field::DiscTotal, s),
         ),
         field_row(
-            "Year",
-            &state.inspector.year,
-            is_mixed(state, Field::Year),
-            |s| Message::InspectorChanged(Field::Year, s)
+            "Release Date",
+            &state.inspector.release_date,
+            is_mixed(state, Field::ReleaseDate),
+            |s| Message::InspectorChanged(Field::ReleaseDate, s)
         ),
         field_row(
             "Genre",
@@ -228,12 +228,6 @@ fn build_content_fields(state: &Sonora) -> Column<'_, Message> {
             &state.inspector.lyricist,
             is_mixed(state, Field::Lyricist),
             |s| Message::InspectorChanged(Field::Lyricist, s)
-        ),
-        field_row(
-            "Date",
-            &state.inspector.date,
-            is_mixed(state, Field::Date),
-            |s| Message::InspectorChanged(Field::Date, s)
         ),
         field_row(
             "Subtitle",

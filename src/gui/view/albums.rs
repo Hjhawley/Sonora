@@ -58,7 +58,6 @@ fn build_album_grid_for_width(
     albums: &[AlbumTile],
     available_width: f32,
 ) -> iced::widget::Scrollable<'static, Message> {
-    // Grid layout
     let footprint = ALBUM_TILE_W + ALBUM_GRID_SPACING_X;
     let computed_cols = ((available_width + ALBUM_GRID_SPACING_X) / footprint).floor() as usize;
     let cols = computed_cols.max(ALBUM_GRID_MIN_COLS).max(1);
@@ -189,7 +188,9 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
 
     for &i in &idxs {
         let t = &state.tracks[i];
-        let Some(id) = t.id else { continue };
+        let Some(id) = t.id else {
+            continue;
+        };
 
         let n = t
             .track_no

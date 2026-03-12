@@ -1,5 +1,5 @@
 //! core/tags/write.rs
-//! Write selected ID3 tags back to an MP3, based on a `TrackRow`.
+//! Write selected ID3 tags back to an MP3, based on a 'TrackRow'.
 //!
 //! Sonora currently writes a curated subset of fields.
 //! Unknown frames are generally preserved unless they share an ID with fields
@@ -9,9 +9,10 @@ use id3::frame::{Comment, Lyrics};
 use id3::{Tag, TagLike, Version};
 
 use super::super::types::TrackRow;
+use super::util::{extract_year_from_release_date, normalize_release_date};
 
 /// Remove all frames with a given id.
-/// (`TagLike::remove` returns `Vec<Frame>`; discard it.)
+/// ('TagLike::remove' returns 'Vec<Frame>'; discard it.)
 fn remove_all(tag: &mut Tag, id: &str) {
     let _ = tag.remove(id);
 }
@@ -29,7 +30,7 @@ fn set_or_remove_text_frame(tag: &mut Tag, id: &str, value: &Option<String>) {
     }
 }
 
-/// Write `TRCK` / `TPOS` as `"n"` or `"n/total"`, or remove if absent.
+/// Write 'TRCK' / 'TPOS' as '"n"' or '"n/total"', or remove if absent.
 fn set_slash_pair(tag: &mut Tag, id: &str, n: Option<u32>, total: Option<u32>) {
     match n {
         None => remove_all(tag, id),
@@ -43,7 +44,7 @@ fn set_slash_pair(tag: &mut Tag, id: &str, n: Option<u32>, total: Option<u32>) {
     }
 }
 
-/// Replace all `COMM` frames with one comment, or remove them if absent.
+/// Replace all 'COMM' frames with one comment, or remove them if absent.
 /// This intentionally collapses multi-language / multi-description comment state
 /// into Sonora's single editable comment field.
 fn set_comment_opt(tag: &mut Tag, value: &Option<String>) {
@@ -60,7 +61,7 @@ fn set_comment_opt(tag: &mut Tag, value: &Option<String>) {
     }
 }
 
-/// Replace all `USLT` frames with one lyrics frame, or remove them if absent.
+/// Replace all 'USLT' frames with one lyrics frame, or remove them if absent.
 /// This intentionally collapses multi-language / multi-description lyrics state
 /// into Sonora's single editable lyrics field.
 fn set_lyrics_opt(tag: &mut Tag, value: &Option<String>) {
@@ -87,53 +88,46 @@ fn set_or_remove_numeric_text<T: ToString>(tag: &mut Tag, id: &str, value: Optio
     }
 }
 
-/// Write year/date compatibility fields.
+/// Write Sonora's canonical release-date field.
 ///
 /// Policy:
-/// - `year` is always authoritative when present.
-/// - `date` is written only when `write_extended == true`.
-/// - `TYER` is mirrored for compatibility with older tooling.
-/// - If `year` is absent but `date` starts with `YYYY`, use that year as a
-///   compatibility mirror as well.
-fn write_year_and_date(tag: &mut Tag, row: &TrackRow, write_extended: bool) {
-    match row.year {
-        Some(y) => {
-            tag.set_year(y);
-            remove_all(tag, "TYER");
-            tag.set_text("TYER", y.to_string());
+/// - Canonical user-facing field is 'release_date'.
+/// - Accepted canonical shapes are 'YYYY' or 'YYYY-MM-DD'.
+/// - 'TDRC' is written exactly as the normalized canonical value.
+/// - 'TYER' is mirrored as the 4-digit year for compatibility.
+/// - If release date is absent/blank, both 'TDRC' and 'TYER' are removed.
+fn write_release_date(tag: &mut Tag, row: &TrackRow) {
+    let normalized = row.release_date.as_deref().and_then(normalize_release_date);
+
+    match normalized {
+        Some(ref release_date) => {
+            remove_all(tag, "TDRC");
+            tag.set_text("TDRC", release_date.clone());
+
+            if let Some(year) = extract_year_from_release_date(Some(release_date.as_str())) {
+                tag.set_year(year);
+                remove_all(tag, "TYER");
+                tag.set_text("TYER", year.to_string());
+            } else {
+                tag.remove_year();
+                remove_all(tag, "TYER");
+            }
         }
         None => {
             tag.remove_year();
             remove_all(tag, "TYER");
-        }
-    }
-
-    if !write_extended {
-        return;
-    }
-
-    set_or_remove_text_frame(tag, "TDRC", &row.date);
-
-    if row.year.is_none() {
-        if let Some(date) = row.date.as_deref().map(str::trim) {
-            if date.len() >= 4 {
-                if let Ok(y) = date[0..4].parse::<i32>() {
-                    tag.set_year(y);
-                    remove_all(tag, "TYER");
-                    tag.set_text("TYER", y.to_string());
-                }
-            }
+            remove_all(tag, "TDRC");
         }
     }
 }
 
-/// Write tags for a single file, based on the desired contents of `row`.
+/// Write tags for a single file, based on the desired contents of 'row'.
 ///
 /// - Always writes "standard" fields (visible by default in UI).
-/// - Writes "extended" fields only if `write_extended == true`.
+/// - Writes "extended" fields only if 'write_extended == true'.
 ///
 /// Semantics:
-/// - `None` (or empty/whitespace string) => remove that frame from the file.
+/// - 'None' (or empty/whitespace string) => remove that frame from the file.
 pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), String> {
     let path = &row.path;
 
@@ -153,7 +147,8 @@ pub fn write_track_row(row: &TrackRow, write_extended: bool) -> Result<(), Strin
     set_slash_pair(&mut tag, "TRCK", row.track_no, row.track_total);
     set_slash_pair(&mut tag, "TPOS", row.disc_no, row.disc_total);
 
-    write_year_and_date(&mut tag, row, write_extended);
+    // Release date is now a standard always-written field.
+    write_release_date(&mut tag, row);
 
     set_or_remove_text_frame(&mut tag, "TIT1", &row.grouping);
     set_comment_opt(&mut tag, &row.comment);

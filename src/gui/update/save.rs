@@ -2,8 +2,8 @@
 //!
 //! Turn the InspectorDraft into actual on-disk tag writes (single or batch).
 //!
-//! - Save targets are identified by `TrackId`, not `Vec` indices.
-//! - We still update `state.tracks` (display order Vec), but we locate rows by id.
+//! - Save targets are identified by 'TrackId', not 'Vec' indices.
+//! - We still update 'state.tracks' (display order Vec), but we locate rows by id.
 //!
 //! Safety features:
 //! - Mixed inspector fields are treated as "leave existing value alone".
@@ -12,13 +12,15 @@
 //!   overwrite of many files.
 //!
 //! Intentional behavior:
-//! - We never mutate `state.tracks` until after a successful write + re-read.
+//! - We never mutate 'state.tracks' until after a successful write + re-read.
 //! - On write failure, UI remains consistent with disk.
 
 use iced::Task;
 
 use super::super::state::{InspectorField, Message, Sonora, is_mixed_display_value};
-use super::super::util::{parse_optional_i32, parse_optional_u32};
+use super::super::util::{
+    extract_year_from_release_date, parse_optional_release_date, parse_optional_u32,
+};
 use super::inspector::load_inspector_from_selection;
 use super::util::spawn_blocking;
 use crate::core::types::{TrackId, TrackRow};
@@ -219,14 +221,6 @@ fn build_row_from_inspector_for_id(
         "Disc total",
         &mut errs,
     )?;
-    out.year = parse_i32_mixed(
-        state,
-        InspectorField::Year,
-        &state.inspector.year,
-        out.year,
-        "Year",
-        &mut errs,
-    )?;
     out.bpm = parse_u32_mixed(
         state,
         InspectorField::Bpm,
@@ -235,6 +229,14 @@ fn build_row_from_inspector_for_id(
         "BPM",
         &mut errs,
     )?;
+
+    out.release_date = parse_release_date_mixed(
+        state,
+        &state.inspector.release_date,
+        out.release_date.clone(),
+        &mut errs,
+    )?;
+    out.year = extract_year_from_release_date(out.release_date.as_deref());
 
     if !errs.is_empty() {
         return Err(format!("Not saved: invalid {}", errs.join(", ")));
@@ -340,14 +342,6 @@ fn apply_extended_text_fields(
     is_batch: bool,
     primary_row: Option<&TrackRow>,
 ) {
-    apply_opt_mixed_batch(
-        state,
-        InspectorField::Date,
-        &mut out.date,
-        &state.inspector.date,
-        is_batch,
-        primary_row.and_then(|p| p.date.as_deref()),
-    );
     apply_opt_mixed_batch(
         state,
         InspectorField::Conductor,
@@ -498,15 +492,18 @@ fn parse_u32_mixed(
     Ok(v)
 }
 
-fn parse_i32_mixed(
+fn parse_release_date_mixed(
     state: &Sonora,
-    field: InspectorField,
     input: &str,
-    current: Option<i32>,
-    label: &'static str,
+    current: Option<String>,
     errs: &mut Vec<&'static str>,
-) -> Result<Option<i32>, String> {
-    if state.inspector_mixed.get(&field).copied().unwrap_or(false) {
+) -> Result<Option<String>, String> {
+    if state
+        .inspector_mixed
+        .get(&InspectorField::ReleaseDate)
+        .copied()
+        .unwrap_or(false)
+    {
         return Ok(current);
     }
 
@@ -518,8 +515,8 @@ fn parse_i32_mixed(
         return Ok(None);
     }
 
-    let v = parse_optional_i32(t)
-        .inspect_err(|_| errs.push(label))
+    let v = parse_optional_release_date(t)
+        .inspect_err(|_| errs.push("Release Date"))
         .ok()
         .flatten();
 

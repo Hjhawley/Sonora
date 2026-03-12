@@ -5,7 +5,7 @@ use std::path::Path;
 
 use id3::Tag;
 
-/// Returns `(image_bytes, mime)` for the first embedded picture (APIC/PIC).
+/// Returns '(image_bytes, mime)' for the first embedded picture (APIC/PIC).
 pub fn read_embedded_art(path: &Path) -> Result<Option<(Vec<u8>, String)>, String> {
     let tag = match Tag::read_from_path(path) {
         Ok(t) => t,

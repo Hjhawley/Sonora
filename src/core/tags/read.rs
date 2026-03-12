@@ -1,9 +1,9 @@
 //! core/tags/read.rs
-//! Read ID3 tags from an MP3 and convert them into a `TrackRow`.
+//! Read ID3 tags from an MP3 and convert them into a 'TrackRow'.
 //!
 //! - Tag reading does NOT assign identity.
-//! - `TrackRow.id` is set by the scanning / DB layer.
-//! - This module therefore always returns `id: None`.
+//! - 'TrackRow.id' is set by the scanning / DB layer.
+//! - This module therefore always returns 'id: None'.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -12,7 +12,10 @@ use id3::frame::Content;
 use id3::{Tag, TagLike};
 
 use super::super::types::TrackRow;
-use super::util::{parse_be_u64, parse_boolish, parse_slash_pair_u32};
+use super::util::{
+    extract_year_from_release_date, normalize_release_date, parse_be_u64, parse_boolish,
+    parse_slash_pair_u32,
+};
 
 pub fn read_track_row(path: PathBuf) -> (TrackRow, bool) {
     match Tag::read_from_path(&path) {
@@ -29,8 +32,11 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
     let track_no = tag.track().or(track_no_from_text);
     let disc_no = tag.disc().or(disc_no_from_text);
 
-    let date = text_frame(tag, "TDRC").or_else(|| text_frame(tag, "TYER"));
-    let year = tag.year();
+    let release_date = text_frame(tag, "TDRC")
+        .or_else(|| text_frame(tag, "TYER"))
+        .and_then(|s| normalize_release_date(&s));
+
+    let year = extract_year_from_release_date(release_date.as_deref());
 
     let artwork_count = tag
         .frames()
@@ -79,8 +85,8 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
         disc_no,
         disc_total,
 
+        release_date,
         year,
-        date,
 
         genre: text_frame(tag, "TCON"),
 
@@ -121,7 +127,7 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag) -> TrackRow {
 
 /// Get a best-effort string value from a frame id.
 /// This is intentionally defensive: some frames that are "text-ish"
-/// may not be represented as `Content::Text`.
+/// may not be represented as 'Content::Text'.
 fn text_frame(tag: &Tag, id: &str) -> Option<String> {
     let frame = tag.get(id)?;
 
