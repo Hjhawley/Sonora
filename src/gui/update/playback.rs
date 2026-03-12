@@ -121,23 +121,23 @@ fn sync_shuffled_ids(state: &mut Sonora) {
     }
 }
 
-fn rebuild_shuffle_order(state: &mut Sonora) {
+/// Rebuild the shuffle order from scratch for the current playback context,
+/// forcing `anchor` to be first if it exists in the context.
+///
+/// This is intentionally aggressive: when the queue source changes, we prefer
+/// a fresh, correct shuffle order over trying to preserve a stale one.
+fn rebuild_shuffle_order_with_anchor(state: &mut Sonora, anchor: Option<TrackId>) {
     let mut ids = context_track_ids(state);
     if ids.is_empty() {
         state.shuffled_ids.clear();
         return;
     }
 
-    let anchor = state.now_playing.or(state.selected_track);
-
     if let Some(anchor_id) = anchor {
         if let Some(anchor_idx) = ids.iter().position(|&id| id == anchor_id) {
             ids.remove(anchor_idx);
             ids.shuffle(&mut rand::thread_rng());
-
-            let insert_at = anchor_idx.min(ids.len());
-            ids.insert(insert_at, anchor_id);
-
+            ids.insert(0, anchor_id);
             state.shuffled_ids = ids;
             return;
         }
@@ -145,6 +145,11 @@ fn rebuild_shuffle_order(state: &mut Sonora) {
 
     ids.shuffle(&mut rand::thread_rng());
     state.shuffled_ids = ids;
+}
+
+fn rebuild_shuffle_order(state: &mut Sonora) {
+    let anchor = state.now_playing.or(state.selected_track);
+    rebuild_shuffle_order_with_anchor(state, anchor);
 }
 
 fn playback_ids(state: &mut Sonora) -> Vec<TrackId> {
@@ -229,25 +234,27 @@ fn event_matches_active(state: &Sonora, playback_id: u64) -> bool {
     state.active_playback_id == Some(playback_id)
 }
 
-fn set_context_library(state: &mut Sonora) {
-    if state.playback_context != PlaybackContext::Library {
-        state.playback_context = PlaybackContext::Library;
-        if state.play_order == PlayOrder::Shuffle {
-            rebuild_shuffle_order(state);
-        } else {
-            sync_shuffled_ids(state);
-        }
+/// Switch to library queue context.
+/// If shuffle is enabled and `anchor` is provided, rebuild the shuffle queue immediately.
+fn set_context_library(state: &mut Sonora, anchor: Option<TrackId>) {
+    state.playback_context = PlaybackContext::Library;
+
+    if state.play_order == PlayOrder::Shuffle {
+        rebuild_shuffle_order_with_anchor(state, anchor);
+    } else {
+        sync_shuffled_ids(state);
     }
 }
 
-fn set_context_album(state: &mut Sonora, key: AlbumKey) {
-    if state.playback_context != PlaybackContext::Album(key.clone()) {
-        state.playback_context = PlaybackContext::Album(key);
-        if state.play_order == PlayOrder::Shuffle {
-            rebuild_shuffle_order(state);
-        } else {
-            sync_shuffled_ids(state);
-        }
+/// Switch to album queue context.
+/// If shuffle is enabled and `anchor` is provided, rebuild the shuffle queue immediately.
+fn set_context_album(state: &mut Sonora, key: AlbumKey, anchor: Option<TrackId>) {
+    state.playback_context = PlaybackContext::Album(key);
+
+    if state.play_order == PlayOrder::Shuffle {
+        rebuild_shuffle_order_with_anchor(state, anchor);
+    } else {
+        sync_shuffled_ids(state);
     }
 }
 
@@ -275,7 +282,6 @@ fn refresh_next_queue_hint(state: &mut Sonora) {
 
 fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     ensure_engine(state);
-    sync_shuffled_ids(state);
 
     let Some(row) = state.track_by_id(id) else {
         state.status = "Play failed: selected track not found (rescan?).".into();
@@ -344,7 +350,7 @@ pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
-    set_context_library(state);
+    set_context_library(state, Some(id));
     play_track_internal(state, id)
 }
 
@@ -355,7 +361,7 @@ pub(crate) fn play_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         return Task::none();
     };
 
-    set_context_album(state, key);
+    set_context_album(state, key, Some(first_id));
     play_track_internal(state, first_id)
 }
 
@@ -370,7 +376,7 @@ pub(crate) fn play_album_from_track(
         return Task::none();
     }
 
-    set_context_album(state, key);
+    set_context_album(state, key, Some(id));
     play_track_internal(state, id)
 }
 
