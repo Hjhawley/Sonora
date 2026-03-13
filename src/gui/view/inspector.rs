@@ -151,11 +151,6 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
             |t| t.play_count,
             |v| { v.map(|n| n.to_string()).unwrap_or_else(|| "-".into()) }
         ),
-        mixed_or_value(
-            &rows,
-            |t| t.compilation,
-            |v| { v.map(|b| b.to_string()).unwrap_or_else(|| "-".into()) }
-        ),
     );
 
     iced::widget::column![
