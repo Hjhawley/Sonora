@@ -109,7 +109,7 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     };
 
     let technical_line = format!(
-        "Artwork: {} | Len: {} | Bitrate: {} | Sample Rate: {} | Channels: {}",
+        "Artwork: {} | Duration: {} | Avg. Bitrate: {} | Sample Rate: {} | Channels: {}",
         t.artwork_count,
         fmt_duration(t.duration_ms),
         fmt_bitrate_kbps(t.bitrate_kbps),

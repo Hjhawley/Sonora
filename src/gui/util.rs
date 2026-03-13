@@ -89,7 +89,7 @@ pub(crate) fn extract_year_from_release_date(s: Option<&str>) -> Option<i32> {
     core_extract_year_from_release_date(s)
 }
 
-/// Format bitrate in kbps for read-only display.
+/// Format Avg. Bitrate in kbps for read-only display.
 pub(crate) fn fmt_bitrate_kbps(v: Option<u32>) -> String {
     match v {
         Some(kbps) if kbps > 0 => format!("{kbps} kbps"),
@@ -97,7 +97,7 @@ pub(crate) fn fmt_bitrate_kbps(v: Option<u32>) -> String {
     }
 }
 
-/// Format sample rate in a friendly kHz form.
+/// Format Sample Rate in a friendly kHz form.
 /// Examples:
 /// - 44100 -> 44.1 kHz
 /// - 48000 -> 48 kHz
