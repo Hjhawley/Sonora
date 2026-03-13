@@ -118,11 +118,8 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     let rows = selected_rows(state);
 
     let Some(primary) = rows.first() else {
-        return iced::widget::column![
-            text("Tag Editor").size(18),
-            text("No selection.").size(12)
-        ]
-        .spacing(6);
+        return iced::widget::column![text("Tag Editor").size(18), text("No selection.").size(12)]
+            .spacing(6);
     };
 
     let sel_count = rows.len();
