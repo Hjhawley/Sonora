@@ -11,7 +11,10 @@ use std::path::PathBuf;
 use id3::frame::Content;
 use id3::{Tag, TagLike};
 
-use super::super::probe::{AudioProperties, probe_audio_properties};
+use super::super::probe::{
+    AudioProperties, average_bitrate_kbps_from_audio_bytes, mp3_audio_bytes_excluding_id3,
+    probe_audio_properties,
+};
 use super::super::types::TrackRow;
 use super::util::{
     extract_year_from_release_date, normalize_release_date, parse_be_u64, parse_boolish,
@@ -28,8 +31,17 @@ pub fn read_track_row(path: PathBuf) -> (TrackRow, bool) {
 }
 
 fn build_probe_only_row(path: PathBuf, audio: AudioProperties) -> TrackRow {
-    let mut row = TrackRow::empty(path);
+    let mut row = TrackRow::empty(path.clone());
     apply_audio_properties(&mut row, audio);
+
+    if row.bitrate_kbps.is_none() {
+        if let (Some(bytes), Some(duration_ms)) =
+            (mp3_audio_bytes_excluding_id3(&path), row.duration_ms)
+        {
+            row.bitrate_kbps = average_bitrate_kbps_from_audio_bytes(bytes, duration_ms);
+        }
+    }
+
     row
 }
 
@@ -68,6 +80,12 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
 
     let tlen_duration_ms = text_frame(tag, "TLEN").and_then(|s| s.trim().parse::<u32>().ok());
     let duration_ms = audio.duration_ms.or(tlen_duration_ms);
+
+    let bitrate_kbps = audio.bitrate_kbps.or_else(|| {
+        let duration_ms = duration_ms?;
+        let audio_bytes = mp3_audio_bytes_excluding_id3(&path)?;
+        average_bitrate_kbps_from_audio_bytes(audio_bytes, duration_ms)
+    });
 
     let extra_text = collect_extra_text(tag);
 
@@ -125,7 +143,7 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
         album_artist_sort: text_frame(tag, "TSO2"),
 
         duration_ms,
-        bitrate_kbps: audio.bitrate_kbps,
+        bitrate_kbps,
         sample_rate_hz: audio.sample_rate_hz,
         channels: audio.channels,
         rating,
