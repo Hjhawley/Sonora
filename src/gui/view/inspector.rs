@@ -11,7 +11,7 @@ use iced::{Alignment, Color, Length, Theme};
 use super::super::state::{InspectorField as Field, Message, Sonora, mixed_display_string};
 use super::constants::LABEL_W;
 use super::widgets::fmt_duration;
-use crate::core::types::TrackId;
+use crate::core::types::{TrackId, TrackRow};
 use crate::gui::util::{fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 
 /// Bright teal used for mixed-field placeholder text.
@@ -24,7 +24,7 @@ fn is_mixed(state: &Sonora, field: Field) -> bool {
 /// Text input used by the inspector.
 /// If the field is mixed:
 /// - show empty value
-/// - render `<mixed>` as placeholder
+/// - render '<mixed>' as placeholder
 /// - color the placeholder bright teal
 fn inspector_input<'a>(
     value: &'a str,
@@ -78,12 +78,46 @@ fn num_pair_row<'a>(
     .align_y(Alignment::Center)
 }
 
-fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
-    let primary_id: Option<TrackId> = state
-        .selected_track
-        .or_else(|| state.selected_tracks.iter().next().copied());
+fn selected_rows<'a>(state: &'a Sonora) -> Vec<&'a TrackRow> {
+    let mut rows = Vec::new();
 
-    let Some(id) = primary_id else {
+    if !state.selected_tracks.is_empty() {
+        for id in &state.selected_tracks {
+            if let Some(i) = state.index_of_id(*id) {
+                rows.push(&state.tracks[i]);
+            }
+        }
+    } else if let Some(id) = state.selected_track {
+        if let Some(i) = state.index_of_id(id) {
+            rows.push(&state.tracks[i]);
+        }
+    }
+
+    rows
+}
+
+fn mixed_or_value<T: PartialEq + Copy>(
+    rows: &[&TrackRow],
+    getter: impl Fn(&TrackRow) -> T,
+    formatter: impl Fn(T) -> String,
+) -> String {
+    let Some(first) = rows.first() else {
+        return "—".to_string();
+    };
+
+    let first_value = getter(first);
+
+    if rows.iter().skip(1).all(|row| getter(row) == first_value) {
+        formatter(first_value)
+    } else {
+        mixed_display_string().to_string()
+    }
+}
+
+fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
+    let rows = selected_rows(state);
+
+    let Some(primary) = rows.first() else {
         return iced::widget::column![
             text("Metadata editor").size(18),
             text("No selection.").size(12)
@@ -91,43 +125,40 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
         .spacing(6);
     };
 
-    let Some(i) = state.index_of_id(id) else {
-        return iced::widget::column![
-            text("Metadata editor").size(18),
-            text("Invalid selection (rescan?).").size(12)
-        ]
-        .spacing(6);
-    };
+    let sel_count = rows.len();
 
-    let t = &state.tracks[i];
-    let path_line = format!("{}", t.path.display());
-
-    let sel_count = if !state.selected_tracks.is_empty() {
-        state.selected_tracks.len()
+    let path_line = if sel_count == 1 {
+        format!("{}", primary.path.display())
     } else {
-        1
+        mixed_display_string().to_string()
     };
 
     let technical_line = format!(
         "Artwork: {} | Duration: {} | Avg. Bitrate: {} | Sample Rate: {} | Channels: {}",
-        t.artwork_count,
-        fmt_duration(t.duration_ms),
-        fmt_bitrate_kbps(t.bitrate_kbps),
-        fmt_sample_rate_hz(t.sample_rate_hz),
-        fmt_channels(t.channels),
+        mixed_or_value(&rows, |t| t.artwork_count, |v| v.to_string()),
+        mixed_or_value(&rows, |t| t.duration_ms, fmt_duration),
+        mixed_or_value(&rows, |t| t.bitrate_kbps, fmt_bitrate_kbps),
+        mixed_or_value(&rows, |t| t.sample_rate_hz, fmt_sample_rate_hz),
+        mixed_or_value(&rows, |t| t.channels, fmt_channels),
     );
 
     let library_line = format!(
         "Rating: {} | Plays: {} | Compilation: {}",
-        t.rating
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".into()),
-        t.play_count
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".into()),
-        t.compilation
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".into()),
+        mixed_or_value(
+            &rows,
+            |t| t.rating,
+            |v| { v.map(|n| n.to_string()).unwrap_or_else(|| "-".into()) }
+        ),
+        mixed_or_value(
+            &rows,
+            |t| t.play_count,
+            |v| { v.map(|n| n.to_string()).unwrap_or_else(|| "-".into()) }
+        ),
+        mixed_or_value(
+            &rows,
+            |t| t.compilation,
+            |v| { v.map(|b| b.to_string()).unwrap_or_else(|| "-".into()) }
+        ),
     );
 
     iced::widget::column![

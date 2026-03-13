@@ -1,8 +1,8 @@
 //! gui/update/playback.rs
 //! GUI-playback engine bridge
 //!
-//! - `now_playing` and selection are `TrackId`, not Vec indices.
-//! - `PlayTrack` accepts a `TrackId` and looks up the current row by id.
+//! - 'now_playing' and selection are 'TrackId', not Vec indices.
+//! - 'PlayTrack' accepts a 'TrackId' and looks up the current row by id.
 //!
 //! Design goals:
 //! - GUI never touches rodio/symphonia directly.
@@ -122,7 +122,7 @@ fn sync_shuffled_ids(state: &mut Sonora) {
 }
 
 /// Rebuild the shuffle order from scratch for the current playback context,
-/// forcing `anchor` to be first if it exists in the context.
+/// forcing 'anchor' to be first if it exists in the context.
 ///
 /// This is intentionally aggressive: when the queue source changes, we prefer
 /// a fresh, correct shuffle order over trying to preserve a stale one.
@@ -235,7 +235,7 @@ fn event_matches_active(state: &Sonora, playback_id: u64) -> bool {
 }
 
 /// Switch to library queue context.
-/// If shuffle is enabled and `anchor` is provided, rebuild the shuffle queue immediately.
+/// If shuffle is enabled and 'anchor' is provided, rebuild the shuffle queue immediately.
 fn set_context_library(state: &mut Sonora, anchor: Option<TrackId>) {
     state.playback_context = PlaybackContext::Library;
 
@@ -247,7 +247,7 @@ fn set_context_library(state: &mut Sonora, anchor: Option<TrackId>) {
 }
 
 /// Switch to album queue context.
-/// If shuffle is enabled and `anchor` is provided, rebuild the shuffle queue immediately.
+/// If shuffle is enabled and 'anchor' is provided, rebuild the shuffle queue immediately.
 fn set_context_album(state: &mut Sonora, key: AlbumKey, anchor: Option<TrackId>) {
     state.playback_context = PlaybackContext::Album(key);
 

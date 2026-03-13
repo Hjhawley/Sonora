@@ -3,7 +3,7 @@
 //!
 //! Scan pipeline:
 //! - discover current filesystem paths + file facts
-//! - upsert them into SQLite, updating `present`, `mtime`, `size`
+//! - upsert them into SQLite, updating 'present', 'mtime', 'size'
 //! - load hydrated TrackRows with stable DB-backed ids
 
 use iced::Task;
