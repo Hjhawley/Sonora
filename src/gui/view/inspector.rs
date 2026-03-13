@@ -161,7 +161,7 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     iced::widget::column![
         text("Tag Editor").size(18),
         text(format!("Selected: {sel_count}")).size(12),
-        text("File Path: {path_line}").size(12),
+        text(format!("File Path: {path_line}")).size(12),
         text(technical_line).size(12),
         text(library_line).size(12),
     ]
