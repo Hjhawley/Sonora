@@ -119,7 +119,7 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
 
     let Some(primary) = rows.first() else {
         return iced::widget::column![
-            text("Metadata editor").size(18),
+            text("Tag Editor").size(18),
             text("No selection.").size(12)
         ]
         .spacing(6);
@@ -162,10 +162,9 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     );
 
     iced::widget::column![
-        text("Metadata editor").size(18),
+        text("Tag Editor").size(18),
         text(format!("Selected: {sel_count}")).size(12),
-        text("File path").size(12),
-        text(path_line).size(12),
+        text("File Path: {path_line}").size(12),
         text(technical_line).size(12),
         text(library_line).size(12),
     ]
@@ -338,7 +337,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     if !state.has_selection() {
         return container(
             iced::widget::column![
-                text("Metadata editor").size(18),
+                text("Tag Editor").size(18),
                 text("Select one or more tracks (center panel)."),
             ]
             .spacing(8),
