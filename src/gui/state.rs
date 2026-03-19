@@ -20,6 +20,8 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
+use super::query::{SortDirection, TrackQuery, TrackSortField};
+
 /// Dev only
 /* pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test"); */
 
@@ -200,7 +202,7 @@ pub(crate) struct Sonora {
     pub root_input: String,
     pub roots: Vec<PathBuf>,
 
-    // Library (display order)
+    // Library (canonical rows for current scope)
     pub tracks: Vec<TrackRow>,
 
     /// Cache: 'TrackId' -> current 'Vec' index.
@@ -211,6 +213,9 @@ pub(crate) struct Sonora {
 
     /// Cache: 'TrackId' -> decoded cover image handle (for quick UI rendering).
     pub cover_cache: BTreeMap<TrackId, iced::widget::image::Handle>,
+
+    // Track View query / display controls
+    pub track_query: TrackQuery,
 
     // Playback (core handle + UI state)
     pub playback: Option<PlaybackController>,
@@ -329,6 +334,8 @@ impl Sonora {
             track_index: BTreeMap::new(),
             album_groups: BTreeMap::new(),
             cover_cache: BTreeMap::new(),
+
+            track_query: TrackQuery::default(),
 
             playback: Some(playback_controller),
             playback_events: Some(RefCell::new(playback_events)),
@@ -514,6 +521,13 @@ pub(crate) enum Message {
     // Library scope / reloading
     SetLibraryScope(LibraryScope),
     ScopeLoaded(Result<(LibraryScope, Vec<TrackRow>, usize), String>),
+
+    // Track View query / sorting
+    TrackSearchChanged(String),
+    ClearTrackSearch,
+    SetTrackSortField(TrackSortField),
+    ToggleTrackSortDirection,
+    SetTrackSortDirection(SortDirection),
 
     // View + selection
     SetViewMode(ViewMode),

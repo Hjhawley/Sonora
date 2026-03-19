@@ -2,7 +2,6 @@
 //! Update logic (router).
 //!
 //! Route by TrackId, never by Vec index.
-//! This module should stay dumb: it just dispatches messages to the right handler.
 
 use iced::Task;
 
@@ -11,6 +10,7 @@ use super::state::{Message, Sonora};
 mod inspector;
 mod keyboard;
 mod playback;
+mod query;
 mod roots;
 mod save;
 mod scan;
@@ -38,6 +38,16 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         // Scope / library dataset
         Message::SetLibraryScope(scope) => selection::set_library_scope(state, scope),
         Message::ScopeLoaded(result) => selection::scope_loaded(state, result),
+
+        // Track View query / sorting
+        Message::TrackSearchChanged(value) => query::track_search_changed(state, value),
+        Message::ClearTrackSearch => query::clear_track_search(state),
+        Message::SetTrackSortField(field) => query::set_track_sort_field(state, field),
+        Message::ToggleTrackSortDirection => query::toggle_track_sort_direction(state),
+        Message::SetTrackSortDirection(dir) => {
+            state.track_query.sort_direction = dir;
+            Task::none()
+        }
 
         // View + selection
         Message::SetViewMode(mode) => selection::set_view_mode(state, mode),

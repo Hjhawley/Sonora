@@ -201,9 +201,9 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         let is_now_playing = state.now_playing == Some(id);
 
         let marker = if is_now_playing {
-            "▶"
+            "▷"
         } else if is_selected {
-            "●"
+            "*"
         } else {
             ""
         };

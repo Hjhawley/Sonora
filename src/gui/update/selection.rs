@@ -13,6 +13,7 @@ use iced::Task;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use super::super::query;
 use super::super::state::{AlbumKey, AlbumPressTarget, LibraryScope, Message, Sonora, ViewMode};
 use super::inspector::{clear_inspector, load_inspector_from_selection};
 use super::playback;
@@ -476,7 +477,7 @@ fn ordered_album_track_ids(state: &Sonora, key: &AlbumKey) -> Vec<TrackId> {
 
 fn ordered_selectable_track_ids(state: &Sonora) -> Vec<TrackId> {
     match state.view_mode {
-        ViewMode::Tracks => state.tracks.iter().filter_map(|t| t.id).collect(),
+        ViewMode::Tracks => query::track_ids_for_current_view(state),
         ViewMode::Albums => {
             if let Some(key) = &state.selected_album {
                 ordered_album_track_ids(state, key)
