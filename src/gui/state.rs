@@ -49,11 +49,12 @@ pub(crate) enum ViewMode {
     Tracks,
 }
 
-/// Library vs Hidden is a dataset/scope choice.
+/// Library / Hidden / Missing is a dataset/scope choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LibraryScope {
     Library,
     Hidden,
+    Missing,
 }
 
 /// Playback ordering policy.
@@ -555,7 +556,8 @@ pub(crate) enum Message {
     SaveFinishedBatch(Result<Vec<(TrackId, TrackRow)>, String>),
     RevertInspector,
 
-    // Sonora-only visibility
+    // Sonora-only visibility / DB record actions
     HideSelected,
     UnhideSelected,
+    DeleteSelectedFromSonora,
 }

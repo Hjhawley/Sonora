@@ -7,6 +7,7 @@
 //!   - grid when 'selected_album == None'
 //!   - album detail screen when 'selected_album == Some(...)'
 //! - Hidden/unhide is DB-backed and never touches the underlying file.
+//! - Missing rows can be deleted from Sonora's DB without touching disk.
 
 use iced::Task;
 use std::path::{Path, PathBuf};
@@ -30,6 +31,7 @@ pub(crate) fn set_library_scope(state: &mut Sonora, scope: LibraryScope) -> Task
     state.status = match scope {
         LibraryScope::Library => "Loading library...".to_string(),
         LibraryScope::Hidden => "Loading hidden tracks...".to_string(),
+        LibraryScope::Missing => "Loading missing tracks...".to_string(),
     };
 
     clear_selection_and_inspector(state);
@@ -54,13 +56,20 @@ pub(crate) fn scope_loaded(
             state.status = match (scope, state.tracks.len(), failures) {
                 (LibraryScope::Library, 0, _) => "Library is empty.".to_string(),
                 (LibraryScope::Hidden, 0, _) => "No hidden tracks.".to_string(),
+                (LibraryScope::Missing, 0, _) => "No missing tracks.".to_string(),
+
                 (LibraryScope::Library, n, 0) => format!("Loaded {n} library tracks."),
                 (LibraryScope::Hidden, n, 0) => format!("Loaded {n} hidden tracks."),
+                (LibraryScope::Missing, n, 0) => format!("Loaded {n} missing tracks."),
+
                 (LibraryScope::Library, n, f) => {
                     format!("Loaded {n} library tracks ({f} tag read failures).")
                 }
                 (LibraryScope::Hidden, n, f) => {
                     format!("Loaded {n} hidden tracks ({f} tag read failures).")
+                }
+                (LibraryScope::Missing, n, f) => {
+                    format!("Loaded {n} missing tracks ({f} tag read failures).")
                 }
             };
 
@@ -271,6 +280,11 @@ pub(crate) fn clear_selection(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn hide_selected(state: &mut Sonora) -> Task<Message> {
+    if state.library_scope != LibraryScope::Library {
+        state.status = "Only library tracks can be hidden.".to_string();
+        return Task::none();
+    }
+
     let ids = selected_ids(state);
     if ids.is_empty() {
         state.status = "Select one or more tracks first.".to_string();
@@ -303,6 +317,11 @@ pub(crate) fn hide_selected(state: &mut Sonora) -> Task<Message> {
 }
 
 pub(crate) fn unhide_selected(state: &mut Sonora) -> Task<Message> {
+    if state.library_scope != LibraryScope::Hidden {
+        state.status = "Only hidden tracks can be unhidden.".to_string();
+        return Task::none();
+    }
+
     let ids = selected_ids(state);
     if ids.is_empty() {
         state.status = "Select one or more hidden tracks first.".to_string();
@@ -326,6 +345,43 @@ pub(crate) fn unhide_selected(state: &mut Sonora) -> Task<Message> {
 
             for id in ids {
                 db.set_hidden(id, false)?;
+            }
+
+            load_scope_tracks(scope)
+        }),
+        Message::ScopeLoaded,
+    )
+}
+
+pub(crate) fn delete_selected_from_sonora(state: &mut Sonora) -> Task<Message> {
+    if state.library_scope != LibraryScope::Missing {
+        state.status = "Delete from Sonora is only available in Missing view.".to_string();
+        return Task::none();
+    }
+
+    let ids = selected_ids(state);
+    if ids.is_empty() {
+        state.status = "Select one or more missing tracks first.".to_string();
+        return Task::none();
+    }
+
+    state.status = if ids.len() == 1 {
+        "Deleting missing track from Sonora...".to_string()
+    } else {
+        format!("Deleting {} missing tracks from Sonora...", ids.len())
+    };
+
+    let scope = state.library_scope;
+
+    clear_selection_and_inspector(state);
+
+    Task::perform(
+        spawn_blocking(move || {
+            let db_path = core::db::default_db_path()?;
+            let db = core::db::Db::open(&db_path)?;
+
+            for id in ids {
+                db.delete_track(id)?;
             }
 
             load_scope_tracks(scope)
@@ -367,6 +423,7 @@ fn load_scope_tracks(scope: LibraryScope) -> Result<(LibraryScope, Vec<TrackRow>
     let result = match scope {
         LibraryScope::Library => core::load_visible_tracks_from_db(),
         LibraryScope::Hidden => core::load_hidden_tracks_from_db(),
+        LibraryScope::Missing => core::load_missing_tracks_from_db(),
     }?;
 
     Ok((scope, result.0, result.1))

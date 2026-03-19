@@ -148,7 +148,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         / 1000
         / 60;
 
-    let back_btn = button("◀︎ Back to albums")
+    let back_btn = button("◁ Back to albums")
         .on_press(Message::SetViewMode(super::super::state::ViewMode::Albums));
 
     let play_album_btn = button("Play Album").on_press(Message::PlayAlbum(key.clone()));

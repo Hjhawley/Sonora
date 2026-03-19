@@ -80,8 +80,9 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SaveFinishedBatch(result) => save::save_finished_batch(state, result),
         Message::RevertInspector => save::revert_inspector(state),
 
-        // Sonora-only visibility
+        // Sonora-only visibility / DB record actions
         Message::HideSelected => selection::hide_selected(state),
         Message::UnhideSelected => selection::unhide_selected(state),
+        Message::DeleteSelectedFromSonora => selection::delete_selected_from_sonora(state),
     }
 }

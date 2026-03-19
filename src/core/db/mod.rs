@@ -5,9 +5,10 @@
 //! Rules:
 //! - DB owns stable identity (TrackId).
 //! - Path is the natural unique key until fingerprinting exists.
-//! - 'present' = file currently discovered on disk
-//! - 'hidden' = user removed it from Sonora view, but file still exists
-//! - 'mtime' / 'size' prepare us for incremental scanning later
+//! - `present` = filesystem fact from the latest scan.
+//! - `hidden` = user intent to ignore a file in normal Sonora views.
+//! - Missing is represented as `present = 0`.
+//! - `mtime` / `size` prepare us for incremental scanning later.
 
 use std::path::{Path, PathBuf};
 
@@ -38,7 +39,7 @@ impl Db {
 }
 
 impl Db {
-    /// Upsert all discovered files.
+    /// Reconcile DB state against the latest discovered filesystem set.
     ///
     /// Behavior:
     /// - Mark everything missing first (`present = 0`)
@@ -47,17 +48,16 @@ impl Db {
     ///   - set `present = 1`
     ///   - update mtime/size
     /// - preserve `hidden`
-    /// - return `(TrackId, PathBuf)` in the same order as discovered input
-    pub fn upsert_discovered(
-        &mut self,
-        files: &[DiscoveredFile],
-    ) -> Result<Vec<(TrackId, PathBuf)>, String> {
+    ///
+    /// Important:
+    /// This function updates DB truth only. UI lists should be loaded from
+    /// `load_visible_paths()`, `load_hidden_paths()`, or `load_missing_paths()`
+    /// after reconciliation, rather than from the discovered set directly.
+    pub fn upsert_discovered(&mut self, files: &[DiscoveredFile]) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
 
         tx.execute("UPDATE tracks SET present = 0", [])
             .map_err(|e| e.to_string())?;
-
-        let mut out: Vec<(TrackId, PathBuf)> = Vec::with_capacity(files.len());
 
         {
             let mut insert = tx
@@ -70,10 +70,6 @@ impl Db {
                      SET present = 1, mtime = ?2, size = ?3
                      WHERE path = ?1",
                 )
-                .map_err(|e| e.to_string())?;
-
-            let mut select = tx
-                .prepare("SELECT id FROM tracks WHERE path = ?1")
                 .map_err(|e| e.to_string())?;
 
             for f in files {
@@ -90,17 +86,11 @@ impl Db {
                         f.size.map(|s| s as i64)
                     ])
                     .map_err(|e| e.to_string())?;
-
-                let id_i64: i64 = select
-                    .query_row(params![p_str.as_ref()], |row| row.get(0))
-                    .map_err(|e| e.to_string())?;
-
-                out.push((TrackId(id_i64), f.path.clone()));
             }
         }
 
         tx.commit().map_err(|e| e.to_string())?;
-        Ok(out)
+        Ok(())
     }
 
     /// Load currently visible library rows:
@@ -135,6 +125,10 @@ impl Db {
     }
 
     /// Future UI support: hidden list.
+    ///
+    /// Hidden means:
+    /// - file is still present on disk
+    /// - user intentionally removed it from normal Sonora views
     pub fn load_hidden_paths(&self) -> Result<Vec<(TrackId, PathBuf)>, String> {
         let mut stmt = self
             .conn
@@ -142,7 +136,7 @@ impl Db {
                 r#"
                 SELECT id, path
                 FROM tracks
-                WHERE hidden = 1
+                WHERE present = 1 AND hidden = 1
                 ORDER BY path
                 "#,
             )
@@ -164,6 +158,12 @@ impl Db {
     }
 
     /// Future UI support: missing list.
+    ///
+    /// Missing means:
+    /// - Sonora previously knew about this path
+    /// - latest scan did not find a file there
+    ///
+    /// This includes rows that were hidden before they went missing.
     pub fn load_missing_paths(&self) -> Result<Vec<(TrackId, PathBuf)>, String> {
         let mut stmt = self
             .conn
@@ -192,13 +192,23 @@ impl Db {
         Ok(out)
     }
 
-    /// Future UI support: hide / unhide without touching the file.
+    /// Hide / unhide without touching the file or its presence state.
     pub fn set_hidden(&self, id: TrackId, hidden: bool) -> Result<(), String> {
         self.conn
             .execute(
                 "UPDATE tracks SET hidden = ?2 WHERE id = ?1",
                 params![id.0, if hidden { 1 } else { 0 }],
             )
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Permanently delete a track record from Sonora's DB.
+    ///
+    /// This does NOT touch the actual file on disk.
+    pub fn delete_track(&self, id: TrackId) -> Result<(), String> {
+        self.conn
+            .execute("DELETE FROM tracks WHERE id = ?1", params![id.0])
             .map_err(|e| e.to_string())?;
         Ok(())
     }

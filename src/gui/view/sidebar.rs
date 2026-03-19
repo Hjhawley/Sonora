@@ -17,27 +17,33 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     };
 
     let library_btn = if state.library_scope == LibraryScope::Library {
-        button("✓ Library")
+        button("▷ Library")
     } else {
         button("Library").on_press(Message::SetLibraryScope(LibraryScope::Library))
     };
 
     let hidden_btn = if state.library_scope == LibraryScope::Hidden {
-        button("✓ Hidden")
+        button("▷ Hidden")
     } else {
         button("Hidden").on_press(Message::SetLibraryScope(LibraryScope::Hidden))
     };
 
-    let scope_toggle = row![library_btn, hidden_btn].spacing(8);
+    let missing_btn = if state.library_scope == LibraryScope::Missing {
+        button("▷ Missing")
+    } else {
+        button("Missing").on_press(Message::SetLibraryScope(LibraryScope::Missing))
+    };
+
+    let scope_toggle = row![library_btn, hidden_btn, missing_btn].spacing(8);
 
     let albums_btn = if state.view_mode == ViewMode::Albums {
-        button("✓ Album View")
+        button("▷ Album View")
     } else {
         button("Album View").on_press(Message::SetViewMode(ViewMode::Albums))
     };
 
     let tracks_btn = if state.view_mode == ViewMode::Tracks {
-        button("✓ Track View")
+        button("▷ Track View")
     } else {
         button("Track View").on_press(Message::SetViewMode(ViewMode::Tracks))
     };
@@ -57,6 +63,13 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
                 button("Unhide")
             } else {
                 button("Unhide").on_press(Message::UnhideSelected)
+            }
+        }
+        LibraryScope::Missing => {
+            if busy || !has_selection {
+                button("Delete from Sonora")
+            } else {
+                button("Delete from Sonora").on_press(Message::DeleteSelectedFromSonora)
             }
         }
     };
@@ -95,6 +108,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     let scope_label = match state.library_scope {
         LibraryScope::Library => "Library",
         LibraryScope::Hidden => "Hidden",
+        LibraryScope::Missing => "Missing",
     };
 
     let col = column![

@@ -3,15 +3,20 @@
 //!
 //! Scan pipeline:
 //! - discover current filesystem paths + file facts
-//! - upsert them into SQLite, updating 'present', 'mtime', 'size'
-//! - load hydrated TrackRows with stable DB-backed ids
+//! - reconcile them into SQLite, updating 'present', 'mtime', 'size'
+//! - reload the currently active scope from DB
+//! - hydrate TrackRows from those DB-backed ids/paths
+//!
+//! Important:
+//! The DB is the source of truth after reconciliation.
+//! UI should not be built directly from the raw discovered set.
 
 use iced::Task;
 use std::path::PathBuf;
 
 use crate::core;
 
-use super::super::state::{Message, Sonora, TEST_ROOT, ViewMode};
+use super::super::state::{LibraryScope, Message, Sonora, TEST_ROOT, ViewMode};
 use super::selection::{clear_selection_and_inspector, preload_album_covers};
 use super::util::spawn_blocking;
 use crate::core::types::TrackRow;
@@ -34,16 +39,25 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
         state.roots.clone()
     };
 
+    let scope = state.library_scope;
+
     Task::perform(
         spawn_blocking(move || {
             let discovered = core::scan_paths(&roots_to_scan)?;
 
             let db_path = core::db::default_db_path()?;
             let mut db = core::db::Db::open(&db_path)?;
-            let id_paths = db.upsert_discovered(&discovered)?;
+
+            // Reconcile filesystem facts into DB truth.
+            db.upsert_discovered(&discovered)?;
+
+            let id_paths = match scope {
+                LibraryScope::Library => db.load_visible_paths()?,
+                LibraryScope::Hidden => db.load_hidden_paths()?,
+                LibraryScope::Missing => db.load_missing_paths()?,
+            };
 
             let (rows, failures) = core::hydrate_tracks(id_paths);
-
             Ok((rows, failures))
         }),
         Message::ScanFinished,

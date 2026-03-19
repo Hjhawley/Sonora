@@ -140,7 +140,7 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     );
 
     let library_line = format!(
-        "Rating: {} | Plays: {} | Compilation: {}",
+        "Rating: {} | Plays: {}",
         mixed_or_value(
             &rows,
             |t| t.rating,

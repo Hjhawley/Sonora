@@ -81,3 +81,11 @@ pub fn load_hidden_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
     let id_paths = db.load_hidden_paths()?;
     Ok(hydrate_tracks(id_paths))
 }
+
+/// Load missing library rows from the DB without scanning for filesystem updates.
+pub fn load_missing_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
+    let db_path = db::default_db_path()?;
+    let db = db::Db::open(&db_path)?;
+    let id_paths = db.load_missing_paths()?;
+    Ok(hydrate_tracks(id_paths))
+}
