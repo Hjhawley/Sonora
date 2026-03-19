@@ -34,6 +34,7 @@ fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> 
     let heading = match state.library_scope {
         LibraryScope::Library => "All Albums",
         LibraryScope::Hidden => "Hidden Albums",
+        LibraryScope::Missing => "Missing Albums",
     };
 
     let albums: Vec<AlbumTile> = state
@@ -138,7 +139,6 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
     let first = &state.tracks[first_idx];
 
     let release_date = first.release_date.clone().unwrap_or_else(|| "-".into());
-    let genre = first.genre.clone().unwrap_or_else(|| "-".into());
 
     let total_tracks = idxs.len();
     let total_minutes: u32 = idxs
@@ -234,7 +234,5 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         list = list.push(row_widget);
     }
 
-    let tracks_panel = scrollable(list).height(Length::Fill);
-
-    column![back_btn, header, tracks_panel].spacing(18)
+    column![back_btn, header, scrollable(list).height(Length::Fill)].spacing(18)
 }

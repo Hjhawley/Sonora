@@ -20,8 +20,8 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
-/// Dev-only convenience root.
-pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test");
+/// Dev only
+/* pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test"); */
 
 /// What the inspector shows when selected files disagree.
 ///

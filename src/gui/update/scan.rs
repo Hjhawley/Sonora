@@ -16,7 +16,8 @@ use std::path::PathBuf;
 
 use crate::core;
 
-use super::super::state::{LibraryScope, Message, Sonora, TEST_ROOT, ViewMode};
+/* use super::super::state::{LibraryScope, Message, Sonora, TEST_ROOT, ViewMode}; */
+use super::super::state::{LibraryScope, Message, Sonora, ViewMode};
 use super::selection::{clear_selection_and_inspector, preload_album_covers};
 use super::util::spawn_blocking;
 use crate::core::types::TrackRow;
@@ -33,11 +34,13 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     // during scan is nicer UX (and avoids an empty UI if scan fails).
     clear_selection_and_inspector(state);
 
-    let roots_to_scan: Vec<PathBuf> = if state.roots.is_empty() {
+    /* let roots_to_scan: Vec<PathBuf> = if state.roots.is_empty() {
         vec![PathBuf::from(TEST_ROOT)]
     } else {
         state.roots.clone()
-    };
+    }; */
+
+    let roots_to_scan: Vec<PathBuf> = state.roots.clone();
 
     let scope = state.library_scope;
 

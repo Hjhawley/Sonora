@@ -18,6 +18,7 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     let title = match state.library_scope {
         LibraryScope::Library => "All Tracks",
         LibraryScope::Hidden => "Hidden Tracks",
+        LibraryScope::Missing => "Missing Tracks",
     };
 
     column![

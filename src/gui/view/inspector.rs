@@ -11,7 +11,7 @@ use iced::{Alignment, Color, Length, Theme};
 use super::super::state::{InspectorField as Field, Message, Sonora, mixed_display_string};
 use super::constants::LABEL_W;
 use super::widgets::fmt_duration;
-use crate::core::types::{TrackId, TrackRow};
+use crate::core::types::TrackRow;
 use crate::gui::util::{fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 
 /// Bright teal used for mixed-field placeholder text.
