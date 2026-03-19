@@ -5,10 +5,11 @@
 //! Rules:
 //! - DB owns stable identity (TrackId).
 //! - Path is the natural unique key until fingerprinting exists.
-//! - `present` = filesystem fact from the latest scan.
+//! - `present` = filesystem fact from the latest relevant scan.
 //! - `hidden` = user intent to ignore a file in normal Sonora views.
 //! - Missing is represented as `present = 0`.
 //! - `mtime` / `size` prepare us for incremental scanning later.
+//! - Library roots are persistent DB-backed configuration.
 
 use std::path::{Path, PathBuf};
 
@@ -39,25 +40,192 @@ impl Db {
 }
 
 impl Db {
-    /// Reconcile DB state against the latest discovered filesystem set.
+    /// Load enabled persistent library roots.
+    pub fn load_roots(&self) -> Result<Vec<PathBuf>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                r#"
+                SELECT path
+                FROM library_roots
+                WHERE enabled = 1
+                ORDER BY path
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let path: String = row.get(0)?;
+                Ok(PathBuf::from(path))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(out)
+    }
+
+    /// Add a persistent library root if it does not already exist.
+    pub fn add_root(&self, root: &Path) -> Result<(), String> {
+        let root_str = root.to_string_lossy();
+
+        self.conn
+            .execute(
+                r#"
+                INSERT INTO library_roots(path, enabled)
+                VALUES (?1, 1)
+                ON CONFLICT(path) DO UPDATE SET enabled = 1
+                "#,
+                params![root_str.as_ref()],
+            )
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    /// Remove a persistent library root from the DB.
+    pub fn remove_root(&self, root: &Path) -> Result<(), String> {
+        let root_str = root.to_string_lossy();
+
+        self.conn
+            .execute(
+                "DELETE FROM library_roots WHERE path = ?1",
+                params![root_str.as_ref()],
+            )
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    /// Delete track records under `removed_root`, but keep any track whose path
+    /// is still covered by at least one remaining root.
+    ///
+    /// Example:
+    /// - removed_root = D:\Music
+    /// - remaining_roots includes D:\Music\Soundtracks
+    ///
+    /// Then:
+    /// - D:\Music\Pink Floyd\Time.mp3 -> deleted
+    /// - D:\Music\Soundtracks\FF7\Prelude.mp3 -> kept
+    pub fn delete_uncovered_tracks_under_root(
+        &self,
+        removed_root: &Path,
+        remaining_roots: &[PathBuf],
+    ) -> Result<usize, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, path FROM tracks")
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let path: String = row.get(1)?;
+                Ok((TrackId(id), PathBuf::from(path)))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut ids_to_delete: Vec<TrackId> = Vec::new();
+
+        for row in rows {
+            let (id, path) = row.map_err(|e| e.to_string())?;
+
+            // Only consider tracks that were under the root being removed.
+            if !path.starts_with(removed_root) {
+                continue;
+            }
+
+            // Keep the track if any remaining root still covers it.
+            let still_covered = remaining_roots.iter().any(|root| path.starts_with(root));
+
+            if !still_covered {
+                ids_to_delete.push(id);
+            }
+        }
+
+        if ids_to_delete.is_empty() {
+            return Ok(0);
+        }
+
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| e.to_string())?;
+        {
+            let mut delete = tx
+                .prepare("DELETE FROM tracks WHERE id = ?1")
+                .map_err(|e| e.to_string())?;
+
+            for id in &ids_to_delete {
+                delete.execute(params![id.0]).map_err(|e| e.to_string())?;
+            }
+        }
+        tx.commit().map_err(|e| e.to_string())?;
+
+        Ok(ids_to_delete.len())
+    }
+}
+
+impl Db {
+    /// Reconcile DB state against the latest discovered filesystem set for a
+    /// specific set of scanned roots.
     ///
     /// Behavior:
-    /// - Mark everything missing first (`present = 0`)
+    /// - Only tracks under the scanned roots are eligible to be marked missing.
     /// - For discovered files:
     ///   - INSERT OR IGNORE by path
     ///   - set `present = 1`
-    ///   - update mtime/size
+    ///   - update `mtime` / `size`
     /// - preserve `hidden`
     ///
     /// Important:
-    /// This function updates DB truth only. UI lists should be loaded from
-    /// `load_visible_paths()`, `load_hidden_paths()`, or `load_missing_paths()`
-    /// after reconciliation, rather than from the discovered set directly.
-    pub fn upsert_discovered(&mut self, files: &[DiscoveredFile]) -> Result<(), String> {
+    /// This function updates DB truth only for the scanned roots. It does NOT
+    /// globally mark unrelated library entries missing.
+    pub fn upsert_discovered(
+        &mut self,
+        scanned_roots: &[PathBuf],
+        files: &[DiscoveredFile],
+    ) -> Result<(), String> {
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
 
-        tx.execute("UPDATE tracks SET present = 0", [])
-            .map_err(|e| e.to_string())?;
+        // Find all tracked rows that belong to the roots we are scanning,
+        // and mark only those rows missing up front.
+        let mut ids_under_scanned_roots: Vec<TrackId> = Vec::new();
+        {
+            let mut stmt = tx
+                .prepare("SELECT id, path FROM tracks")
+                .map_err(|e| e.to_string())?;
+
+            let rows = stmt
+                .query_map([], |row| {
+                    let id: i64 = row.get(0)?;
+                    let path: String = row.get(1)?;
+                    Ok((TrackId(id), PathBuf::from(path)))
+                })
+                .map_err(|e| e.to_string())?;
+
+            for row in rows {
+                let (id, path) = row.map_err(|e| e.to_string())?;
+                if scanned_roots.iter().any(|root| path.starts_with(root)) {
+                    ids_under_scanned_roots.push(id);
+                }
+            }
+        }
+
+        if !ids_under_scanned_roots.is_empty() {
+            let mut mark_missing = tx
+                .prepare("UPDATE tracks SET present = 0 WHERE id = ?1")
+                .map_err(|e| e.to_string())?;
+
+            for id in &ids_under_scanned_roots {
+                mark_missing
+                    .execute(params![id.0])
+                    .map_err(|e| e.to_string())?;
+            }
+        }
 
         {
             let mut insert = tx
@@ -124,8 +292,6 @@ impl Db {
         Ok(out)
     }
 
-    /// Future UI support: hidden list.
-    ///
     /// Hidden means:
     /// - file is still present on disk
     /// - user intentionally removed it from normal Sonora views
@@ -157,11 +323,9 @@ impl Db {
         Ok(out)
     }
 
-    /// Future UI support: missing list.
-    ///
     /// Missing means:
     /// - Sonora previously knew about this path
-    /// - latest scan did not find a file there
+    /// - latest relevant scan did not find a file there
     ///
     /// This includes rows that were hidden before they went missing.
     pub fn load_missing_paths(&self) -> Result<Vec<(TrackId, PathBuf)>, String> {

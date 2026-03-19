@@ -7,8 +7,8 @@
 //! - Add newer columns incrementally with `ALTER TABLE ... ADD COLUMN`.
 //!
 //! This is intentionally simple for now. If Sonora later gains richer schema
-//! evolution (playlists, smart playlists, roots, saved queues, etc.), this file
-//! is the natural place to grow explicit migration support.
+//! evolution (playlists, smart playlists, roots, saved queues, scan runs, etc.),
+//! this file is the natural place to grow explicit migration support.
 
 use rusqlite::Connection;
 
@@ -27,6 +27,12 @@ impl Db {
                     path    TEXT NOT NULL UNIQUE
                 );
 
+                CREATE TABLE IF NOT EXISTS library_roots (
+                    id          INTEGER PRIMARY KEY,
+                    path        TEXT NOT NULL UNIQUE,
+                    enabled     INTEGER NOT NULL DEFAULT 1
+                );
+
                 CREATE TABLE IF NOT EXISTS app_state (
                     key     TEXT PRIMARY KEY,
                     value   TEXT NOT NULL
@@ -39,6 +45,8 @@ impl Db {
         self.ensure_column("tracks", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column("tracks", "mtime", "INTEGER")?;
         self.ensure_column("tracks", "size", "INTEGER")?;
+
+        self.ensure_column("library_roots", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
 
         Ok(())
     }

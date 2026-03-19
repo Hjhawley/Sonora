@@ -27,20 +27,22 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
+    let roots_to_scan: Vec<PathBuf> = state.roots.clone();
+    if roots_to_scan.is_empty() {
+        state.status = "No library folders saved. Add a folder first.".to_string();
+        return Task::none();
+    }
+
     state.scanning = true;
-    state.status = "Scanning...".to_string();
+    state.status = format!(
+        "Scanning {} folder{}...",
+        roots_to_scan.len(),
+        if roots_to_scan.len() == 1 { "" } else { "s" }
+    );
 
     // Selection becomes invalid once new results arrive, but keeping tracks visible
     // during scan is nicer UX (and avoids an empty UI if scan fails).
     clear_selection_and_inspector(state);
-
-    /* let roots_to_scan: Vec<PathBuf> = if state.roots.is_empty() {
-        vec![PathBuf::from(TEST_ROOT)]
-    } else {
-        state.roots.clone()
-    }; */
-
-    let roots_to_scan: Vec<PathBuf> = state.roots.clone();
 
     let scope = state.library_scope;
 
@@ -51,8 +53,9 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
             let db_path = core::db::default_db_path()?;
             let mut db = core::db::Db::open(&db_path)?;
 
-            // Reconcile filesystem facts into DB truth.
-            db.upsert_discovered(&discovered)?;
+            // Reconcile filesystem facts into DB truth, but only for the roots
+            // actually scanned this run.
+            db.upsert_discovered(&roots_to_scan, &discovered)?;
 
             let id_paths = match scope {
                 LibraryScope::Library => db.load_visible_paths()?,

@@ -65,15 +65,7 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
 
     let clear_button = button(text("Clear").size(14)).on_press(Message::ClearTrackSearch);
 
-    let sort_dir_label = match state.track_query.sort_direction {
-        SortDirection::Asc => "↑",
-        SortDirection::Desc => "↓",
-    };
-
-    let sort_dir_button =
-        button(text(sort_dir_label).size(16)).on_press(Message::ToggleTrackSortDirection);
-
-    row![search, clear_button, sort_dir_button]
+    row![search, clear_button]
         .spacing(8)
         .align_y(Alignment::Center)
 }

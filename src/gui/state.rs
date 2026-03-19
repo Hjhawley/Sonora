@@ -286,23 +286,31 @@ impl Sonora {
     pub fn new() -> Self {
         let (playback_controller, playback_events) = start_playback();
 
-        let saved_volume = (|| -> Result<Option<f32>, String> {
+        let (saved_volume, roots) = (|| -> Result<(Option<f32>, Vec<PathBuf>), String> {
             let db_path = core::db::default_db_path()?;
             let db = core::db::Db::open(&db_path)?;
-            db.load_volume()
+            Ok((db.load_volume()?, db.load_roots()?))
         })()
-        .unwrap_or(None)
-        .unwrap_or(1.0)
-        .clamp(0.0, 1.0);
+        .unwrap_or((None, Vec::new()));
+
+        let saved_volume = saved_volume.unwrap_or(1.0).clamp(0.0, 1.0);
 
         let (tracks, status) = match core::load_visible_tracks_from_db() {
             Ok((tracks, failures)) => {
                 if tracks.is_empty() {
-                    (
-                        tracks,
-                        "Add a folder, then Scan. Existing library will appear here once scanned."
-                            .to_string(),
-                    )
+                    if roots.is_empty() {
+                        (
+                            tracks,
+                            "Add a folder, then Scan. Existing library will appear here once scanned."
+                                .to_string(),
+                        )
+                    } else {
+                        (
+                            tracks,
+                            "No tracks loaded yet. Press Scan to index your saved library folders."
+                                .to_string(),
+                        )
+                    }
                 } else if failures == 0 {
                     (
                         tracks.clone(),
@@ -327,7 +335,7 @@ impl Sonora {
             scanning: false,
 
             root_input: String::new(),
-            roots: Vec::new(),
+            roots,
 
             tracks,
 
