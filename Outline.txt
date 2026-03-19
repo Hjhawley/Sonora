@@ -1,145 +1,46 @@
-Outline
-
-Overall Structure (Cargo Workspace)
--------------------------------------
-sonora/
-├─ sonora-core/        (pure logic, no UI)
-├─ sonora-db/          (SQLite persistence)
-├─ sonora-ui/          (Iced GUI)
-└─ sonora/             (binary / app entry point)
-
-- UI never touches filesystem directly
-- Core never depends on Iced
-- All destructive actions go through preview + commit
-
-
-sonora-core (Application Logic)
----------------------------------
-sonora-core/
-├─ model/
-│  ├─ Track, Album, Artist, Playlist
-│  ├─ TrackId, AlbumId
-│  └─ TagKey, TagValue
-│
-├─ library/
-│  ├─ Folder import
-│  ├─ Recursive scan (.mp3 only initially)
-│  ├─ Detect new/changed/removed files (mtime + size)
-│
-├─ tags/
-│  ├─ Read ID3 tags
-│  ├─ Write ID3 tags
-│  ├─ Validation (missing/invalid tags)
-│
-├─ ops/
-│  ├─ TagEdit (user intent)
-│  ├─ PlannedOp (preview: before/after)
-│  ├─ CommittedOp (undo data)
-│  └─ Undo/redo journal
-│
-├─ playback/
-│  ├─ Play / pause / seek / stop
-│  └─ Thin wrapper over audio backend
-│
-└─ artwork/ (post-MVP)
-   ├─ Extract embedded art
-   ├─ Embed / replace artwork
-
-
-sonora-db (Persistence Layer)
---------------------------------
-sonora-db/
-├─ SQLite schema
-│  ├─ tracks
-│  ├─ albums
-│  ├─ playlists
-│  ├─ playcounts
-│  └─ scan_roots
-│
-├─ Migrations
-│
-└─ Repositories
-   ├─ TrackRepo
-   ├─ AlbumRepo
-   ├─ PlaylistRepo
-   └─ PlaycountRepo
-
-- Store indexed metadata
-- Store playlists + play counts
-- No business logic beyond queries/upserts
-
-
-sonora-ui (Iced GUI)
-----------------------
-sonora-ui/
-├─ App state
-│  ├─ Library state
-│  ├─ Selection state
-│  ├─ Edit/dirty state
-│  └─ Playback state
-│
-├─ Views
-│  ├─ Top bar (search, view mode)
-│  ├─ Sidebar (library, playlists)
-│  ├─ Center view (songs / albums)
-│  ├─ Inspector (tags, batch edit)
-│  └─ Now playing bar
-│
-└─ Messages + Commands
-   ├─ ScanLibrary
-   ├─ SelectTracks
-   ├─ PlanEdits
-   ├─ CommitEdits
-   ├─ Undo
-   └─ Playback controls
-
-- UI emits Message
-- Async Command calls core/db
-- Result updates UI state
-
-
-Key Workflows
-----------------
-Library Import:
-- User selects folder
-- Core scans files
-- Tags read -> DB upsert
-- UI updates library view
-
-Tag Editing:
-- User edits fields
-- Create TagEdit
-- Generate PlannedOp (preview)
-- User confirms -> commit -> write tags
-- Undo data recorded
-
-Playback:
-- UI sends play command
-- Core playback module handles audio
-- UI reflects playback state
-
-
-MVP:
------------------------
-- MP3 import + library scan
-- Tag read/write
-- Batch tag editing with preview + undo
-- Basic playback (play/pause/seek/volume)
-- Search + filter
-
-Post-MVP:
------------------------
-- Gapless playback
-- Smart playlists
-- ReplayGain
-- Online metadata lookup
-- Automation scripting
-- Advanced analytics
-
-
-Safety Guarantees
--------------------
-- No direct writes without preview
-- All batch operations reversible
-- File rename/edit requires confirmation
-- Errors never silently ignored
+├── core
+│   ├── db
+│   │   ├── mod.rs - Main SQLite layer for opening the DB, reconciling discovered files, loading visible/hidden/missing path lists, hide/unhide, delete-from-Sonora, and app-state persistence like volume. It talks to core/db/schema.rs, core/db/paths.rs, core/library.rs, and core/types.rs.
+│   │   ├── paths.rs - Returns the platform-specific path to sonora.sqlite3 and ensures its parent folder exists. It talks to core/db/mod.rs and anything that opens the DB through core.
+│   │   └── schema.rs - Creates base tables and applies lightweight additive migrations via ALTER TABLE ... ADD COLUMN. It only talks to core/db/mod.rs.
+│   ├── library.rs - Performs read-only filesystem discovery and returns lightweight DiscoveredFile records with path, mtime, and size. It talks to core/mod.rs and is used indirectly by gui/update/scan.rs through core::scan_paths().
+│   ├── mod.rs - Exposes core modules and provides the main helper functions for scanning paths, hydrating (TrackId, PathBuf) pairs into TrackRows, and loading visible, hidden, and missing track sets from the DB. It talks to core/library.rs, core/db/mod.rs, core/tags/read.rs, and core/types.rs.
+│   ├── playback
+│   │   ├── decoder
+│   │   │   ├── mod.rs - Opens a file with Symphonia, probes the default audio track, computes duration if possible, and constructs a seekable SymphoniaSource. It talks to core/playback/decoder/source.rs, Symphonia, and core/playback/engine.rs.
+│   │   │   └── source.rs - Implements the streaming Symphonia decoder that exposes decoded audio as a rodio::Source. It talks to Symphonia types, rodio’s Source trait, and is created by core/playback/decoder/mod.rs.
+│   │   ├── engine.rs - Implements the playback transport loop, command handling, queueing, seeking, sink management, and event emission. It talks to core/playback/decoder/mod.rs, rodio, and core/playback/mod.rs through PlayerCommand and PlayerEvent.
+│   │   └── mod.rs - Defines the public playback API: PlaybackController, PlayerCommand, PlayerEvent, and start_playback(). It talks to core/playback/engine.rs, core/playback/decoder/*, and whatever GUI code sends playback commands or receives playback events.
+│   ├── probe.rs - Probes read-only technical media properties like Duration, Avg. Bitrate, Sample Rate, and Channels, with MP3-specific parsing and Symphonia fallback. It talks to core/tags/read.rs, Symphonia, and standard file I/O.
+│   ├── tags
+│   │   ├── art.rs - Reads the first embedded picture from an MP3 tag and returns its bytes plus MIME type. It talks to the id3 crate and is called by GUI cover-loading code through core::tags::read_embedded_art.
+│   │   ├── mod.rs - Defines the public metadata-backend surface by re-exporting tag read, write, and embedded-art functions, plus crate-visible release-date helpers. It talks to core/tags/art.rs, read.rs, util.rs, and write.rs.
+│   │   ├── read.rs - Reads ID3 metadata, merges it with probed technical properties and bitrate fallbacks, and constructs a TrackRow with id: None. It talks to core/probe.rs, core/types.rs, core/tags/util.rs, and the id3 crate.
+│   │   ├── util.rs - Provides small shared helpers for parsing slash-pair numbers, bool-ish values, big-endian counters, and normalizing/extracting release dates. It talks to core/tags/read.rs, core/tags/write.rs, and is also re-exported through core/tags/mod.rs.
+│   │   └── write.rs - Writes Sonora’s curated subset of TrackRow fields back into an MP3’s ID3 tags, replacing or removing managed frames as needed. It talks to core/types.rs, core/tags/util.rs, and the id3 crate.
+│   └── types.rs - Defines the canonical app-level data model, especially TrackId and TrackRow. It is produced/consumed by the tags layer, stored in GUI state, and rendered throughout gui/view/*.
+├── gui
+│   ├── mod.rs - Defines the top-level GUI module boundary, exposing only frontend concerns: state, subscriptions, update logic, view logic, and UI helpers. It talks to gui/state.rs, gui/subscription.rs, gui/update/mod.rs, gui/util.rs, and gui/view/mod.rs, then re-exports the entry points main.rs needs.
+│   ├── state.rs - Defines the main Sonora app state, message enum, view/scope/playback enums, and startup behavior for loading the visible library from DB. It talks to core/mod.rs, core/playback APIs, and is consumed by all GUI update/view files.
+│   ├── subscription.rs - Creates the app’s background subscriptions: a periodic playback tick when the playback engine exists, and a global keyboard event listener. It talks to gui/state.rs and emits Message::TickPlayback, Message::KeyboardEvent, and Message::Noop.
+│   ├── update
+│   │   ├── inspector.rs - Maintains inspector draft state, applies mixed-selection semantics, and loads selected track data into the editable inspector fields. It talks to gui/state.rs, gui/util.rs for filename fallback, and core/types.rs through the selected TrackRows already in state.
+│   │   ├── keyboard.rs - Handles global keyboard events, updates modifier-key state, and maps shortcuts to selection, playback, and save actions. It talks to gui/state.rs, gui/update/selection.rs, gui/update/playback.rs, and gui/update/save.rs.
+│   │   ├── mod.rs - Routes incoming Message variants to the appropriate update submodule. It talks to gui/update/scan.rs, selection.rs, playback.rs, inspector.rs, save.rs, keyboard.rs, and roots.rs.
+│   │   ├── playback.rs - GUI-side playback controller: it decides what should play next, what the queue means (Library vs Album), and how shuffle/repeat/seek/volume should behave, while delegating the actual audio work to the core playback engine. It talks to gui/state.rs, core/playback/mod.rs, and core/db/mod.rs for persisted volume, and it updates playback-related UI state in response to PlayerEvents from the engine.
+│   │   ├── roots.rs - Handles root-folder input changes plus add/remove root actions, including directory validation and duplicate prevention. It talks to gui/state.rs and updates only in-memory root state/status.
+│   │   ├── save.rs - Turns the inspector draft into actual TrackRow writes, handles single/batch saves, re-reads files after writing, and updates in-memory rows only after successful disk writes. It talks to gui/state.rs, gui/util.rs, gui/update/inspector.rs, core/tags/write.rs, core/tags/read.rs, and core/types.rs.
+│   │   ├── scan.rs - Runs the async scan flow: discover files, reconcile DB state, reload visible rows, hydrate them, and update UI state. It talks to core/mod.rs, core/db/mod.rs, gui/state.rs, and gui/update/selection.rs.
+│   │   ├── selection.rs - Handles scope switching, track/album selection, range selection, hide/unhide, delete-from-Sonora for missing rows, and cover loading. It talks to gui/state.rs, core/mod.rs, core/db/mod.rs, core::tags::read_embedded_art, gui/update/inspector.rs, gui/update/playback.rs, and gui/update/util.rs.
+│   │   └── util.rs - Provides a tiny async helper for running blocking work on a background thread and awaiting the result. It is used by update modules that need off-thread work, such as scan, selection, and save flows.
+│   ├── util.rs - Contains pure GUI helpers for fallback title generation, formatting, and parsing input values. It talks to core/tags utilities, core/types.rs, and GUI view/update code.
+│   └── view
+│       ├── albums.rs - Renders the album grid or album detail screen depending on selection, and emits album/tile/header/track press messages. It talks to gui/state.rs, gui/util.rs, gui/view/widgets.rs, and gui/view/constants.rs.
+│       ├── center.rs - Routes the center panel to either Track View or Album View based on state.view_mode. It talks to gui/state.rs, gui/view/tracks.rs, and gui/view/albums.rs.
+│       ├── constants.rs - Defines layout and sizing constants for the window, sidebar, playback bar, editor, track rows, album grid, and artwork. It is consumed by main.rs and multiple files under gui/view/*.
+│       ├── inspector.rs - Renders the right-side tag editor, including mixed-state inputs and the technical metadata header. It talks to gui/state.rs, gui/util.rs, and gui/view/widgets.rs.
+│       ├── mod.rs - Acts as the top-level GUI renderer, composing the playback bar, sidebar, center panel, and inspector into the full app layout. It talks to gui/view/sidebar.rs, center.rs, inspector.rs, widgets.rs, constants.rs, and gui/state.rs.
+│       ├── sidebar.rs - Renders the left sidebar with scan, scope, view-mode, hide/unhide, and root-folder controls. It talks to gui/state.rs and emits Messages handled by gui/update/*.
+│       ├── tracks.rs - Renders the track-table center view for the current scope and emits TrackPressed(id) on clicks. It talks to gui/state.rs, gui/util.rs, and gui/view/widgets.rs.
+│       └── widgets.rs - Provides reusable view helpers such as duration formatting, cover thumbnails/placeholders, simple field-row builders, and the bottom playback bar. It talks to gui/state.rs, gui/view/constants.rs, and emits playback-related Messages through UI controls.
+└── main.rs - Bootstraps the Iced application, sets window settings, and wires together Sonora::default, update, view, and subscription. It talks to gui/mod.rs through its re-exported entry points, and also uses gui/view/constants.rs for window sizing.
