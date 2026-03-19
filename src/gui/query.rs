@@ -4,8 +4,10 @@
 //!
 //! Important:
 //! - This does NOT mutate app state.
-//! - This derives a display order from canonical in-memory 'TrackRow's.
-//! - Track View selection/navigation should use the same derived order.
+//! - This derives display order and playback order from canonical in-memory
+//!   'TrackRow's.
+//! - Track View selection/navigation should use display order.
+//! - Library playback queue should use sort order, but ignore search text.
 
 use std::cmp::Ordering;
 
@@ -59,21 +61,38 @@ impl Default for TrackQuery {
     }
 }
 
-/// Ordered, filtered Track View ids for the current dataset/scope.
+/// Ordered + filtered Track View ids for the current dataset/scope.
+/// This is what the user sees in Track View.
 pub(crate) fn track_ids_for_current_view(state: &Sonora) -> Vec<TrackId> {
+    track_ids_with_options(state, true)
+}
+
+/// Ordered library playback ids for the current dataset/scope.
+/// This respects the current sort field/direction, but intentionally ignores
+/// search filtering so temporary narrowing does not redefine the queue.
+pub(crate) fn track_ids_for_playback_queue(state: &Sonora) -> Vec<TrackId> {
+    track_ids_with_options(state, false)
+}
+
+fn track_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
     let mut ids: Vec<TrackId> = state
         .tracks
         .iter()
         .filter_map(|t| t.id)
         .filter(|id| {
-            state
-                .track_by_id(*id)
-                .is_some_and(|row| row_matches_query(row, &state.track_query))
+            let Some(row) = state.track_by_id(*id) else {
+                return false;
+            };
+
+            if apply_search {
+                row_matches_query(row, &state.track_query)
+            } else {
+                true
+            }
         })
         .collect();
 
     ids.sort_by(|a, b| compare_track_ids(state, *a, *b));
-
     ids
 }
 

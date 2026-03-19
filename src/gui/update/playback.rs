@@ -8,12 +8,18 @@
 //! - GUI never touches rodio/symphonia directly.
 //! - All IO / timing is driven by the engine + TickPlayback polling.
 //! - Engine owns continuous playback; GUI provides queue policy.
+//!
+//! Queue policy:
+//! - Track View display order = sort + search
+//! - Library playback order = sort only (search does NOT exclude tracks)
+//! - Album playback order = album order
 
 use iced::Task;
 use rand::seq::SliceRandom;
 use std::collections::BTreeSet;
 use std::path::Path;
 
+use super::super::query;
 use super::super::state::{AlbumKey, Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
 use crate::core::types::TrackId;
@@ -51,7 +57,7 @@ fn persist_volume(volume: f32) {
 }
 
 fn visible_track_ids(state: &Sonora) -> Vec<TrackId> {
-    state.tracks.iter().filter_map(|t| t.id).collect()
+    query::track_ids_for_playback_queue(state)
 }
 
 fn ordered_album_track_ids(state: &Sonora, key: &AlbumKey) -> Vec<TrackId> {
