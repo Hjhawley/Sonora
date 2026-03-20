@@ -10,6 +10,7 @@
 //! - Library playback queue should use sort order, but ignore search text.
 
 use std::cmp::Ordering;
+use std::time::Instant;
 
 use crate::core::types::{TrackId, TrackRow};
 
@@ -75,6 +76,8 @@ pub(crate) fn track_ids_for_playback_queue(state: &Sonora) -> Vec<TrackId> {
 }
 
 fn track_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
+    let started = Instant::now();
+
     let mut ids: Vec<TrackId> = state
         .tracks
         .iter()
@@ -92,7 +95,25 @@ fn track_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
         })
         .collect();
 
+    let filtered_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    let sort_started = Instant::now();
     ids.sort_by(|a, b| compare_track_ids(state, *a, *b));
+    let sort_ms = sort_started.elapsed().as_secs_f64() * 1000.0;
+
+    let total_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    eprintln!(
+        "[PERF][query] apply_search={} total_tracks={} result_ids={} filter_ms={:.2} sort_ms={:.2} total_ms={:.2} search='{}'",
+        apply_search,
+        state.tracks.len(),
+        ids.len(),
+        filtered_ms,
+        sort_ms,
+        total_ms,
+        state.track_query.search_text
+    );
+
     ids
 }
 

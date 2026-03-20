@@ -5,6 +5,8 @@
 //! - Display order is derived from Track View query/sort state.
 //! - Clicks emit messages by stable id.
 
+use std::time::Instant;
+
 use iced::widget::{
     Column, Row, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
@@ -29,13 +31,19 @@ const GENRE_W: f32 = 140.0;
 const LEN_W: f32 = 70.0;
 
 pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
+    let started = Instant::now();
+
     let title = match state.library_scope {
         LibraryScope::Library => "All Tracks",
         LibraryScope::Hidden => "Hidden Tracks",
         LibraryScope::Missing => "Missing Tracks",
     };
 
-    let visible_count = query::track_ids_for_current_view(state).len();
+    let ids_started = Instant::now();
+    let visible_ids = query::track_ids_for_current_view(state);
+    let ids_ms = ids_started.elapsed().as_secs_f64() * 1000.0;
+
+    let visible_count = visible_ids.len();
     let total_count = state.tracks.iter().filter(|t| t.id.is_some()).count();
 
     let count_label = if state.track_query.search_text.trim().is_empty() {
@@ -44,12 +52,25 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
         format!("{visible_count} of {total_count} tracks")
     };
 
+    let controls = build_track_controls(state);
+
+    let table_started = Instant::now();
+    let table = build_tracks_table(state, &visible_ids).height(Length::Fill);
+    let table_ms = table_started.elapsed().as_secs_f64() * 1000.0;
+
+    let total_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    eprintln!(
+        "[PERF][view::tracks] visible_ids={} total_tracks={} ids_ms={:.2} table_ms={:.2} total_ms={:.2}",
+        visible_count, total_count, ids_ms, table_ms, total_ms
+    );
+
     column![
         row![text(title).size(18), text(count_label).size(14),]
             .spacing(12)
             .align_y(Alignment::Center),
-        build_track_controls(state),
-        build_tracks_table(state).height(Length::Fill),
+        controls,
+        table,
     ]
     .spacing(12)
 }
@@ -70,7 +91,12 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
         .align_y(Alignment::Center)
 }
 
-fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
+fn build_tracks_table<'a>(
+    state: &'a Sonora,
+    visible_ids: &[crate::core::types::TrackId],
+) -> iced::widget::Scrollable<'a, Message> {
+    let started = Instant::now();
+
     let header = row![
         text("").size(HEADER_TEXT).width(Length::Fixed(MARKER_W)),
         sort_header_button(
@@ -135,7 +161,9 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
 
     let mut col = column![header].spacing(TRACK_LIST_SPACING);
 
-    for id in query::track_ids_for_current_view(state) {
+    let row_loop_started = Instant::now();
+
+    for &id in visible_ids {
         let Some(t) = state.track_by_id(id) else {
             continue;
         };
@@ -194,6 +222,16 @@ fn build_tracks_table(state: &Sonora) -> iced::widget::Scrollable<'_, Message> {
 
         col = col.push(row_widget);
     }
+
+    let row_loop_ms = row_loop_started.elapsed().as_secs_f64() * 1000.0;
+    let total_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+    eprintln!(
+        "[PERF][view::tracks_table] rendered_rows={} row_loop_ms={:.2} total_ms={:.2}",
+        visible_ids.len(),
+        row_loop_ms,
+        total_ms
+    );
 
     scrollable(col).height(Length::Fill)
 }
