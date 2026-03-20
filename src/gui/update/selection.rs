@@ -13,7 +13,6 @@ use iced::Task;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use super::super::query;
 use super::super::state::{AlbumKey, AlbumPressTarget, LibraryScope, Message, Sonora, ViewMode};
 use super::inspector::{clear_inspector, load_inspector_from_selection};
 use super::playback;
@@ -51,7 +50,7 @@ pub(crate) fn scope_loaded(
         Ok((scope, rows, failures)) => {
             state.library_scope = scope;
             state.tracks = rows;
-            state.rebuild_library_derived_state();
+            state.rebuild_library_caches();
             clear_selection_and_inspector(state);
 
             state.status = match (scope, state.tracks.len(), failures) {
@@ -477,7 +476,7 @@ fn ordered_album_track_ids(state: &Sonora, key: &AlbumKey) -> Vec<TrackId> {
 
 fn ordered_selectable_track_ids(state: &Sonora) -> Vec<TrackId> {
     match state.view_mode {
-        ViewMode::Tracks => query::track_ids_for_current_view(state),
+        ViewMode::Tracks => state.track_view_ids.clone(),
         ViewMode::Albums => {
             if let Some(key) = &state.selected_album {
                 ordered_album_track_ids(state, key)

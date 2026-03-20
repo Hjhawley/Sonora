@@ -20,7 +20,10 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
-use super::query::{SortDirection, TrackQuery, TrackSortField};
+use super::query::{
+    QueryTrackCache, SortDirection, TrackQuery, TrackSortField, build_playback_queue_ids,
+    build_query_cache_rows, build_track_view_ids,
+};
 
 /// Dev only
 /* pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test"); */
@@ -208,6 +211,10 @@ pub(crate) struct Sonora {
     /// Cache: 'TrackId' -> current 'Vec' index.
     pub track_index: BTreeMap<TrackId, usize>,
 
+    /// Cache: one precomputed normalized query/sort row per entry in `tracks`.
+    /// This is aligned by Vec index with `tracks`.
+    pub query_rows: Vec<QueryTrackCache>,
+
     /// Cache: 'AlbumKey' -> ordered list of 'TrackId's in that album group.
     pub album_groups: BTreeMap<AlbumKey, Vec<TrackId>>,
 
@@ -216,6 +223,13 @@ pub(crate) struct Sonora {
 
     // Track View query / display controls
     pub track_query: TrackQuery,
+
+    /// Cached Track View ids after applying current search + sort.
+    pub track_view_ids: Vec<TrackId>,
+
+    /// Cached library playback ids after applying current sort only
+    /// (search intentionally ignored).
+    pub playback_queue_ids: Vec<TrackId>,
 
     // Playback (core handle + UI state)
     pub playback: Option<PlaybackController>,
@@ -340,10 +354,13 @@ impl Sonora {
             tracks,
 
             track_index: BTreeMap::new(),
+            query_rows: Vec::new(),
             album_groups: BTreeMap::new(),
             cover_cache: BTreeMap::new(),
 
             track_query: TrackQuery::default(),
+            track_view_ids: Vec::new(),
+            playback_queue_ids: Vec::new(),
 
             playback: Some(playback_controller),
             playback_events: Some(RefCell::new(playback_events)),
@@ -383,7 +400,7 @@ impl Sonora {
             inspector_mixed: BTreeMap::new(),
         };
 
-        s.rebuild_library_derived_state();
+        s.rebuild_library_caches();
 
         if let Some(controller) = &s.playback {
             controller.send(crate::core::playback::PlayerCommand::SetVolume(s.volume));
@@ -494,9 +511,20 @@ impl Sonora {
         }
     }
 
+    pub fn rebuild_track_query_index(&mut self) {
+        self.query_rows = build_query_cache_rows(&self.tracks);
+    }
+
+    pub fn rebuild_track_query_caches(&mut self) {
+        self.track_view_ids = build_track_view_ids(self);
+        self.playback_queue_ids = build_playback_queue_ids(self);
+    }
+
     #[inline]
     pub fn rebuild_library_caches(&mut self) {
         self.rebuild_library_derived_state();
+        self.rebuild_track_query_index();
+        self.rebuild_track_query_caches();
     }
 }
 

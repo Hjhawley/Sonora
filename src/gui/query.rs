@@ -8,6 +8,10 @@
 //!   'TrackRow's.
 //! - Track View selection/navigation should use display order.
 //! - Library playback queue should use sort order, but ignore search text.
+//!
+//! Optimization:
+//! - Precompute normalized query/sort fields once per dataset change.
+//! - Rebuild only id lists when search/sort changes.
 
 use std::cmp::Ordering;
 use std::time::Instant;
@@ -62,53 +66,105 @@ impl Default for TrackQuery {
     }
 }
 
-/// Ordered + filtered Track View ids for the current dataset/scope.
-/// This is what the user sees in Track View.
-pub(crate) fn track_ids_for_current_view(state: &Sonora) -> Vec<TrackId> {
-    track_ids_with_options(state, true)
+/// Precomputed normalized query/sort data for one `TrackRow`.
+///
+/// This is aligned by Vec index with `Sonora::tracks`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct QueryTrackCache {
+    pub title: String,
+    pub title_sort: String,
+    pub artist: String,
+    pub artist_sort: String,
+    pub album: String,
+    pub album_sort: String,
+    pub album_artist: String,
+    pub album_artist_sort: String,
+    pub release_date: String,
+    pub genre: String,
+    pub search_blob: String,
+
+    pub year: u32,
+    pub disc_no: u32,
+    pub track_no: u32,
+    pub duration_ms: u64,
 }
 
-/// Ordered library playback ids for the current dataset/scope.
+pub(crate) fn build_query_cache_rows(tracks: &[TrackRow]) -> Vec<QueryTrackCache> {
+    tracks.iter().map(build_query_cache_row).collect()
+}
+
+/// Cached Track View ids for the current dataset/scope.
+/// This is what the user sees in Track View.
+pub(crate) fn track_ids_for_current_view(state: &Sonora) -> Vec<TrackId> {
+    state.track_view_ids.clone()
+}
+
+/// Cached library playback ids for the current dataset/scope.
 /// This respects the current sort field/direction, but intentionally ignores
 /// search filtering so temporary narrowing does not redefine the queue.
 pub(crate) fn track_ids_for_playback_queue(state: &Sonora) -> Vec<TrackId> {
-    track_ids_with_options(state, false)
+    state.playback_queue_ids.clone()
 }
 
-fn track_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
+/// Recompute Track View ids from precomputed rows using current search + sort.
+pub(crate) fn build_track_view_ids(state: &Sonora) -> Vec<TrackId> {
+    build_ids_with_options(state, true)
+}
+
+/// Recompute library playback ids from precomputed rows using current sort only.
+pub(crate) fn build_playback_queue_ids(state: &Sonora) -> Vec<TrackId> {
+    build_ids_with_options(state, false)
+}
+
+fn build_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
     let started = Instant::now();
 
-    let mut ids: Vec<TrackId> = state
+    let mut items: Vec<(TrackId, usize)> = state
         .tracks
         .iter()
-        .filter_map(|t| t.id)
-        .filter(|id| {
-            let Some(row) = state.track_by_id(*id) else {
-                return false;
-            };
+        .enumerate()
+        .filter_map(|(i, track)| {
+            let id = track.id?;
+            let q = state.query_rows.get(i)?;
 
-            if apply_search {
-                row_matches_query(row, &state.track_query)
-            } else {
-                true
+            if apply_search && !query_row_matches(q, &state.track_query) {
+                return None;
             }
+
+            Some((id, i))
         })
         .collect();
 
-    let filtered_ms = started.elapsed().as_secs_f64() * 1000.0;
+    let filter_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     let sort_started = Instant::now();
-    ids.sort_by(|a, b| compare_track_ids(state, *a, *b));
+    items.sort_by(|(id_a, idx_a), (id_b, idx_b)| {
+        let qa = &state.query_rows[*idx_a];
+        let qb = &state.query_rows[*idx_b];
+
+        let base = compare_query_rows(qa, qb, state.track_query.sort_field)
+            .then_with(|| compare_query_rows(qa, qb, TrackSortField::Album))
+            .then_with(|| compare_query_rows(qa, qb, TrackSortField::TrackNo))
+            .then_with(|| compare_query_rows(qa, qb, TrackSortField::Title))
+            .then_with(|| id_a.cmp(id_b));
+
+        match state.track_query.sort_direction {
+            SortDirection::Asc => base,
+            SortDirection::Desc => base.reverse(),
+        }
+    });
     let sort_ms = sort_started.elapsed().as_secs_f64() * 1000.0;
+
+    let ids: Vec<TrackId> = items.into_iter().map(|(id, _)| id).collect();
 
     let total_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     eprintln!(
-        "[PERF][query] apply_search={} total_tracks={} result_ids={} filter_ms={:.2} sort_ms={:.2} total_ms={:.2} search='{}'",
+        "[PERF][query::rebuild] apply_search={} total_tracks={} result_ids={} filter_ms={:.2} sort_ms={:.2} total_ms={:.2} search='{}'",
         apply_search,
         state.tracks.len(),
         ids.len(),
-        filtered_ms,
+        filter_ms,
         sort_ms,
         total_ms,
         state.track_query.search_text
@@ -117,197 +173,161 @@ fn track_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
     ids
 }
 
+fn build_query_cache_row(row: &TrackRow) -> QueryTrackCache {
+    let title = normalized_title(row);
+    let title_sort = normalized_title_sort(row);
+    let artist = normalized_artist(row);
+    let artist_sort = normalized_artist_sort(row);
+    let album = normalized_album(row);
+    let album_sort = normalized_album_sort(row);
+    let album_artist = normalized_album_artist(row);
+    let album_artist_sort = normalized_album_artist_sort(row);
+    let release_date = normalized_release_date(row);
+    let genre = normalized_genre(row);
+
+    let search_blob = [
+        title.as_str(),
+        artist.as_str(),
+        album.as_str(),
+        album_artist.as_str(),
+        genre.as_str(),
+        release_date.as_str(),
+    ]
+    .join(" ");
+
+    QueryTrackCache {
+        title,
+        title_sort,
+        artist,
+        artist_sort,
+        album,
+        album_sort,
+        album_artist,
+        album_artist_sort,
+        release_date,
+        genre,
+        search_blob,
+        year: row.year.unwrap_or(0).max(0) as u32,
+        disc_no: row.disc_no.unwrap_or(0),
+        track_no: row.track_no.unwrap_or(0),
+        duration_ms: row.duration_ms.unwrap_or(0) as u64,
+    }
+}
+
 #[inline]
-pub(crate) fn row_matches_query(row: &TrackRow, query: &TrackQuery) -> bool {
+fn query_row_matches(row: &QueryTrackCache, query: &TrackQuery) -> bool {
     let raw = query.search_text.trim();
     if raw.is_empty() {
         return true;
     }
 
-    let haystack = searchable_blob(row);
     raw.split_whitespace()
         .map(normalize_for_match)
-        .all(|term| !term.is_empty() && haystack.contains(&term))
+        .all(|term| !term.is_empty() && row.search_blob.contains(&term))
 }
 
-fn compare_track_ids(state: &Sonora, a: TrackId, b: TrackId) -> Ordering {
-    let Some(ta) = state.track_by_id(a) else {
-        return a.cmp(&b);
-    };
-    let Some(tb) = state.track_by_id(b) else {
-        return a.cmp(&b);
-    };
-
-    let base = compare_rows_by_field(ta, tb, state.track_query.sort_field)
-        .then_with(|| compare_rows_by_field(ta, tb, TrackSortField::Album))
-        .then_with(|| compare_rows_by_field(ta, tb, TrackSortField::TrackNo))
-        .then_with(|| compare_rows_by_field(ta, tb, TrackSortField::Title))
-        .then_with(|| a.cmp(&b));
-
-    match state.track_query.sort_direction {
-        SortDirection::Asc => base,
-        SortDirection::Desc => base.reverse(),
-    }
-}
-
-fn compare_rows_by_field(a: &TrackRow, b: &TrackRow, field: TrackSortField) -> Ordering {
+fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSortField) -> Ordering {
     match field {
-        TrackSortField::TrackNo => (
-            a.disc_no.unwrap_or(0),
-            a.track_no.unwrap_or(0),
-            normalized_title(a),
-        )
-            .cmp(&(
-                b.disc_no.unwrap_or(0),
-                b.track_no.unwrap_or(0),
-                normalized_title(b),
-            )),
+        TrackSortField::TrackNo => {
+            (a.disc_no, a.track_no, &a.title).cmp(&(b.disc_no, b.track_no, &b.title))
+        }
 
-        TrackSortField::Title => (
-            normalized_title_sort(a),
-            normalized_title(a),
-            normalized_artist(a),
-        )
-            .cmp(&(
-                normalized_title_sort(b),
-                normalized_title(b),
-                normalized_artist(b),
-            )),
+        TrackSortField::Title => {
+            (&a.title_sort, &a.title, &a.artist).cmp(&(&b.title_sort, &b.title, &b.artist))
+        }
 
         TrackSortField::Artist => (
-            normalized_artist_sort(a),
-            normalized_artist(a),
-            normalized_album(a),
-            a.disc_no.unwrap_or(0),
-            a.track_no.unwrap_or(0),
-            normalized_title(a),
+            &a.artist_sort,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
         )
             .cmp(&(
-                normalized_artist_sort(b),
-                normalized_artist(b),
-                normalized_album(b),
-                b.disc_no.unwrap_or(0),
-                b.track_no.unwrap_or(0),
-                normalized_title(b),
+                &b.artist_sort,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
             )),
 
         TrackSortField::Album => (
-            normalized_album_sort(a),
-            normalized_album_artist(a),
-            normalized_album(a),
-            a.disc_no.unwrap_or(0),
-            a.track_no.unwrap_or(0),
-            normalized_title(a),
+            &a.album_sort,
+            &a.album_artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
         )
             .cmp(&(
-                normalized_album_sort(b),
-                normalized_album_artist(b),
-                normalized_album(b),
-                b.disc_no.unwrap_or(0),
-                b.track_no.unwrap_or(0),
-                normalized_title(b),
+                &b.album_sort,
+                &b.album_artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
             )),
 
         TrackSortField::AlbumArtist => (
-            normalized_album_artist_sort(a),
-            normalized_album_artist(a),
-            normalized_album(a),
-            a.disc_no.unwrap_or(0),
-            a.track_no.unwrap_or(0),
-            normalized_title(a),
+            &a.album_artist_sort,
+            &a.album_artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
         )
             .cmp(&(
-                normalized_album_artist_sort(b),
-                normalized_album_artist(b),
-                normalized_album(b),
-                b.disc_no.unwrap_or(0),
-                b.track_no.unwrap_or(0),
-                normalized_title(b),
+                &b.album_artist_sort,
+                &b.album_artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
             )),
 
         TrackSortField::ReleaseDate => (
-            a.year.unwrap_or(0),
-            normalized_release_date(a),
-            normalized_album(a),
-            a.disc_no.unwrap_or(0),
-            a.track_no.unwrap_or(0),
-            normalized_title(a),
+            a.year,
+            &a.release_date,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
         )
             .cmp(&(
-                b.year.unwrap_or(0),
-                normalized_release_date(b),
-                normalized_album(b),
-                b.disc_no.unwrap_or(0),
-                b.track_no.unwrap_or(0),
-                normalized_title(b),
+                b.year,
+                &b.release_date,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
             )),
 
         TrackSortField::Genre => (
-            normalized_genre(a),
-            normalized_artist(a),
-            normalized_album(a),
-            a.disc_no.unwrap_or(0),
-            a.track_no.unwrap_or(0),
-            normalized_title(a),
+            &a.genre, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
         )
             .cmp(&(
-                normalized_genre(b),
-                normalized_artist(b),
-                normalized_album(b),
-                b.disc_no.unwrap_or(0),
-                b.track_no.unwrap_or(0),
-                normalized_title(b),
+                &b.genre, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
             )),
 
         TrackSortField::Duration => (
-            a.duration_ms.unwrap_or(0),
-            normalized_artist(a),
-            normalized_album(a),
-            a.disc_no.unwrap_or(0),
-            a.track_no.unwrap_or(0),
-            normalized_title(a),
+            a.duration_ms,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
         )
             .cmp(&(
-                b.duration_ms.unwrap_or(0),
-                normalized_artist(b),
-                normalized_album(b),
-                b.disc_no.unwrap_or(0),
-                b.track_no.unwrap_or(0),
-                normalized_title(b),
+                b.duration_ms,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
             )),
     }
-}
-
-fn searchable_blob(row: &TrackRow) -> String {
-    let mut parts: Vec<String> = Vec::new();
-
-    if let Some(s) = row.title.as_deref() {
-        parts.push(s.to_string());
-    } else {
-        parts.push(filename_stem(&row.path));
-    }
-
-    if let Some(s) = row.artist.as_deref() {
-        parts.push(s.to_string());
-    }
-
-    if let Some(s) = row.album.as_deref() {
-        parts.push(s.to_string());
-    }
-
-    if let Some(s) = row.album_artist.as_deref() {
-        parts.push(s.to_string());
-    }
-
-    if let Some(s) = row.genre.as_deref() {
-        parts.push(s.to_string());
-    }
-
-    if let Some(s) = row.release_date.as_deref() {
-        parts.push(s.to_string());
-    }
-
-    normalize_for_match(&parts.join(" "))
 }
 
 #[inline]

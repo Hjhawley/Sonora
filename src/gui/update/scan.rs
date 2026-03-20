@@ -15,12 +15,11 @@ use iced::Task;
 use std::path::PathBuf;
 
 use crate::core;
+use crate::core::types::TrackRow;
 
-/* use super::super::state::{LibraryScope, Message, Sonora, TEST_ROOT, ViewMode}; */
 use super::super::state::{LibraryScope, Message, Sonora, ViewMode};
 use super::selection::{clear_selection_and_inspector, preload_album_covers};
 use super::util::spawn_blocking;
-use crate::core::types::TrackRow;
 
 pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
     if state.scanning || state.saving {
@@ -89,7 +88,7 @@ pub(crate) fn scan_finished(
             };
 
             state.tracks = rows;
-            state.rebuild_library_derived_state();
+            state.rebuild_library_caches();
             clear_selection_and_inspector(state);
 
             if state.view_mode == ViewMode::Albums {

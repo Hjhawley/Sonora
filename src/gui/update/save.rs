@@ -98,7 +98,7 @@ pub(crate) fn save_finished(
         Ok(new_row) => {
             if let Some(slot) = state.track_by_id_mut(id) {
                 *slot = new_row;
-                state.rebuild_library_derived_state();
+                state.rebuild_library_caches();
                 load_inspector_from_selection(state);
             } else {
                 state.status = "Tags written, but selection changed (rescan?).".to_string();
@@ -131,7 +131,7 @@ pub(crate) fn save_finished_batch(
                 }
             }
 
-            state.rebuild_library_derived_state();
+            state.rebuild_library_caches();
             load_inspector_from_selection(state);
 
             state.inspector_dirty = false;

@@ -9,6 +9,7 @@ use super::super::state::{Message, Sonora};
 
 pub(crate) fn track_search_changed(state: &mut Sonora, value: String) -> Task<Message> {
     state.track_query.search_text = value;
+    state.rebuild_track_query_caches();
     Task::none()
 }
 
@@ -18,6 +19,7 @@ pub(crate) fn clear_track_search(state: &mut Sonora) -> Task<Message> {
     }
 
     state.track_query.search_text.clear();
+    state.rebuild_track_query_caches();
     Task::none()
 }
 
@@ -29,10 +31,12 @@ pub(crate) fn set_track_sort_field(state: &mut Sonora, field: TrackSortField) ->
         state.track_query.sort_direction = SortDirection::Asc;
     }
 
+    state.rebuild_track_query_caches();
     Task::none()
 }
 
 pub(crate) fn toggle_track_sort_direction(state: &mut Sonora) -> Task<Message> {
     state.track_query.sort_direction = state.track_query.sort_direction.toggled();
+    state.rebuild_track_query_caches();
     Task::none()
 }

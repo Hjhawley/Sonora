@@ -2,7 +2,7 @@
 //! Track view (table list).
 //!
 //! - Row identity is 'TrackId', not 'Vec' index.
-//! - Display order is derived from Track View query/sort state.
+//! - Display order is derived from cached Track View query/sort state.
 //! - Clicks emit messages by stable id.
 
 use std::time::Instant;
@@ -12,7 +12,7 @@ use iced::widget::{
 };
 use iced::{Alignment, Length};
 
-use super::super::query::{self, SortDirection, TrackSortField};
+use super::super::query::{SortDirection, TrackSortField};
 use super::super::state::{LibraryScope, Message, Sonora};
 use super::super::util::filename_stem;
 use super::constants::{
@@ -39,10 +39,7 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
         LibraryScope::Missing => "Missing Tracks",
     };
 
-    let ids_started = Instant::now();
-    let visible_ids = query::track_ids_for_current_view(state);
-    let ids_ms = ids_started.elapsed().as_secs_f64() * 1000.0;
-
+    let visible_ids = &state.track_view_ids;
     let visible_count = visible_ids.len();
     let total_count = state.tracks.iter().filter(|t| t.id.is_some()).count();
 
@@ -55,14 +52,14 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     let controls = build_track_controls(state);
 
     let table_started = Instant::now();
-    let table = build_tracks_table(state, &visible_ids).height(Length::Fill);
+    let table = build_tracks_table(state, visible_ids).height(Length::Fill);
     let table_ms = table_started.elapsed().as_secs_f64() * 1000.0;
 
     let total_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     eprintln!(
-        "[PERF][view::tracks] visible_ids={} total_tracks={} ids_ms={:.2} table_ms={:.2} total_ms={:.2}",
-        visible_count, total_count, ids_ms, table_ms, total_ms
+        "[PERF][view::tracks] cached_visible_ids={} total_tracks={} table_ms={:.2} total_ms={:.2}",
+        visible_count, total_count, table_ms, total_ms
     );
 
     column![
