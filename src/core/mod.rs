@@ -1,15 +1,8 @@
 //! core/mod.rs
 //!
-//! The brain of the app:
-//! - Discover candidate audio file paths (filesystem walk)
-//! - Read/write tags (metadata IO)
-//! - Probe read-only technical media properties
-//! - Return plain data structs for the GUI to render
-//!
-//! Scan / load pipeline boundary:
-//!   (A) discover paths
-//!   (B) DB-backed identity + visibility
-//!   (C) hydrate TrackRows from file paths
+//! The brain of the app
+//! - scan: discover files + hydrate only changed files
+//! - startup/scope loads: build TrackRows directly from DB
 
 pub mod db;
 pub mod library;
@@ -46,10 +39,8 @@ pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
     Ok(out)
 }
 
-/// Read tags + probed technical properties for a set of DB-backed '(TrackId, PathBuf)' pairs.
-///
-/// - Never fails hard per-file: unreadable tags return an "empty-ish" TrackRow
-/// - Ensures every returned row has its DB-owned TrackId attached
+/// Hydrate real on-disk metadata for a DB-backed `(TrackId, PathBuf)` list.
+/// Use this during scan/save refreshes, not at startup.
 pub fn hydrate_tracks(id_paths: Vec<(TrackId, PathBuf)>) -> (Vec<TrackRow>, usize) {
     let mut rows: Vec<TrackRow> = Vec::with_capacity(id_paths.len());
     let mut tag_failures: usize = 0;
@@ -70,22 +61,22 @@ pub fn hydrate_tracks(id_paths: Vec<(TrackId, PathBuf)>) -> (Vec<TrackRow>, usiz
 pub fn load_visible_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
     let db_path = db::default_db_path()?;
     let db = db::Db::open(&db_path)?;
-    let id_paths = db.load_visible_paths()?;
-    Ok(hydrate_tracks(id_paths))
+    let rows = db.load_visible_tracks()?;
+    Ok((rows, 0))
 }
 
 /// Load hidden library rows from the DB without scanning for filesystem updates.
 pub fn load_hidden_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
     let db_path = db::default_db_path()?;
     let db = db::Db::open(&db_path)?;
-    let id_paths = db.load_hidden_paths()?;
-    Ok(hydrate_tracks(id_paths))
+    let rows = db.load_hidden_tracks()?;
+    Ok((rows, 0))
 }
 
 /// Load missing library rows from the DB without scanning for filesystem updates.
 pub fn load_missing_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
     let db_path = db::default_db_path()?;
     let db = db::Db::open(&db_path)?;
-    let id_paths = db.load_missing_paths()?;
-    Ok(hydrate_tracks(id_paths))
+    let rows = db.load_missing_tracks()?;
+    Ok((rows, 0))
 }

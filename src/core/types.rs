@@ -1,33 +1,12 @@
 // core/types.rs
 //
-// Core, UI-agnostic domain types.
-//
-// Rule of thumb: this module is *data*, not behavior.
-// - No GUI types
-// - No filesystem walking
-// - No ID3 / tag parsing
-// - No database code
-//
-// 'TrackRow' is the app’s canonical "one file + metadata we care about" record.
-// The 'core::tags' layer *produces* and *consumes* it, and the GUI renders/edits it.
-//
-// We use lots of 'Option<T>' because real libraries are messy:
-// - tags missing or empty
-// - unreadable / corrupt tags
-// - inconsistent tagging conventions
-//
-// Conventions (important):
-// - 'None' means "absent / unknown / unreadable"
-// - 'Some(s)' should be non-empty and trimmed (normalized for UI sanity)
-//   (i.e. treat empty/whitespace as 'None' during read + inspector parsing)
+// Core domain data only.
+// No GUI, no DB logic, no tag parsing
 
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-/// Stable identifier for a track (DB primary key once SQLite exists).
-///
-/// Newtype (NOT a type alias) so you can’t accidentally mix it with ints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TrackId(pub i64);
 
@@ -37,184 +16,66 @@ impl fmt::Display for TrackId {
     }
 }
 
-// Minimal "row" of track metadata for display/edit.
-// One 'TrackRow' = one audio file + the metadata we know about it.
-//
-// This struct is intentionally format-agnostic: it describes *music metadata*,
-// not "ID3 tags". The tags layer is responsible for mapping between containers
-// (MP3/ID3 today) and this record.
 #[derive(Debug, Clone)]
 pub struct TrackRow {
-    // Stable identity (DB primary key once SQLite is added).
-    //
-    // - 'None' in the pre-DB MVP can be acceptable.
-    // - Once SQLite is introduced, treat 'None' as a bug.
     pub id: Option<TrackId>,
-
-    // Canonical file location for this track.
-    //
-    // MVP identity is still effectively path-based; later the DB owns identity and
-    // this becomes "where it currently lives".
     pub path: PathBuf,
 
-    // Core display/edit tags (shown by default)
-    // Song title (ID3: 'TIT2')
+    // Editable metadata
     pub title: Option<String>,
-
-    // Track artist (ID3: 'TPE1')
     pub artist: Option<String>,
-
-    // Album title (ID3: 'TALB')
     pub album: Option<String>,
-
-    // Album artist (ID3: 'TPE2')
-    //
-    // This is *the* field you want for Album View grouping/sorting.
     pub album_artist: Option<String>,
-
-    // Composer (ID3: 'TCOM')
     pub composer: Option<String>,
 
-    // Track number (ID3: 'TRCK', "1/12" -> 1)
     pub track_no: Option<u32>,
-
-    // Total tracks on the album (ID3: 'TRCK', "1/12" -> 12)
     pub track_total: Option<u32>,
-
-    // Disc number (ID3: 'TPOS', "1/2" -> 1)
     pub disc_no: Option<u32>,
-
-    // Total discs (ID3: 'TPOS', "1/2" -> 2)
     pub disc_total: Option<u32>,
 
-    // Canonical user-facing release date string.
-    //
-    // Sonora normalizes this to either:
-    // - 'YYYY'
-    // - 'YYYY-MM-DD'
-    //
-    // This is the single editable/displayed release-date field.
     pub release_date: Option<String>,
-
-    // Derived convenience year for sorting/grouping/filtering.
-    //
-    // This is usually derived from 'release_date', not edited independently.
     pub year: Option<i32>,
-
-    // Genre (ID3: 'TCON')
     pub genre: Option<String>,
 
-    // Common extended tags
-    // Grouping / content group (ID3: 'TIT1')
     pub grouping: Option<String>,
-
-    // A short comment (ID3: 'COMM').
-    // If multiple comment frames exist, keep the first one.
     pub comment: Option<String>,
-
-    // Unsynced lyrics (ID3: 'USLT').
-    // If multiple lyrics frames exist, keep the first one.
     pub lyrics: Option<String>,
-
-    // Lyricist / text writer (ID3: 'TEXT')
     pub lyricist: Option<String>,
-
-    // Conductor (ID3: 'TPE3')
     pub conductor: Option<String>,
-
-    // Remixer / modifier (ID3: 'TPE4')
     pub remixer: Option<String>,
-
-    // Publisher / label (ID3: 'TPUB')
     pub publisher: Option<String>,
-
-    // Encoder settings / software profile (ID3: 'TSSE')
-    pub encoder_settings: Option<String>,
-
-    // Encoded-by (human/organization) (ID3: 'TENC')
-    pub encoded_by: Option<String>,
-
-    // Subtitle / refinement (ID3: 'TIT3')
     pub subtitle: Option<String>,
-
-    // BPM (beats per minute) (ID3: 'TBPM')
     pub bpm: Option<u32>,
-
-    // Musical key (ID3: 'TKEY')
     pub key: Option<String>,
-
-    // Mood (ID3: 'TMOO')
     pub mood: Option<String>,
-
-    // Language(s) (ID3: 'TLAN')
     pub language: Option<String>,
-
-    // ISRC (recording code) (ID3: 'TSRC')
     pub isrc: Option<String>,
-
-    // Copyright (ID3: 'TCOP')
+    pub encoder_settings: Option<String>,
+    pub encoded_by: Option<String>,
     pub copyright: Option<String>,
 
-    // Artwork + sort fields
-    // Embedded album artwork count (ID3: 'APIC' / 'PIC' frames).
-    // We store count only to keep 'TrackRow' lightweight. Actual image bytes
-    // are fetched on-demand (e.g. cover thumbnails).
+    // Artwork + sort helpers
     pub artwork_count: u32,
-
-    // Title sort (ID3: 'TSOT')
     pub title_sort: Option<String>,
-
-    // Artist sort (ID3: 'TSOP')
     pub artist_sort: Option<String>,
-
-    // Album sort (ID3: 'TSOA')
     pub album_sort: Option<String>,
-
-    // Album artist sort (ID3: 'TSO2')
     pub album_artist_sort: Option<String>,
 
-    // Read-only fields
-    // Prefer stream/container-probed duration when available.
-    // Tag-side 'TLEN' is only a fallback hint.
+    // Technical read-only fields
     pub duration_ms: Option<u32>,
-
-    // Average / declared encoded bitrate in kbps, when probeable.
     pub bitrate_kbps: Option<u32>,
-
-    // Stream sample rate in Hz (e.g. 44100, 48000).
     pub sample_rate_hz: Option<u32>,
-
-    // Channel count (e.g. 1 = mono, 2 = stereo).
     pub channels: Option<u8>,
-
-    // Rating (0–255 in 'POPM'; stored as raw byte).
     pub rating: Option<u8>,
-
-    // Play count ('POPM' counter or 'PCNT').
     pub play_count: Option<u64>,
-
-    // Compilation flag (commonly 'TCMP' or 'TXXX:COMPILATION').
     pub compilation: Option<bool>,
 
-    // Escape hatches: preserve unknown/extra tags without redesigning the struct
-    // User-defined text frames (ID3: 'TXXX').
-    // Key = description, Value = value.
     pub user_text: BTreeMap<String, String>,
-
-    // URL frames.
-    // Key = frame id or description (for 'WXXX'), Value = URL.
     pub urls: BTreeMap<String, String>,
-
-    // Any other text-ish frames we didn't explicitly model.
-    // Key = frame id (e.g. "TOPE"), Value = best-effort text value.
     pub extra_text: BTreeMap<String, String>,
 }
 
 impl TrackRow {
-    /// Construct an empty track row for a known file path.
-    ///
-    /// This is useful for unreadable / untagged files and keeps the canonical
-    /// "blank row" shape next to the type definition.
     pub fn empty(path: PathBuf) -> Self {
         Self {
             id: None,
@@ -253,7 +114,6 @@ impl TrackRow {
             copyright: None,
 
             artwork_count: 0,
-
             title_sort: None,
             artist_sort: None,
             album_sort: None,
@@ -271,5 +131,11 @@ impl TrackRow {
             urls: BTreeMap::new(),
             extra_text: BTreeMap::new(),
         }
+    }
+
+    #[inline]
+    pub fn with_id(mut self, id: TrackId) -> Self {
+        self.id = Some(id);
+        self
     }
 }

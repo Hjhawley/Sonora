@@ -1,15 +1,12 @@
 //! gui/update/scan.rs
 //! Scan lifecycle + async boundary + selection reset.
 //!
-//! Scan pipeline:
-//! - discover current filesystem paths + file facts
-//! - reconcile them into SQLite, updating 'present', 'mtime', 'size'
-//! - reload the currently active scope from DB
-//! - hydrate TrackRows from those DB-backed ids/paths
-//!
-//! Important:
-//! The DB is the source of truth after reconciliation.
-//! UI should not be built directly from the raw discovered set.
+//! pipeline:
+//! - discover filesystem facts
+//! - reconcile present/missing + detect changed files
+//! - hydrate only changed/new files
+//! - persist refreshed metadata into DB
+//! - reload current scope directly from DB
 
 use iced::Task;
 use std::path::PathBuf;
@@ -39,8 +36,6 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
         if roots_to_scan.len() == 1 { "" } else { "s" }
     );
 
-    // Selection becomes invalid once new results arrive, but keeping tracks visible
-    // during scan is nicer UX (and avoids an empty UI if scan fails).
     clear_selection_and_inspector(state);
 
     let scope = state.library_scope;
@@ -52,18 +47,23 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
             let db_path = core::db::default_db_path()?;
             let mut db = core::db::Db::open(&db_path)?;
 
-            // Reconcile filesystem facts into DB truth, but only for the roots
-            // actually scanned this run.
-            db.upsert_discovered(&roots_to_scan, &discovered)?;
+            let changed_id_paths = db.upsert_discovered(&roots_to_scan, &discovered)?;
 
-            let id_paths = match scope {
-                LibraryScope::Library => db.load_visible_paths()?,
-                LibraryScope::Hidden => db.load_hidden_paths()?,
-                LibraryScope::Missing => db.load_missing_paths()?,
+            let tag_failures = if changed_id_paths.is_empty() {
+                0usize
+            } else {
+                let (rows, failures) = core::hydrate_tracks(changed_id_paths);
+                db.upsert_track_rows_metadata(&rows)?;
+                failures
             };
 
-            let (rows, failures) = core::hydrate_tracks(id_paths);
-            Ok((rows, failures))
+            let rows = match scope {
+                LibraryScope::Library => db.load_visible_tracks()?,
+                LibraryScope::Hidden => db.load_hidden_tracks()?,
+                LibraryScope::Missing => db.load_missing_tracks()?,
+            };
+
+            Ok((rows, tag_failures))
         }),
         Message::ScanFinished,
     )
@@ -81,7 +81,7 @@ pub(crate) fn scan_finished(
                 format!("Loaded {} tracks", rows.len())
             } else {
                 format!(
-                    "Loaded {} tracks ({} tag read failures)",
+                    "Loaded {} tracks ({} tag refresh failures)",
                     rows.len(),
                     tag_failures
                 )
