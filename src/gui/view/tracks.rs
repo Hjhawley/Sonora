@@ -172,15 +172,17 @@ fn build_tracks_table<'a>(
 
     let scroll_y = state.tracks_scroll_offset_y.max(0.0);
     let overscan = state.tracks_overscan_rows;
+    let total_rows = visible_ids.len();
 
-    let first_visible = (scroll_y / row_pitch).floor() as usize;
-    let visible_rows = (viewport_height / row_pitch).ceil() as usize + 1;
+    let raw_first_visible = (scroll_y / row_pitch).floor().max(0.0) as usize;
+    let visible_rows = (viewport_height / row_pitch).ceil().max(0.0) as usize + 1;
 
-    let start_index = first_visible.saturating_sub(overscan);
-    let end_index = (first_visible + visible_rows + overscan).min(visible_ids.len());
+    let first_visible = raw_first_visible.min(total_rows);
+    let start_index = first_visible.saturating_sub(overscan).min(total_rows);
+    let end_index = (first_visible + visible_rows + overscan).min(total_rows);
 
     let top_spacer_h = (start_index as f32) * row_pitch;
-    let bottom_spacer_h = ((visible_ids.len().saturating_sub(end_index)) as f32) * row_pitch;
+    let bottom_spacer_h = ((total_rows.saturating_sub(end_index)) as f32) * row_pitch;
 
     let mut col = column![];
 
@@ -194,7 +196,13 @@ fn build_tracks_table<'a>(
 
     let row_loop_started = Instant::now();
 
-    for &id in &visible_ids[start_index..end_index] {
+    let window = if start_index < end_index {
+        &visible_ids[start_index..end_index]
+    } else {
+        &visible_ids[0..0]
+    };
+
+    for &id in window {
         let Some(t) = state.track_by_id(id) else {
             continue;
         };
@@ -267,7 +275,7 @@ fn build_tracks_table<'a>(
 
     eprintln!(
         "[PERF][view::tracks_table] total_rows={} rendered_rows={} start={} end={} offset_y={:.1} viewport_h={:.1} row_loop_ms={:.2} total_ms={:.2}",
-        visible_ids.len(),
+        total_rows,
         end_index.saturating_sub(start_index),
         start_index,
         end_index,
