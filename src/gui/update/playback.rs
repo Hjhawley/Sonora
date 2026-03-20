@@ -600,19 +600,11 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
         PlayerEvent::Stopped { playback_id } => {
             eprintln!("[GUI] Event Stopped playback_id={}", playback_id);
         }
-        PlayerEvent::Position {
-            playback_id,
-            position_ms,
-        } => {
-            eprintln!(
-                "[GUI] Event Position playback_id={} position_ms={}",
-                playback_id, position_ms
-            );
-        }
         PlayerEvent::TrackEnded { playback_id } => {
             eprintln!("[GUI] Event TrackEnded playback_id={}", playback_id);
         }
         PlayerEvent::Error(e) => eprintln!("[GUI] Event Error {}", e),
+        PlayerEvent::Position { .. } => {}
     }
 
     match event {
@@ -668,6 +660,10 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             }
 
             if state.seek_preview_ratio.is_none() {
+                if state.position_ms == position_ms {
+                    return Task::none();
+                }
+
                 state.position_ms = position_ms;
             }
         }

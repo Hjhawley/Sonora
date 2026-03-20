@@ -30,6 +30,9 @@ const RELEASE_DATE_W: f32 = 110.0;
 const GENRE_W: f32 = 140.0;
 const LEN_W: f32 = 70.0;
 
+/// Reasonable first-frame fallback before we receive a real viewport height.
+const FALLBACK_VIEWPORT_H: f32 = 700.0;
+
 pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     let started = Instant::now();
 
@@ -50,6 +53,7 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     };
 
     let controls = build_track_controls(state);
+    let header = build_tracks_header(state);
 
     let table_started = Instant::now();
     let table = build_tracks_table(state, visible_ids).height(Length::Fill);
@@ -67,6 +71,7 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
             .spacing(12)
             .align_y(Alignment::Center),
         controls,
+        header,
         table,
     ]
     .spacing(12)
@@ -88,13 +93,8 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
         .align_y(Alignment::Center)
 }
 
-fn build_tracks_table<'a>(
-    state: &'a Sonora,
-    visible_ids: &[crate::core::types::TrackId],
-) -> iced::widget::Scrollable<'a, Message> {
-    let started = Instant::now();
-
-    let header = row![
+fn build_tracks_header(state: &Sonora) -> Row<'_, Message> {
+    row![
         text("").size(HEADER_TEXT).width(Length::Fixed(MARKER_W)),
         sort_header_button(
             state.track_query.sort_field,
@@ -154,13 +154,47 @@ fn build_tracks_table<'a>(
         ),
     ]
     .spacing(10)
-    .align_y(Alignment::Center);
+    .align_y(Alignment::Center)
+}
 
-    let mut col = column![header].spacing(TRACK_LIST_SPACING);
+fn build_tracks_table<'a>(
+    state: &'a Sonora,
+    visible_ids: &[crate::core::types::TrackId],
+) -> iced::widget::Scrollable<'a, Message> {
+    let started = Instant::now();
+
+    let row_pitch = TRACK_ROW_H + TRACK_LIST_SPACING;
+    let viewport_height = if state.tracks_viewport_height > 1.0 {
+        state.tracks_viewport_height
+    } else {
+        FALLBACK_VIEWPORT_H
+    };
+
+    let scroll_y = state.tracks_scroll_offset_y.max(0.0);
+    let overscan = state.tracks_overscan_rows;
+
+    let first_visible = (scroll_y / row_pitch).floor() as usize;
+    let visible_rows = (viewport_height / row_pitch).ceil() as usize + 1;
+
+    let start_index = first_visible.saturating_sub(overscan);
+    let end_index = (first_visible + visible_rows + overscan).min(visible_ids.len());
+
+    let top_spacer_h = (start_index as f32) * row_pitch;
+    let bottom_spacer_h = ((visible_ids.len().saturating_sub(end_index)) as f32) * row_pitch;
+
+    let mut col = column![];
+
+    if top_spacer_h > 0.0 {
+        col = col.push(
+            container(text(""))
+                .height(Length::Fixed(top_spacer_h))
+                .width(Length::Fill),
+        );
+    }
 
     let row_loop_started = Instant::now();
 
-    for &id in visible_ids {
+    for &id in &visible_ids[start_index..end_index] {
         let Some(t) = state.track_by_id(id) else {
             continue;
         };
@@ -220,17 +254,35 @@ fn build_tracks_table<'a>(
         col = col.push(row_widget);
     }
 
+    if bottom_spacer_h > 0.0 {
+        col = col.push(
+            container(text(""))
+                .height(Length::Fixed(bottom_spacer_h))
+                .width(Length::Fill),
+        );
+    }
+
     let row_loop_ms = row_loop_started.elapsed().as_secs_f64() * 1000.0;
     let total_ms = started.elapsed().as_secs_f64() * 1000.0;
 
     eprintln!(
-        "[PERF][view::tracks_table] rendered_rows={} row_loop_ms={:.2} total_ms={:.2}",
+        "[PERF][view::tracks_table] total_rows={} rendered_rows={} start={} end={} offset_y={:.1} viewport_h={:.1} row_loop_ms={:.2} total_ms={:.2}",
         visible_ids.len(),
+        end_index.saturating_sub(start_index),
+        start_index,
+        end_index,
+        scroll_y,
+        viewport_height,
         row_loop_ms,
         total_ms
     );
 
-    scrollable(col).height(Length::Fill)
+    scrollable(col)
+        .height(Length::Fill)
+        .on_scroll(|viewport| Message::TracksScrolled {
+            offset_y: viewport.absolute_offset().y,
+            viewport_height: viewport.bounds().height,
+        })
 }
 
 fn sort_header_button(

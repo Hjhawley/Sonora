@@ -231,6 +231,11 @@ pub(crate) struct Sonora {
     /// (search intentionally ignored).
     pub playback_queue_ids: Vec<TrackId>,
 
+    /// Track View virtualization state.
+    pub tracks_scroll_offset_y: f32,
+    pub tracks_viewport_height: f32,
+    pub tracks_overscan_rows: usize,
+
     // Playback (core handle + UI state)
     pub playback: Option<PlaybackController>,
 
@@ -361,6 +366,10 @@ impl Sonora {
             track_query: TrackQuery::default(),
             track_view_ids: Vec::new(),
             playback_queue_ids: Vec::new(),
+
+            tracks_scroll_offset_y: 0.0,
+            tracks_viewport_height: 0.0,
+            tracks_overscan_rows: 12,
 
             playback: Some(playback_controller),
             playback_events: Some(RefCell::new(playback_events)),
@@ -564,6 +573,12 @@ pub(crate) enum Message {
     SetTrackSortField(TrackSortField),
     ToggleTrackSortDirection,
     SetTrackSortDirection(SortDirection),
+
+    /// Track View scroll/viewport updates for row virtualization.
+    TracksScrolled {
+        offset_y: f32,
+        viewport_height: f32,
+    },
 
     // View + selection
     SetViewMode(ViewMode),

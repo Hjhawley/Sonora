@@ -46,6 +46,15 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::ToggleTrackSortDirection => query::toggle_track_sort_direction(state),
         Message::SetTrackSortDirection(dir) => {
             state.track_query.sort_direction = dir;
+            state.rebuild_track_query_caches();
+            Task::none()
+        }
+        Message::TracksScrolled {
+            offset_y,
+            viewport_height,
+        } => {
+            state.tracks_scroll_offset_y = offset_y.max(0.0);
+            state.tracks_viewport_height = viewport_height.max(0.0);
             Task::none()
         }
 
