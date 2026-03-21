@@ -6,7 +6,7 @@ use iced::widget::{button, column, container, image, row, slider, text, text_inp
 use iced::{Alignment, Element, Length};
 
 use super::super::state::{Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
-use super::constants::LABEL_W;
+use super::constants::{LABEL_W, PLAYBACK_COVER};
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
     let Some(ms) = ms else {
@@ -27,14 +27,18 @@ fn fmt_duration_u64(ms: u64) -> String {
 
 pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, Message> {
     container(
-        column![text("♪").size(28), text("cover").size(12)]
-            .spacing(4)
-            .align_x(Alignment::Center),
+        container(
+            column![text("♪").size(28), text("cover").size(12)]
+                .spacing(4)
+                .align_x(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .center_x(Length::Fill)
+        .center_y(Length::Fill),
     )
     .width(Length::Fixed(size))
     .height(Length::Fixed(size))
-    .center_x(Length::Fill)
-    .center_y(Length::Fill)
 }
 
 /// If 'handle' exists, show it; otherwise show the placeholder.
@@ -43,10 +47,14 @@ pub(crate) fn cover_thumb(
     size: f32,
 ) -> Element<'static, Message> {
     match handle {
-        Some(h) => container(image(h.clone()))
-            .width(Length::Fixed(size))
-            .height(Length::Fixed(size))
-            .into(),
+        Some(h) => container(
+            image(h.clone())
+                .width(Length::Fixed(size))
+                .height(Length::Fixed(size)),
+        )
+        .width(Length::Fixed(size))
+        .height(Length::Fixed(size))
+        .into(),
         None => cover_placeholder(size).into(),
     }
 }
@@ -199,39 +207,43 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let now_playing_cover = state.now_playing.and_then(|id| state.cover_cache.get(&id));
 
-    let title_block = if now_playing_row.is_some() {
+    let meta_block = if now_playing_row.is_some() {
         column![
             text(now_playing_title).size(14),
             text(now_playing_artist).size(12),
             text(queue_label).size(12),
-            row![seek, text(time_text).size(12)]
-                .spacing(10)
-                .align_y(Alignment::Center),
         ]
-        .spacing(4)
+        .spacing(2)
     } else {
-        column![
-            text(now_playing_title).size(14),
-            text(queue_label).size(12),
-            row![seek, text(time_text).size(12)]
-                .spacing(10)
-                .align_y(Alignment::Center),
-        ]
-        .spacing(4)
+        column![text(now_playing_title).size(14), text(queue_label).size(12)].spacing(2)
     };
 
-    let bar = row![
-        row![prev_btn, play_btn, next_btn]
-            .spacing(8)
-            .align_y(Alignment::Center),
-        cover_thumb(now_playing_cover, 52.0),
-        title_block.width(Length::Fill),
-        row![shuffle_btn, repeat_btn, text("Vol").size(12), vol_slider]
-            .spacing(8)
+    let center_block = column![
+        row![
+            cover_thumb(now_playing_cover, PLAYBACK_COVER),
+            meta_block.width(Length::Fill),
+        ]
+        .spacing(12)
+        .align_y(Alignment::Center),
+        row![seek, text(time_text).size(12)]
+            .spacing(10)
             .align_y(Alignment::Center),
     ]
-    .spacing(16)
-    .align_y(Alignment::Center);
+    .spacing(8)
+    .width(Length::Fill);
 
-    container(bar).padding(12)
+    let controls_left = row![prev_btn, play_btn, next_btn]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+    let controls_right = row![shuffle_btn, repeat_btn, text("Vol").size(12), vol_slider]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+    let bar = row![controls_left, center_block, controls_right,]
+        .spacing(16)
+        .align_y(Alignment::Center)
+        .width(Length::Fill);
+
+    container(bar).padding(12).width(Length::Fill)
 }

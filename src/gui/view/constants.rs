@@ -8,7 +8,8 @@ pub(crate) const WINDOW_W: f32 = 960.0;
 pub(crate) const WINDOW_H: f32 = 720.0;
 
 // Layout
-pub(crate) const PLAYBACK_H: f32 = 76.0;
+pub(crate) const PLAYBACK_H: f32 = 108.0;
+pub(crate) const PLAYBACK_COVER: f32 = 52.0;
 pub(crate) const SIDEBAR_W: f32 = 260.0;
 pub(crate) const EDITOR_W: f32 = 380.0;
 pub(crate) const LABEL_W: f32 = 110.0;
