@@ -41,7 +41,7 @@ fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> 
         .album_groups
         .iter()
         .filter_map(|(k, v)| {
-            let rep_id: TrackId = v.first().copied()?;
+            let rep_id: TrackId = state.representative_cover_track_id(k)?;
             Some(AlbumTile {
                 key: k.clone(),
                 count: v.len(),
@@ -153,7 +153,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
 
     let play_album_btn = button("Play Album").on_press(Message::PlayAlbum(key.clone()));
 
-    let rep_id = first.id;
+    let rep_id = state.representative_cover_track_id(&key);
     let big_cover = rep_id
         .and_then(|id| state.cover_cache.get(&id))
         .map(|h| cover_thumb(Some(h), ALBUM_DETAIL_COVER))

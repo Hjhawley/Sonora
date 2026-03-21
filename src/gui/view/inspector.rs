@@ -1,6 +1,5 @@
 //! gui/view/inspector.rs
 //! Right panel: metadata inspector/editor.
-//!
 //! - Selection is TrackId-based.
 //! - We resolve id -> TrackRow on demand for display.
 
@@ -146,12 +145,12 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
         mixed_or_value(
             &rows,
             |t| t.rating,
-            |v| { v.map(|n| n.to_string()).unwrap_or_else(|| "-".into()) }
+            |v| v.map(|n| n.to_string()).unwrap_or_else(|| "-".into())
         ),
         mixed_or_value(
             &rows,
             |t| t.play_count,
-            |v| { v.map(|n| n.to_string()).unwrap_or_else(|| "-".into()) }
+            |v| v.map(|n| n.to_string()).unwrap_or_else(|| "-".into())
         ),
     );
 
@@ -178,7 +177,15 @@ fn artwork_preview_handle<'a>(
                     .selected_track
                     .and_then(|id| state.cover_cache.get(&id))
             } else {
-                None
+                let all_have_art = !rows.is_empty() && rows.iter().all(|r| r.artwork_count > 0);
+                if all_have_art {
+                    state
+                        .selected_tracks
+                        .iter()
+                        .find_map(|id| state.cover_cache.get(id))
+                } else {
+                    None
+                }
             }
         }
     }
@@ -240,13 +247,19 @@ fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
         button("Extract artwork").on_press(Message::ExtractInspectorArtwork)
     };
 
+    let artwork_buttons = iced::widget::column![
+        row![add_btn, remove_btn]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        row![extract_btn].spacing(8).align_y(Alignment::Center),
+    ]
+    .spacing(8);
+
     iced::widget::column![
         text("Artwork").size(16),
         cover_thumb(artwork_preview_handle(state, &rows), 150.0),
         text(artwork_status_text(state, &rows)).size(12),
-        row![add_btn, remove_btn, extract_btn]
-            .spacing(8)
-            .align_y(Alignment::Center),
+        artwork_buttons,
     ]
     .spacing(8)
 }

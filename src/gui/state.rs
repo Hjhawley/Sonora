@@ -472,6 +472,16 @@ impl Sonora {
             .and_then(|ids| ids.first().copied())
     }
 
+    #[inline]
+    pub fn representative_cover_track_id(&self, key: &AlbumKey) -> Option<TrackId> {
+        let ids = self.album_groups.get(key)?;
+
+        ids.iter()
+            .copied()
+            .find(|id| self.track_by_id(*id).is_some_and(|t| t.artwork_count > 0))
+            .or_else(|| ids.first().copied())
+    }
+
     pub fn rebuild_library_derived_state(&mut self) {
         self.track_index.clear();
         self.album_groups.clear();

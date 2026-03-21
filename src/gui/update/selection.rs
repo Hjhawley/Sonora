@@ -129,9 +129,19 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     state.selected_album = Some(key.clone());
     state.selected_tracks.clear();
 
-    if let Some(ids) = state.album_groups.get(&key) {
-        for &id in ids {
-            state.selected_tracks.insert(id);
+    let mut preload_tasks: Vec<Task<Message>> = Vec::new();
+
+    if let Some(ids) = state.album_groups.get(&key).cloned() {
+        for id in &ids {
+            state.selected_tracks.insert(*id);
+        }
+
+        for id in ids {
+            if let Some(track) = state.track_by_id(id) {
+                if track.artwork_count > 0 && !state.cover_cache.contains_key(&id) {
+                    preload_tasks.push(maybe_load_cover_for_track(state, id));
+                }
+            }
         }
     }
 
@@ -147,7 +157,9 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     }
 
     let primary_id = state.selected_track.unwrap();
-    maybe_load_cover_for_track(state, primary_id)
+    preload_tasks.push(maybe_load_cover_for_track(state, primary_id));
+
+    Task::batch(preload_tasks)
 }
 
 pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
@@ -403,17 +415,12 @@ pub(crate) fn cover_loaded(
     Task::none()
 }
 
-/// Preload representative cover art
+/// Preload representative cover art.
 pub(crate) fn preload_album_covers(state: &mut Sonora) -> Task<Message> {
     let rep_ids: Vec<TrackId> = state
         .album_groups
-        .values()
-        .filter_map(|ids| {
-            ids.iter()
-                .copied()
-                .find(|id| state.track_by_id(*id).is_some_and(|t| t.artwork_count > 0))
-                .or_else(|| ids.first().copied())
-        })
+        .keys()
+        .filter_map(|key| state.representative_cover_track_id(key))
         .collect();
 
     let mut tasks: Vec<Task<Message>> = Vec::new();
