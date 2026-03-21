@@ -39,8 +39,8 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::ScanFinished(result) => scan::scan_finished(state, result),
 
         // Scope / library dataset
-        Message::SetLibraryScope(scope) => selection::set_library_scope(state, scope),
-        Message::ScopeLoaded(result) => selection::scope_loaded(state, result),
+        Message::SetLibraryScope(scope_value) => scope::set_library_scope(state, scope_value),
+        Message::ScopeLoaded(result) => scope::scope_loaded(state, result),
 
         // Track View query / sorting
         Message::TrackSearchChanged(value) => query::track_search_changed(state, value),
@@ -62,7 +62,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
 
         // View + selection
-        Message::SetViewMode(mode) => selection::set_view_mode(state, mode),
+        Message::SetViewMode(mode) => scope::set_view_mode(state, mode),
         Message::SelectAlbum(key) => selection::select_album(state, key),
         Message::SelectTrack(id) => selection::select_track(state, id),
         Message::TrackPressed(id) => selection::track_pressed(state, id),
@@ -112,8 +112,8 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::RevertInspector => save::revert_inspector(state),
 
         // Sonora-only visibility / DB record actions
-        Message::HideSelected => selection::hide_selected(state),
-        Message::UnhideSelected => selection::unhide_selected(state),
-        Message::DeleteSelectedFromSonora => selection::delete_selected_from_sonora(state),
+        Message::HideSelected => actions::hide_selected(state),
+        Message::UnhideSelected => actions::unhide_selected(state),
+        Message::DeleteSelectedFromSonora => actions::delete_selected_from_sonora(state),
     }
 }
