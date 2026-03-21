@@ -28,18 +28,26 @@ pub(crate) fn handle_event(state: &mut Sonora, event: keyboard::Event) -> Task<M
             Task::none()
         }
 
-        keyboard::Event::KeyPressed { key, .. } => handle_key_pressed(state, key),
+        keyboard::Event::KeyPressed {
+            key,
+            modified_key,
+            text,
+            ..
+        } => {
+            let _ = text; // intentionally ignored for global shortcuts
+            handle_key_pressed(state, key, modified_key)
+        }
 
         _ => Task::none(),
     }
 }
 
-fn handle_key_pressed(state: &mut Sonora, key: Key) -> Task<Message> {
+fn handle_key_pressed(state: &mut Sonora, key: Key, modified_key: Key) -> Task<Message> {
     let shift = state.modifiers.shift();
     let ctrl = state.modifiers.control();
 
     if ctrl {
-        if let Key::Character(s) = &key {
+        if let Key::Character(s) = &modified_key {
             if s.eq_ignore_ascii_case("a") {
                 return selection::select_all_in_context(state);
             }
