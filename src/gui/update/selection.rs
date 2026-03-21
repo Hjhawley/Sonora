@@ -30,35 +30,31 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     state.selected_album = Some(key.clone());
     state.selected_tracks.clear();
 
-    let mut preload_tasks: Vec<Task<Message>> = Vec::new();
+    let ordered_ids = ordered_album_track_ids(state, &key);
 
-    if let Some(ids) = state.album_groups.get(&key).cloned() {
-        for id in &ids {
-            state.selected_tracks.insert(*id);
-        }
-
-        for id in ids {
-            if let Some(track) = state.track_by_id(id) {
-                if track.artwork_count > 0 && !state.cover_cache.contains_key(&id) {
-                    preload_tasks.push(maybe_load_cover_for_track(state, id));
-                }
-            }
-        }
-    }
-
-    state.selected_track = state.selected_tracks.iter().next().copied();
-    state.selection_anchor = state.selected_track;
-    state.last_clicked_track = state.selected_track;
-
-    if state.selected_track.is_some() {
-        load_inspector_from_selection(state);
-    } else {
+    if ordered_ids.is_empty() {
+        state.selected_track = None;
+        state.selection_anchor = None;
+        state.last_clicked_track = None;
         clear_inspector(state);
         return Task::none();
     }
 
-    let primary_id = state.selected_track.unwrap();
-    preload_tasks.push(maybe_load_cover_for_track(state, primary_id));
+    for &id in &ordered_ids {
+        state.selected_tracks.insert(id);
+    }
+
+    let primary_id = ordered_ids[0];
+    state.selected_track = Some(primary_id);
+    state.selection_anchor = Some(primary_id);
+    state.last_clicked_track = Some(primary_id);
+
+    load_inspector_from_selection(state);
+
+    let mut preload_tasks: Vec<Task<Message>> = Vec::new();
+    for &id in &ordered_ids {
+        preload_tasks.push(maybe_load_cover_for_track(state, id));
+    }
 
     Task::batch(preload_tasks)
 }
