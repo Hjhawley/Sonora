@@ -1,82 +1,41 @@
-//! core/mod.rs
+//! core/load.rs
 //!
-//! The brain of the app
-//! - scan: discover files + hydrate only changed files
-//! - startup/scope loads: build TrackRows directly from DB
+//! DB-backed TrackRow loading helpers.
+//!
+//! These helpers load cached TrackRows directly from SQLite without scanning
+//! the filesystem, which keeps startup and scope switches fast.
 
-pub mod db;
-pub mod library;
-pub mod playback;
-pub mod probe;
-pub mod tags;
-pub mod types;
+use crate::core::db;
+use crate::core::types::TrackRow;
 
-use std::collections::HashSet;
-use std::path::PathBuf;
-
-use library::DiscoveredFile;
-use types::{TrackId, TrackRow};
-
-/// Discover candidate audio files under multiple roots.
-///
-/// - Currently MP3-only for MVP (library enforces extension rules)
-/// - De-dupes across overlapping roots by full path
-/// - Sorts paths once (core owns ordering; GUI shouldn't)
-pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
-    let mut seen: HashSet<PathBuf> = HashSet::with_capacity(1024);
-    let mut out: Vec<DiscoveredFile> = Vec::new();
-
-    for root in roots {
-        let files = library::scan_audio_files(root)?;
-        for file in files {
-            if seen.insert(file.path.clone()) {
-                out.push(file);
-            }
-        }
-    }
-
-    out.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(out)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadScope {
+    Visible,
+    Hidden,
+    Missing,
 }
 
-/// Hydrate real on-disk metadata for a DB-backed `(TrackId, PathBuf)` list.
-/// Use this during scan/save refreshes, not at startup.
-pub fn hydrate_tracks(id_paths: Vec<(TrackId, PathBuf)>) -> (Vec<TrackRow>, usize) {
-    let mut rows: Vec<TrackRow> = Vec::with_capacity(id_paths.len());
-    let mut tag_failures: usize = 0;
+pub fn load_tracks_from_db(scope: LoadScope) -> Result<(Vec<TrackRow>, usize), String> {
+    let db_path = db::default_db_path()?;
+    let db = db::Db::open(&db_path)?;
 
-    for (id, path) in id_paths {
-        let (mut row, failed) = tags::read_track_row(path);
-        if failed {
-            tag_failures += 1;
-        }
-        row.id = Some(id);
-        rows.push(row);
-    }
+    let rows = match scope {
+        LoadScope::Visible => db.load_visible_tracks()?,
+        LoadScope::Hidden => db.load_hidden_tracks()?,
+        LoadScope::Missing => db.load_missing_tracks()?,
+    };
 
-    (rows, tag_failures)
+    Ok((rows, 0))
 }
 
-/// Load visible library rows from the DB without scanning for filesystem updates.
 pub fn load_visible_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
-    let db_path = db::default_db_path()?;
-    let db = db::Db::open(&db_path)?;
-    let rows = db.load_visible_tracks()?;
-    Ok((rows, 0))
+    load_tracks_from_db(LoadScope::Visible)
 }
 
-/// Load hidden library rows from the DB without scanning for filesystem updates.
 pub fn load_hidden_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
-    let db_path = db::default_db_path()?;
-    let db = db::Db::open(&db_path)?;
-    let rows = db.load_hidden_tracks()?;
-    Ok((rows, 0))
+    load_tracks_from_db(LoadScope::Hidden)
 }
 
-/// Load missing library rows from the DB without scanning for filesystem updates.
 pub fn load_missing_tracks_from_db() -> Result<(Vec<TrackRow>, usize), String> {
-    let db_path = db::default_db_path()?;
-    let db = db::Db::open(&db_path)?;
-    let rows = db.load_missing_tracks()?;
-    Ok((rows, 0))
+    load_tracks_from_db(LoadScope::Missing)
 }

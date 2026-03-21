@@ -1,12 +1,9 @@
 //! gui/update/scan.rs
-//! Scan lifecycle + async boundary + selection reset.
 //!
-//! pipeline:
-//! - discover filesystem facts
-//! - reconcile present/missing + detect changed files
-//! - hydrate only changed/new files
-//! - persist refreshed metadata into DB
-//! - reload current scope directly from DB
+//! GUI-side scan lifecycle.
+//!
+//! This module starts the background scan task, maps GUI scope to core load scope,
+//! and applies the finished scan result back into Sonora state.
 
 use iced::Task;
 use std::path::PathBuf;
@@ -38,33 +35,14 @@ pub(crate) fn scan_library(state: &mut Sonora) -> Task<Message> {
 
     clear_selection_and_inspector(state);
 
-    let scope = state.library_scope;
+    let scope = match state.library_scope {
+        LibraryScope::Library => core::LoadScope::Visible,
+        LibraryScope::Hidden => core::LoadScope::Hidden,
+        LibraryScope::Missing => core::LoadScope::Missing,
+    };
 
     Task::perform(
-        spawn_blocking(move || {
-            let discovered = core::scan_paths(&roots_to_scan)?;
-
-            let db_path = core::db::default_db_path()?;
-            let mut db = core::db::Db::open(&db_path)?;
-
-            let changed_id_paths = db.upsert_discovered(&roots_to_scan, &discovered)?;
-
-            let tag_failures = if changed_id_paths.is_empty() {
-                0usize
-            } else {
-                let (rows, failures) = core::hydrate_tracks(changed_id_paths);
-                db.upsert_track_rows_metadata(&rows)?;
-                failures
-            };
-
-            let rows = match scope {
-                LibraryScope::Library => db.load_visible_tracks()?,
-                LibraryScope::Hidden => db.load_hidden_tracks()?,
-                LibraryScope::Missing => db.load_missing_tracks()?,
-            };
-
-            Ok((rows, tag_failures))
-        }),
+        spawn_blocking(move || core::run_scan_for_scope(&roots_to_scan, scope)),
         Message::ScanFinished,
     )
 }
