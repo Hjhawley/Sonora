@@ -7,6 +7,7 @@ use iced::Task;
 
 use super::state::{Message, Sonora};
 
+mod actions;
 mod art;
 mod inspector;
 mod keyboard;
@@ -15,6 +16,7 @@ mod query;
 mod roots;
 mod save;
 mod scan;
+mod scope;
 mod selection;
 mod util;
 
