@@ -17,7 +17,7 @@
 │   ├── scan.rs - Core scan orchestration. It discovers candidate audio files under the configured roots, de-dupes overlapping results, reconciles discovered state into SQLite, hydrates metadata only for changed/new rows, persists refreshed metadata, and reloads the requested library scope from the DB.
 │   ├── tags
 │   │   ├── art.rs - Embedded MP3 artwork IO layer. It reads the preferred embedded image by preferring front cover art and falling back to the first picture, writes replacement artwork as a single front-cover image, removes all embedded picture frames when requested, and currently supports JPEG/PNG only. Artwork lives in file tags, not SQLite.
-│   │   ├── mod.rs - Defines the public metadata/tag surface by re-exporting tag read/write helpers, embedded-art helpers, and shared tag utilities used elsewhere in core.
+│   │   ├── mod.rs - Metadata backend boundary. It keeps the public metadata IO surface intentionally small by re-exporting TrackRow read/write helpers, embedded-art helpers, and shared release-date normalization helpers, so higher layers depend on a format-agnostic metadata API rather than ID3 details.
 │   │   ├── read.rs - Reads and normalizes ID3 metadata, merges it with probed technical properties, and constructs a TrackRow from Sonora’s combined tag/probe view of the file.
 │   │   ├── util.rs - Provides shared tag-parsing helpers such as slash-pair parsing, bool-ish parsing, counter decoding, and release-date normalization/extraction.
 │   │   └── write.rs - Writes Sonora’s curated subset of TrackRow fields back into MP3 ID3 tags, replacing or removing the frames Sonora manages and normalizing Sonora’s write policy for fields like comments, lyrics, and release date.
@@ -41,12 +41,12 @@
 │   │   └── util.rs - Provides a small async helper for running blocking work off-thread and awaiting the result from GUI update flows.
 │   ├── util.rs - Contains pure GUI helpers for fallback title generation, formatting, and parsing user input values.
 │   └── view
-│       ├── albums.rs - Renders the album grid or album detail screen depending on selection, and emits album-related UI messages.
+│       ├── albums.rs - Renders Album View in two modes: an album grid when no album is selected, and an album detail screen when one is selected. It derives grid tiles from grouped album state, uses representative cached covers, sorts album tracks for detail display, and emits album/tile/header/track interaction messages.
 │       ├── center.rs - Routes the center panel to either Track View or Album View based on the current view mode.
 │       ├── constants.rs - Defines shared layout and sizing constants for the window, sidebar, playback bar, editor, track rows, album grid, and artwork.
 │       ├── inspector.rs - Renders the right-side tag editor, including mixed-state inputs, technical metadata, and inspector artwork controls.
 │       ├── mod.rs - Acts as the top-level GUI renderer, composing the sidebar, center panel, inspector, and playback bar into the full app layout.
 │       ├── sidebar.rs - Renders the left sidebar with scan controls, scope/view controls, hide/unhide actions, and root-folder controls.
-│       ├── tracks.rs - Renders the Track View search/sort controls and the derived visible track table for the current scope, using virtualized/windowed row rendering.
+│       ├── tracks.rs - Renders Track View as a searchable, sortable table list using derived visible TrackId order rather than raw Vec order. It uses stable id-based row interactions, displays current selection/now-playing markers, and window-renders only the visible slice plus overscan based on scroll/viewport state.
 │       └── widgets.rs - Provides reusable GUI widgets and helpers such as duration formatting, cover thumbnails/placeholders, field-row builders, and the bottom playback bar.
 └── main.rs - Bootstraps the Iced application, configures the window, and wires together Sonora::default, update, view, and subscription through the GUI module.
