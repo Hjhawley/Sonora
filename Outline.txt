@@ -11,12 +11,12 @@
 │   │   ├── decoder
 │   │   │   ├── mod.rs - Opens an audio file with Symphonia, probes the default audio track, computes duration when possible, and constructs the decoder source used by the playback engine.
 │   │   │   └── source.rs - Implements the streaming Symphonia-backed decoder that exposes decoded audio as a rodio::Source for playback.
-│   │   ├── engine.rs - Implements the core playback engine. It owns transport behavior such as play/pause/stop, seeking, sink management, command handling, and event emission.
-│   │   └── mod.rs - Defines the public playback API, including PlaybackController, PlayerCommand, PlayerEvent, and start_playback(). It is the boundary between the GUI playback layer and the engine.
+│   │   ├── engine.rs - Playback transport and streaming engine. It owns the rodio sink and queue state, handles play/queue/pause/resume/stop/seek/volume/shutdown commands, emits exact track-start/position/end events with monotonic playback IDs, and advances through queued sources until the queue is exhausted.
+│   │   └── mod.rs - Public playback boundary. It defines the command/event API shared with the GUI, exposes PlaybackController as a best-effort command sender, and starts the playback engine on its own thread while returning the event receiver the GUI polls.
 │   ├── probe.rs - Probes read-only technical media properties such as duration, bitrate, sample rate, and channel count, using MP3-specific parsing with Symphonia fallback where needed.
 │   ├── scan.rs - Core scan orchestration. It discovers candidate audio files under the configured roots, de-dupes overlapping results, reconciles discovered state into SQLite, hydrates metadata only for changed/new rows, persists refreshed metadata, and reloads the requested library scope from the DB.
 │   ├── tags
-│   │   ├── art.rs - Handles embedded MP3 artwork IO. It reads embedded cover art and supports replacing or removing Sonora-managed artwork for inspector save flows and cover loading.
+│   │   ├── art.rs - Embedded MP3 artwork IO layer. It reads the preferred embedded image by preferring front cover art and falling back to the first picture, writes replacement artwork as a single front-cover image, removes all embedded picture frames when requested, and currently supports JPEG/PNG only. Artwork lives in file tags, not SQLite.
 │   │   ├── mod.rs - Defines the public metadata/tag surface by re-exporting tag read/write helpers, embedded-art helpers, and shared tag utilities used elsewhere in core.
 │   │   ├── read.rs - Reads and normalizes ID3 metadata, merges it with probed technical properties, and constructs a TrackRow from Sonora’s combined tag/probe view of the file.
 │   │   ├── util.rs - Provides shared tag-parsing helpers such as slash-pair parsing, bool-ish parsing, counter decoding, and release-date normalization/extraction.
@@ -28,13 +28,13 @@
 │   ├── state.rs - Defines Sonora’s central shared GUI state, including the message enum, scope/view/playback enums, query state, selection state, playback UI state, caches, inspector draft state, artwork-edit state, and startup restore behavior. It is data-centric and intentionally avoids view/update logic.
 │   ├── subscription.rs - Creates background GUI subscriptions such as the periodic playback tick and global keyboard event listener.
 │   ├── update
-│   │   ├── art.rs - Handles inspector artwork workflows and cover-loading helpers. It loads embedded artwork for UI use, manages add/replace/remove/extract actions, and updates pending artwork-edit state.
-│   │   ├── inspector.rs - Maintains inspector draft state, applies mixed-selection semantics, and loads selected-track data into the editable inspector fields.
+│   │   ├── art.rs - Inspector artwork workflow and cover-loading helpers. It loads embedded artwork into UI image handles, manages choose/replace/remove/extract flows through native file dialogs, stores pending artwork edits in inspector state until save, and supports generic cover loading for tracks.
+│   │   ├── inspector.rs - Inspector draft-state and mixed-selection logic. It updates draft fields, tracks per-field mixed state structurally, clears/reset inspector state when needed, and loads single- or multi-selection metadata into the editable inspector from selected TrackIds.
 │   │   ├── keyboard.rs - Handles global keyboard events, tracks modifier-key state, and maps shortcuts to selection, playback, and save behavior.
 │   │   ├── mod.rs - Routes incoming Message variants to the appropriate GUI update submodule.
 │   │   ├── playback.rs - GUI-side playback controller and engine bridge. It translates UI actions into playback-engine commands, defines queue policy for library vs album playback, manages shuffle/repeat/seek/volume UI state, and reacts to engine events. Library playback follows track sort order but intentionally ignores search filtering.
 │   │   ├── query.rs - Handles Track View query state transitions such as search changes, clearing search, changing sort fields, and toggling sort direction. It also resets virtualized Track View scroll state when needed.
-│   │   ├── roots.rs - Handles root-folder input plus add/remove root actions, including validation, duplicate prevention, DB persistence, and reloading library state after root changes.
+│   │   ├── roots.rs - Handles persistent library-root management. It updates the root-path input, validates and de-duplicates added folders before writing them through to SQLite, and on removal deletes only track records no longer covered by remaining roots, reloads the active scope from the DB, and resets selection/inspector state.
 │   │   ├── save.rs - Handles inspector saves by turning draft state into conservative tag writes, applying pending artwork edits, re-reading refreshed metadata from disk, and updating in-memory rows only after successful write + reread.
 │   │   ├── scan.rs - GUI-side scan lifecycle. It starts the background scan task, maps the current GUI scope to the core scan/load scope, updates status text, and applies finished scan results back into Sonora state.
 │   │   ├── selection.rs - Handles selection, scope/view transitions, and selection-triggered actions. It manages track and album selection behavior, loads scopes, supports range and double-click interactions, performs hide/unhide/delete-from-Sonora actions, and triggers selection-driven cover loading.
