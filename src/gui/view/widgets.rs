@@ -25,6 +25,31 @@ fn fmt_duration_u64(ms: u64) -> String {
     format!("{m}:{s:02}")
 }
 
+/// Truncation helper for table/grid cells
+pub(crate) fn ellipsize_for_width(value: &str, width: f32) -> String {
+    let text = value.trim();
+    if text.is_empty() {
+        return String::new();
+    }
+
+    // Rough average width
+    let approx_chars = ((width - 10.0) / 7.2).floor().max(1.0) as usize;
+
+    let char_count = text.chars().count();
+    if char_count <= approx_chars {
+        return text.to_string();
+    }
+
+    if approx_chars <= 1 {
+        return "…".to_string();
+    }
+
+    let keep = approx_chars.saturating_sub(1);
+    let mut out = text.chars().take(keep).collect::<String>();
+    out.push('…');
+    out
+}
+
 pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, Message> {
     container(
         container(

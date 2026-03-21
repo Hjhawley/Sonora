@@ -14,24 +14,55 @@ use iced::{Alignment, Length};
 
 use super::super::query::{SortDirection, TrackSortField};
 use super::super::state::{LibraryScope, Message, Sonora};
-use super::super::util::filename_stem;
+use super::super::util::{filename_stem, fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 use super::constants::{
-    HEADER_TEXT, ROW_TEXT, TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
+    HEADER_TEXT, ROW_TEXT, TRACK_COL_ALBUM_ARTIST_W, TRACK_COL_ALBUM_W, TRACK_COL_ARTIST_W,
+    TRACK_COL_BITRATE_W, TRACK_COL_CHANNELS_W, TRACK_COL_DISC_NO_W, TRACK_COL_GENRE_W,
+    TRACK_COL_LEN_W, TRACK_COL_MARKER_W, TRACK_COL_PLAYS_W, TRACK_COL_RATING_W,
+    TRACK_COL_RELEASE_DATE_W, TRACK_COL_SAMPLE_RATE_W, TRACK_COL_SPACING, TRACK_COL_TITLE_W,
+    TRACK_COL_TRACK_NO_W, TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
-use super::widgets::fmt_duration;
-
-const MARKER_W: f32 = 24.0;
-const TRACK_NO_W: f32 = 44.0;
-const TITLE_W: f32 = 240.0;
-const ARTIST_W: f32 = 190.0;
-const ALBUM_W: f32 = 240.0;
-const ALBUM_ARTIST_W: f32 = 170.0;
-const RELEASE_DATE_W: f32 = 110.0;
-const GENRE_W: f32 = 140.0;
-const LEN_W: f32 = 70.0;
+use super::widgets::{ellipsize_for_width, fmt_duration};
 
 /// Reasonable first-frame fallback before we receive a real viewport height.
 const FALLBACK_VIEWPORT_H: f32 = 700.0;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ColumnKind {
+    Marker,
+    TrackNo,
+    DiscNo,
+    Title,
+    Artist,
+    Album,
+    AlbumArtist,
+    ReleaseDate,
+    Genre,
+    Bitrate,
+    SampleRate,
+    Channels,
+    Plays,
+    Rating,
+    Duration,
+}
+
+const TABLE_COLUMNS: [ColumnKind; 15] = [
+    ColumnKind::Marker,
+    ColumnKind::TrackNo,
+    ColumnKind::DiscNo,
+    ColumnKind::Title,
+    ColumnKind::Artist,
+    ColumnKind::Album,
+    ColumnKind::AlbumArtist,
+    ColumnKind::ReleaseDate,
+    ColumnKind::Genre,
+    ColumnKind::Bitrate,
+    ColumnKind::SampleRate,
+    ColumnKind::Channels,
+    ColumnKind::Plays,
+    ColumnKind::Rating,
+    ColumnKind::Duration,
+];
 
 pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     let started = Instant::now();
@@ -53,10 +84,9 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     };
 
     let controls = build_track_controls(state);
-    let header = build_tracks_header(state);
 
     let table_started = Instant::now();
-    let table = build_tracks_table(state, visible_ids).height(Length::Fill);
+    let table = build_tracks_table_region(state, visible_ids).height(Length::Fill);
     let table_ms = table_started.elapsed().as_secs_f64() * 1000.0;
 
     let total_ms = started.elapsed().as_secs_f64() * 1000.0;
@@ -71,7 +101,6 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
             .spacing(12)
             .align_y(Alignment::Center),
         controls,
-        header,
         table,
     ]
     .spacing(12)
@@ -84,7 +113,8 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
     )
     .on_input(Message::TrackSearchChanged)
     .padding(8)
-    .size(14);
+    .size(14)
+    .width(Length::Fill);
 
     let clear_button = button(text("Clear").size(14)).on_press(Message::ClearTrackSearch);
 
@@ -93,71 +123,58 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
         .align_y(Alignment::Center)
 }
 
-fn build_tracks_header(state: &Sonora) -> Row<'_, Message> {
-    row![
-        text("").size(HEADER_TEXT).width(Length::Fixed(MARKER_W)),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "#",
-            TrackSortField::TrackNo,
-            TRACK_NO_W,
-        ),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "Title",
-            TrackSortField::Title,
-            TITLE_W,
-        ),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "Artist",
-            TrackSortField::Artist,
-            ARTIST_W,
-        ),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "Album",
-            TrackSortField::Album,
-            ALBUM_W,
-        ),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "Album Artist",
-            TrackSortField::AlbumArtist,
-            ALBUM_ARTIST_W,
-        ),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "Release Date",
-            TrackSortField::ReleaseDate,
-            RELEASE_DATE_W,
-        ),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "Genre",
-            TrackSortField::Genre,
-            GENRE_W,
-        ),
-        sort_header_button(
-            state.track_query.sort_field,
-            state.track_query.sort_direction,
-            "Len",
-            TrackSortField::Duration,
-            LEN_W,
-        ),
-    ]
-    .spacing(10)
-    .align_y(Alignment::Center)
+fn build_tracks_table_region<'a>(
+    state: &'a Sonora,
+    visible_ids: &'a [crate::core::types::TrackId],
+) -> iced::widget::Container<'a, Message> {
+    let table_outer_w = table_outer_width();
+
+    let header = build_tracks_header(state);
+    let body = build_tracks_body(state, visible_ids);
+
+    let table = column![header, body]
+        .spacing(TRACK_LIST_SPACING)
+        .width(Length::Fixed(table_outer_w))
+        .height(Length::Fill);
+
+    let horizontal = scrollable(table)
+        .direction(scrollable::Direction::Horizontal(
+            scrollable::Scrollbar::default(),
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    container(horizontal)
+        .width(Length::Fill)
+        .height(Length::Fill)
 }
 
-fn build_tracks_table<'a>(
+fn build_tracks_header(state: &Sonora) -> iced::widget::Container<'_, Message> {
+    let mut row = row![];
+    let col_count = TABLE_COLUMNS.len();
+
+    for (i, col) in TABLE_COLUMNS.iter().enumerate() {
+        row = row.push(build_header_cell(
+            *col,
+            state.track_query.sort_field,
+            state.track_query.sort_direction,
+        ));
+
+        if i + 1 < col_count {
+            row = row.spacing(TRACK_COL_SPACING);
+        }
+    }
+
+    container(
+        row.spacing(TRACK_COL_SPACING)
+            .align_y(Alignment::Center)
+            .width(Length::Fixed(table_content_width())),
+    )
+    .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
+    .width(Length::Fixed(table_outer_width()))
+}
+
+fn build_tracks_body<'a>(
     state: &'a Sonora,
     visible_ids: &[crate::core::types::TrackId],
 ) -> iced::widget::Scrollable<'a, Message> {
@@ -190,7 +207,7 @@ fn build_tracks_table<'a>(
         col = col.push(
             container(text(""))
                 .height(Length::Fixed(top_spacer_h))
-                .width(Length::Fill),
+                .width(Length::Fixed(table_outer_width())),
         );
     }
 
@@ -213,12 +230,13 @@ fn build_tracks_table<'a>(
         let marker = if is_now_playing {
             "▷"
         } else if is_selected {
-            "*"
+            "•"
         } else {
             ""
         };
 
         let track_no = t.track_no.map(|n| n.to_string()).unwrap_or_default();
+        let disc_no = t.disc_no.map(|n| n.to_string()).unwrap_or_default();
         let title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
         let artist = t.artist.clone().unwrap_or_else(|| "Unknown".into());
         let album = t.album.clone().unwrap_or_else(|| "Unknown".into());
@@ -229,33 +247,39 @@ fn build_tracks_table<'a>(
             .unwrap_or_else(|| "Unknown".into());
         let release_date = t.release_date.clone().unwrap_or_default();
         let genre = t.genre.clone().unwrap_or_default();
+        let bitrate = fmt_bitrate_kbps(t.bitrate_kbps);
+        let sample_rate = fmt_sample_rate_hz(t.sample_rate_hz);
+        let channels = fmt_channels(t.channels);
+        let plays = t.play_count.map(|n| n.to_string()).unwrap_or_default();
+        let rating = t.rating.map(|n| n.to_string()).unwrap_or_default();
         let len = fmt_duration(t.duration_ms);
 
         let row_cells = row![
-            text(marker).size(ROW_TEXT).width(Length::Fixed(MARKER_W)),
-            text(track_no)
-                .size(ROW_TEXT)
-                .width(Length::Fixed(TRACK_NO_W)),
-            text(title).size(ROW_TEXT).width(Length::Fixed(TITLE_W)),
-            text(artist).size(ROW_TEXT).width(Length::Fixed(ARTIST_W)),
-            text(album).size(ROW_TEXT).width(Length::Fixed(ALBUM_W)),
-            text(album_artist)
-                .size(ROW_TEXT)
-                .width(Length::Fixed(ALBUM_ARTIST_W)),
-            text(release_date)
-                .size(ROW_TEXT)
-                .width(Length::Fixed(RELEASE_DATE_W)),
-            text(genre).size(ROW_TEXT).width(Length::Fixed(GENRE_W)),
-            text(len).size(ROW_TEXT).width(Length::Fixed(LEN_W)),
+            build_text_cell(marker, TRACK_COL_MARKER_W),
+            build_text_cell(&track_no, TRACK_COL_TRACK_NO_W),
+            build_text_cell(&disc_no, TRACK_COL_DISC_NO_W),
+            build_text_cell(&title, TRACK_COL_TITLE_W),
+            build_text_cell(&artist, TRACK_COL_ARTIST_W),
+            build_text_cell(&album, TRACK_COL_ALBUM_W),
+            build_text_cell(&album_artist, TRACK_COL_ALBUM_ARTIST_W),
+            build_text_cell(&release_date, TRACK_COL_RELEASE_DATE_W),
+            build_text_cell(&genre, TRACK_COL_GENRE_W),
+            build_text_cell(&bitrate, TRACK_COL_BITRATE_W),
+            build_text_cell(&sample_rate, TRACK_COL_SAMPLE_RATE_W),
+            build_text_cell(&channels, TRACK_COL_CHANNELS_W),
+            build_text_cell(&plays, TRACK_COL_PLAYS_W),
+            build_text_cell(&rating, TRACK_COL_RATING_W),
+            build_text_cell(&len, TRACK_COL_LEN_W),
         ]
-        .spacing(10)
-        .align_y(Alignment::Center);
+        .spacing(TRACK_COL_SPACING)
+        .align_y(Alignment::Center)
+        .width(Length::Fixed(table_content_width()));
 
         let row_widget = mouse_area(
             container(row_cells)
                 .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
                 .height(Length::Fixed(TRACK_ROW_H))
-                .width(Length::Fill),
+                .width(Length::Fixed(table_outer_width())),
         )
         .on_press(Message::TrackPressed(id));
 
@@ -266,7 +290,7 @@ fn build_tracks_table<'a>(
         col = col.push(
             container(text(""))
                 .height(Length::Fixed(bottom_spacer_h))
-                .width(Length::Fill),
+                .width(Length::Fixed(table_outer_width())),
         );
     }
 
@@ -285,12 +309,121 @@ fn build_tracks_table<'a>(
         total_ms
     );
 
-    scrollable(col)
-        .height(Length::Fill)
-        .on_scroll(|viewport| Message::TracksScrolled {
-            offset_y: viewport.absolute_offset().y,
-            viewport_height: viewport.bounds().height,
-        })
+    scrollable(
+        col.width(Length::Fixed(table_outer_width()))
+            .height(Length::Shrink),
+    )
+    .height(Length::Fill)
+    .width(Length::Fixed(table_outer_width()))
+    .on_scroll(|viewport| Message::TracksScrolled {
+        offset_y: viewport.absolute_offset().y,
+        viewport_height: viewport.bounds().height,
+    })
+}
+
+fn build_header_cell(
+    column: ColumnKind,
+    active_field: TrackSortField,
+    active_direction: SortDirection,
+) -> iced::Element<'static, Message> {
+    let width = column_width(column);
+
+    match sort_field_for_column(column) {
+        Some(field) => sort_header_button(
+            active_field,
+            active_direction,
+            column_label(column),
+            field,
+            width,
+        )
+        .into(),
+        None => container(
+            text(ellipsize_for_width(column_label(column), width))
+                .size(HEADER_TEXT)
+                .width(Length::Fixed(width)),
+        )
+        .width(Length::Fixed(width))
+        .into(),
+    }
+}
+
+fn build_text_cell(value: &str, width: f32) -> iced::widget::Container<'static, Message> {
+    container(
+        text(ellipsize_for_width(value, width))
+            .size(ROW_TEXT)
+            .width(Length::Fixed(width)),
+    )
+    .width(Length::Fixed(width))
+}
+
+fn column_label(column: ColumnKind) -> &'static str {
+    match column {
+        ColumnKind::Marker => "",
+        ColumnKind::TrackNo => "#",
+        ColumnKind::DiscNo => "Disc",
+        ColumnKind::Title => "Title",
+        ColumnKind::Artist => "Artist",
+        ColumnKind::Album => "Album",
+        ColumnKind::AlbumArtist => "Album Artist",
+        ColumnKind::ReleaseDate => "Release Date",
+        ColumnKind::Genre => "Genre",
+        ColumnKind::Bitrate => "kbps",
+        ColumnKind::SampleRate => "Hz",
+        ColumnKind::Channels => "Ch",
+        ColumnKind::Plays => "Plays",
+        ColumnKind::Rating => "Rate",
+        ColumnKind::Duration => "Len",
+    }
+}
+
+fn sort_field_for_column(column: ColumnKind) -> Option<TrackSortField> {
+    match column {
+        ColumnKind::Marker => None,
+        ColumnKind::TrackNo => Some(TrackSortField::TrackNo),
+        ColumnKind::DiscNo => None,
+        ColumnKind::Title => Some(TrackSortField::Title),
+        ColumnKind::Artist => Some(TrackSortField::Artist),
+        ColumnKind::Album => Some(TrackSortField::Album),
+        ColumnKind::AlbumArtist => Some(TrackSortField::AlbumArtist),
+        ColumnKind::ReleaseDate => Some(TrackSortField::ReleaseDate),
+        ColumnKind::Genre => Some(TrackSortField::Genre),
+        ColumnKind::Bitrate => None,
+        ColumnKind::SampleRate => None,
+        ColumnKind::Channels => None,
+        ColumnKind::Plays => None,
+        ColumnKind::Rating => None,
+        ColumnKind::Duration => Some(TrackSortField::Duration),
+    }
+}
+
+fn column_width(column: ColumnKind) -> f32 {
+    match column {
+        ColumnKind::Marker => TRACK_COL_MARKER_W,
+        ColumnKind::TrackNo => TRACK_COL_TRACK_NO_W,
+        ColumnKind::DiscNo => TRACK_COL_DISC_NO_W,
+        ColumnKind::Title => TRACK_COL_TITLE_W,
+        ColumnKind::Artist => TRACK_COL_ARTIST_W,
+        ColumnKind::Album => TRACK_COL_ALBUM_W,
+        ColumnKind::AlbumArtist => TRACK_COL_ALBUM_ARTIST_W,
+        ColumnKind::ReleaseDate => TRACK_COL_RELEASE_DATE_W,
+        ColumnKind::Genre => TRACK_COL_GENRE_W,
+        ColumnKind::Bitrate => TRACK_COL_BITRATE_W,
+        ColumnKind::SampleRate => TRACK_COL_SAMPLE_RATE_W,
+        ColumnKind::Channels => TRACK_COL_CHANNELS_W,
+        ColumnKind::Plays => TRACK_COL_PLAYS_W,
+        ColumnKind::Rating => TRACK_COL_RATING_W,
+        ColumnKind::Duration => TRACK_COL_LEN_W,
+    }
+}
+
+fn table_content_width() -> f32 {
+    let widths_sum: f32 = TABLE_COLUMNS.iter().map(|c| column_width(*c)).sum();
+    let gaps = (TABLE_COLUMNS.len().saturating_sub(1) as f32) * TRACK_COL_SPACING;
+    widths_sum + gaps
+}
+
+fn table_outer_width() -> f32 {
+    table_content_width() + (TRACK_ROW_HPAD * 2.0)
 }
 
 fn sort_header_button(
@@ -312,9 +445,10 @@ fn sort_header_button(
     let text_label = format!("{label}{suffix}");
 
     button(
-        text(text_label)
+        text(ellipsize_for_width(&text_label, width))
             .size(HEADER_TEXT)
             .width(Length::Fixed(width)),
     )
+    .width(Length::Fixed(width))
     .on_press(Message::SetTrackSortField(field))
 }
