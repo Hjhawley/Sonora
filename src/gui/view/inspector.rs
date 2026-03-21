@@ -448,13 +448,19 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
         button("Save edits").on_press(Message::SaveInspectorToFile)
     };
 
-    let revert_btn = if state.scanning {
-        button("Cancel edits")
+    let close_label = if state.inspector_dirty {
+        "Cancel edits"
     } else {
-        button("Cancel edits").on_press(Message::RevertInspector)
+        "Close inspector"
     };
 
-    let buttons = row![save_btn, revert_btn].spacing(8);
+    let close_btn = if state.scanning {
+        button(close_label)
+    } else {
+        button(close_label).on_press(Message::CloseInspector)
+    };
+
+    let buttons = row![save_btn, close_btn].spacing(8);
 
     let editor =
         scrollable(iced::widget::column![top, artwork, fields].spacing(12)).height(Length::Fill);

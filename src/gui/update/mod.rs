@@ -93,6 +93,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::InspectorChanged(field, value) => {
             inspector::inspector_changed(state, field, value)
         }
+        Message::CloseInspector => inspector::close_inspector(state),
 
         // Save
         Message::SaveInspectorToFile => save::save_inspector_to_file(state),

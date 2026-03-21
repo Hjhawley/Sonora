@@ -25,6 +25,16 @@ pub(crate) fn inspector_changed(
     Task::none()
 }
 
+pub(crate) fn close_inspector(state: &mut Sonora) -> Task<Message> {
+    state.inspector_open = false;
+
+    if state.inspector_dirty {
+        clear_inspector(state);
+    }
+
+    Task::none()
+}
+
 fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String) {
     match field {
         InspectorField::Title => state.inspector.title = value,
@@ -79,6 +89,7 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     } else if let Some(id) = state.selected_track {
         vec![id]
     } else {
+        state.inspector_open = false;
         clear_inspector(state);
         return;
     };
@@ -89,9 +100,12 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         .collect();
 
     if idxs.is_empty() {
+        state.inspector_open = false;
         clear_inspector(state);
         return;
     }
+
+    state.inspector_open = true;
 
     fn opt_str(v: &Option<String>) -> String {
         v.clone().unwrap_or_default()

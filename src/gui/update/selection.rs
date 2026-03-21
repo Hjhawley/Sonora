@@ -36,6 +36,7 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
         state.selected_track = None;
         state.selection_anchor = None;
         state.last_clicked_track = None;
+        state.inspector_open = false;
         clear_inspector(state);
         return Task::none();
     }
@@ -326,6 +327,7 @@ fn toggle_track_selection(state: &mut Sonora, id: TrackId) -> Task<Message> {
     if state.has_selection() {
         load_inspector_from_selection(state);
     } else {
+        state.inspector_open = false;
         clear_inspector(state);
     }
 
@@ -431,6 +433,7 @@ pub(crate) fn clear_selection_and_inspector(state: &mut Sonora) {
     state.last_clicked_track = None;
     state.selected_album = None;
     state.last_album_press = None;
+    state.inspector_open = false;
 
     clear_inspector(state);
 }

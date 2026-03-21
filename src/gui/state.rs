@@ -311,6 +311,7 @@ pub(crate) struct Sonora {
     pub last_album_press: Option<(AlbumPressTarget, Instant)>,
 
     // Inspector
+    pub inspector_open: bool,
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
     pub saving: bool,
@@ -427,6 +428,7 @@ impl Sonora {
 
             last_album_press: None,
 
+            inspector_open: false,
             inspector: InspectorDraft::default(),
             inspector_dirty: false,
             saving: false,
@@ -546,6 +548,10 @@ impl Sonora {
         if matches!(self.selection_anchor, Some(id) if !self.track_index.contains_key(&id)) {
             self.selection_anchor = None;
         }
+
+        if !self.has_selection() {
+            self.inspector_open = false;
+        }
     }
 
     pub fn rebuild_track_query_index(&mut self) {
@@ -640,6 +646,7 @@ pub(crate) enum Message {
 
     // Inspector edits
     InspectorChanged(InspectorField, String),
+    CloseInspector,
 
     // Actions
     SaveInspectorToFile,
