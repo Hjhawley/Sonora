@@ -101,8 +101,6 @@ impl Db {
         self.ensure_column("tracks", "play_count", "INTEGER")?;
         self.ensure_column("tracks", "compilation", "INTEGER")?;
 
-        self.ensure_column("library_roots", "enabled", "INTEGER NOT NULL DEFAULT 1")?;
-
         Ok(())
     }
 

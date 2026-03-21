@@ -140,13 +140,15 @@ impl Db {
                         album_artist,
                         duration_ms,
                     )) => {
-                        let metadata_missing = title.is_none()
-                            && artist.is_none()
-                            && album.is_none()
-                            && album_artist.is_none()
-                            && duration_ms.is_none();
-
-                        old_mtime != f.mtime_unix || old_size != new_size_i64 || metadata_missing
+                        old_mtime != f.mtime_unix
+                            || old_size != new_size_i64
+                            || metadata_cache_missing(
+                                title.as_deref(),
+                                artist.as_deref(),
+                                album.as_deref(),
+                                album_artist.as_deref(),
+                                duration_ms,
+                            )
                     }
                 };
 
@@ -172,4 +174,18 @@ impl Db {
         tx.commit().map_err(|e| e.to_string())?;
         Ok(changed)
     }
+}
+
+fn metadata_cache_missing(
+    title: Option<&str>,
+    artist: Option<&str>,
+    album: Option<&str>,
+    album_artist: Option<&str>,
+    duration_ms: Option<i64>,
+) -> bool {
+    title.is_none()
+        && artist.is_none()
+        && album.is_none()
+        && album_artist.is_none()
+        && duration_ms.is_none()
 }

@@ -4,9 +4,8 @@
 //!
 //! Current policy:
 //! - Windows: %LOCALAPPDATA%/Sonora/sonora.sqlite3
-//! - macOS:   ~/Library/Application Support/Sonora/sonora.sqlite3
-//! - Linux:   $XDG_DATA_HOME/sonora/sonora.sqlite3
-//!            or ~/.local/share/sonora/sonora.sqlite3
+//! - macOS: ~/Library/Application Support/Sonora/sonora.sqlite3
+//! - Linux: ~/.local/share/sonora/sonora.sqlite3
 //!
 //! Future expansion could add helpers for cache paths, logs, artwork cache,
 //! waveform cache, exports, or backup locations.
@@ -54,5 +53,14 @@ pub fn default_db_path() -> Result<PathBuf, String> {
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         dir.push("sonora.sqlite3");
         return Ok(dir);
+    }
+
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        all(unix, not(target_os = "macos"))
+    )))]
+    {
+        Err("Unsupported platform: no default Sonora DB path policy defined.".to_string())
     }
 }

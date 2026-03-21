@@ -1,8 +1,11 @@
 ├── core
 │   ├── db
-│   │   ├── mod.rs - Main SQLite layer and scan-reconciliation layer. It stores library roots, cached track metadata, visibility/missing state, and small pieces of app state like volume. It also reconciles discovered filesystem state into track records, detects changed/backfill-needed files, safely handles overlapping roots, persists refreshed metadata, and loads visible/hidden/missing TrackRows for fast DB-first startup and scope switches.
-│   │   ├── paths.rs - Returns the platform-specific path to sonora.sqlite3 and ensures its parent folder exists. Used by the DB layer when opening Sonora’s database.
-│   │   └── schema.rs - Creates the base SQLite schema and applies lightweight additive migrations. It defines tables for tracks, library roots, and app state, along with cached metadata and filesystem-state columns used by the DB layer.
+│   │   ├── mod.rs - Defines the SQLite DB boundary by owning the Connection-backed Db type, database opening, schema initialization, and submodule wiring for roots, reconciliation, track persistence, and small app-state persistence kept in SQLite for now.
+│   │   ├── paths.rs - Returns the platform-specific path to sonora.sqlite3 and ensures its parent folder exists.
+│   │   ├── schema.rs - Creates the base SQLite schema and applies lightweight additive migrations.
+│   │   ├── roots.rs - Handles persistent library-root configuration and root-related cleanup. It loads/adds/removes library roots and deletes only track records no longer covered by remaining roots when a root is removed.
+│   │   ├── reconcile.rs - Handles scan-time reconciliation between discovered filesystem state and SQLite track records. It marks tracks under scanned roots missing until rediscovered, updates present/mtime/size facts, detects new/changed/backfill-needed files, and returns the DB-backed rows whose metadata should be rehydrated from disk.
+│   │   └── tracks.rs - Handles track-record persistence and DB-backed library queries. It writes refreshed TrackRow metadata into cached columns, loads visible/hidden/missing TrackRows directly from SQLite, maps SQL rows into TrackRows, and supports Sonora-only actions such as hide/unhide and delete-from-Sonora.
 │   ├── hydrate.rs - Metadata hydration pipeline. It turns DB-backed (TrackId, PathBuf) pairs into TrackRows by reading tags and probed media properties from disk. Used mainly during scan/save refreshes rather than normal startup.
 │   ├── library.rs - Performs read-only filesystem discovery and returns lightweight DiscoveredFile records containing path and basic file facts. It is the low-level file scanner used by core scan flows.
 │   ├── load.rs - DB-backed TrackRow loading helpers. It loads cached visible, hidden, or missing library rows directly from SQLite without rescanning the filesystem, which keeps startup and scope switches fast.
