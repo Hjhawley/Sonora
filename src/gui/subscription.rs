@@ -3,7 +3,7 @@
 //! - keyboard event listener
 //! - playback polling while active
 
-use iced::{Subscription, event, keyboard, time};
+use iced::{Subscription, event, time};
 use std::time::Duration;
 
 use super::state::{Message, Sonora};

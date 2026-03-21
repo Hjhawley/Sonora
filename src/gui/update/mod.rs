@@ -46,12 +46,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::TrackSearchChanged(value) => query::track_search_changed(state, value),
         Message::ClearTrackSearch => query::clear_track_search(state),
         Message::SetTrackSortField(field) => query::set_track_sort_field(state, field),
-        Message::ToggleTrackSortDirection => query::toggle_track_sort_direction(state),
-        Message::SetTrackSortDirection(dir) => {
-            state.track_query.sort_direction = dir;
-            state.rebuild_track_query_caches();
-            Task::none()
-        }
         Message::TracksScrolled {
             offset_y,
             viewport_height,
@@ -63,13 +57,12 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         // View + selection
         Message::SetViewMode(mode) => scope::set_view_mode(state, mode),
-        Message::SelectAlbum(key) => selection::select_album(state, key),
-        Message::SelectTrack(id) => selection::select_track(state, id),
         Message::TrackPressed(id) => selection::track_pressed(state, id),
+
+        // Album-view click handling
         Message::AlbumTilePressed(key) => selection::album_tile_pressed(state, key),
         Message::AlbumHeaderPressed(key) => selection::album_header_pressed(state, key),
         Message::AlbumTrackPressed(key, id) => selection::album_track_pressed(state, key, id),
-        Message::ClearSelection => selection::clear_selection(state),
 
         // Cover
         Message::CoverLoaded(id, handle) => selection::cover_loaded(state, id, handle),
@@ -84,10 +77,8 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
 
         // Playback
-        Message::PlaySelected => playback::play_selected(state),
         Message::PlayTrack(id) => playback::play_track(state, id),
         Message::PlayAlbum(key) => playback::play_album(state, key),
-        Message::PlayAlbumFromTrack(key, id) => playback::play_album_from_track(state, key, id),
         Message::TogglePlayPause => playback::toggle_play_pause(state),
         Message::ToggleShuffle => playback::toggle_shuffle(state),
         Message::CycleRepeatMode => playback::cycle_repeat_mode(state),
@@ -97,8 +88,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SeekTo(ratio) => playback::seek_preview(state, ratio),
         Message::SeekCommit => playback::seek_commit(state),
         Message::SetVolume(vol) => playback::set_volume(state, vol),
-
-        Message::PlaybackEvent(ev) => playback::handle_event(state, ev),
 
         // Inspector
         Message::InspectorChanged(field, value) => {

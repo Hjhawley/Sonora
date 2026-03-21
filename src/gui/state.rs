@@ -21,8 +21,8 @@ use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
 use super::query::{
-    QueryTrackCache, SortDirection, TrackQuery, TrackSortField, build_playback_queue_ids,
-    build_query_cache_rows, build_track_view_ids,
+    QueryTrackCache, TrackQuery, TrackSortField, build_playback_queue_ids, build_query_cache_rows,
+    build_track_view_ids,
 };
 
 /// Dev only
@@ -466,13 +466,6 @@ impl Sonora {
     }
 
     #[inline]
-    pub fn representative_track_id_for_album(&self, key: &AlbumKey) -> Option<TrackId> {
-        self.album_groups
-            .get(key)
-            .and_then(|ids| ids.first().copied())
-    }
-
-    #[inline]
     pub fn representative_cover_track_id(&self, key: &AlbumKey) -> Option<TrackId> {
         let ids = self.album_groups.get(key)?;
 
@@ -606,8 +599,6 @@ pub(crate) enum Message {
     TrackSearchChanged(String),
     ClearTrackSearch,
     SetTrackSortField(TrackSortField),
-    ToggleTrackSortDirection,
-    SetTrackSortDirection(SortDirection),
 
     /// Track View scroll/viewport updates for row virtualization.
     TracksScrolled {
@@ -617,10 +608,7 @@ pub(crate) enum Message {
 
     // View + selection
     SetViewMode(ViewMode),
-    SelectAlbum(AlbumKey),
-    SelectTrack(TrackId),
     TrackPressed(TrackId),
-    ClearSelection,
 
     // Album-view click handling
     AlbumTilePressed(AlbumKey),
@@ -638,10 +626,8 @@ pub(crate) enum Message {
     InspectorArtworkExtracted(Result<Option<PathBuf>, String>),
 
     // Playback controls (from UI)
-    PlaySelected,
     PlayTrack(TrackId),
     PlayAlbum(AlbumKey),
-    PlayAlbumFromTrack(AlbumKey, TrackId),
     TogglePlayPause,
     ToggleShuffle,
     CycleRepeatMode,
@@ -651,8 +637,6 @@ pub(crate) enum Message {
     SeekTo(f32),
     SeekCommit,
     SetVolume(f32),
-
-    PlaybackEvent(PlayerEvent),
 
     // Inspector edits
     InspectorChanged(InspectorField, String),
