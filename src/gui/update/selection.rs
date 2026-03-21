@@ -403,12 +403,17 @@ pub(crate) fn cover_loaded(
     Task::none()
 }
 
-/// Preload representative cover art for every album currently in the dataset.
+/// Preload representative cover art
 pub(crate) fn preload_album_covers(state: &mut Sonora) -> Task<Message> {
     let rep_ids: Vec<TrackId> = state
         .album_groups
         .values()
-        .filter_map(|ids| ids.first().copied())
+        .filter_map(|ids| {
+            ids.iter()
+                .copied()
+                .find(|id| state.track_by_id(*id).is_some_and(|t| t.artwork_count > 0))
+                .or_else(|| ids.first().copied())
+        })
         .collect();
 
     let mut tasks: Vec<Task<Message>> = Vec::new();
@@ -633,6 +638,10 @@ fn maybe_load_cover_for_track(state: &mut Sonora, id: TrackId) -> Task<Message> 
         return Task::none();
     };
 
+    if track.artwork_count == 0 {
+        return Task::none();
+    }
+
     let path: PathBuf = track.path.clone();
 
     Task::perform(
@@ -642,8 +651,8 @@ fn maybe_load_cover_for_track(state: &mut Sonora, id: TrackId) -> Task<Message> 
 }
 
 fn load_cover_handle_from_path(path: &Path) -> Option<iced::widget::image::Handle> {
-    let (bytes, _mime) = crate::core::tags::read_embedded_art(path).ok()??;
-    Some(iced::widget::image::Handle::from_bytes(bytes))
+    let art = crate::core::tags::read_embedded_art(path).ok()??;
+    Some(iced::widget::image::Handle::from_bytes(art.data))
 }
 
 pub(crate) fn clear_selection_and_inspector(state: &mut Sonora) {

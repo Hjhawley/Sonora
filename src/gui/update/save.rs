@@ -17,10 +17,11 @@
 
 use iced::Task;
 
-use super::super::state::{InspectorField, Message, Sonora, is_mixed_display_value};
+use super::super::state::{ArtworkEdit, InspectorField, Message, Sonora, is_mixed_display_value};
 use super::super::util::{
     extract_year_from_release_date, parse_optional_release_date, parse_optional_u32,
 };
+use super::art::reset_inspector_artwork_state;
 use super::inspector::load_inspector_from_selection;
 use super::util::spawn_blocking;
 use crate::core::types::{TrackId, TrackRow};
@@ -43,6 +44,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
 
     let is_batch = ids.len() > 1;
     let primary_row: Option<&TrackRow> = state.selected_track.and_then(|id| state.track_by_id(id));
+    let artwork_edit = state.inspector_art_edit.clone();
 
     let mut rows_to_write: Vec<(TrackId, TrackRow)> = Vec::with_capacity(ids.len());
     for &id in &ids {
@@ -64,9 +66,10 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
 
     if rows_to_write.len() == 1 {
         let (id, row_to_write) = rows_to_write.remove(0);
+        let art_edit = artwork_edit.clone();
 
         return Task::perform(
-            spawn_blocking(move || write_and_reread_row(row_to_write)),
+            spawn_blocking(move || write_and_reread_row(row_to_write, art_edit)),
             move |res| Message::SaveFinished(id, res),
         );
     }
@@ -76,7 +79,7 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
             let mut out: Vec<(TrackId, TrackRow)> = Vec::new();
 
             for (id, row) in rows_to_write {
-                let reread = write_and_reread_row(row)
+                let reread = write_and_reread_row(row, artwork_edit.clone())
                     .map_err(|e| format!("Save failed for track {id}: {e}"))?;
                 out.push((id, reread));
             }
@@ -98,15 +101,20 @@ pub(crate) fn save_finished(
         Ok(new_row) => {
             if let Some(slot) = state.track_by_id_mut(id) {
                 *slot = new_row;
-                state.rebuild_library_caches();
-                load_inspector_from_selection(state);
             } else {
                 state.status = "Tags written, but selection changed (rescan?).".to_string();
                 state.inspector_dirty = false;
+                reset_inspector_artwork_state(state);
                 return Task::none();
             }
 
+            apply_saved_artwork_to_cache(state, &[id]);
+
+            state.rebuild_library_caches();
+            load_inspector_from_selection(state);
+
             state.inspector_dirty = false;
+            reset_inspector_artwork_state(state);
             state.status = "Tags written to file.".to_string();
         }
         Err(e) => {
@@ -125,16 +133,22 @@ pub(crate) fn save_finished_batch(
 
     match result {
         Ok(rows) => {
+            let mut ids: Vec<TrackId> = Vec::with_capacity(rows.len());
+
             for (id, row) in rows {
+                ids.push(id);
                 if let Some(slot) = state.track_by_id_mut(id) {
                     *slot = row;
                 }
             }
 
+            apply_saved_artwork_to_cache(state, &ids);
+
             state.rebuild_library_caches();
             load_inspector_from_selection(state);
 
             state.inspector_dirty = false;
+            reset_inspector_artwork_state(state);
             state.status = "Batch tags written to files.".to_string();
         }
         Err(e) => {
@@ -147,6 +161,7 @@ pub(crate) fn save_finished_batch(
 
 pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
     load_inspector_from_selection(state);
+    reset_inspector_artwork_state(state);
     Task::none()
 }
 
@@ -164,8 +179,21 @@ fn selected_ids_for_save(state: &Sonora) -> Vec<TrackId> {
     ids
 }
 
-fn write_and_reread_row(row_to_write: TrackRow) -> Result<TrackRow, String> {
+fn write_and_reread_row(
+    row_to_write: TrackRow,
+    artwork_edit: ArtworkEdit,
+) -> Result<TrackRow, String> {
     crate::core::tags::write_track_row(&row_to_write, true)?;
+
+    match artwork_edit {
+        ArtworkEdit::Unchanged => {}
+        ArtworkEdit::Remove => {
+            let _ = crate::core::tags::remove_embedded_art(&row_to_write.path)?;
+        }
+        ArtworkEdit::Replace { bytes, mime, .. } => {
+            crate::core::tags::set_embedded_art(&row_to_write.path, &bytes, &mime)?;
+        }
+    }
 
     let (mut reread, failed) = crate::core::tags::read_track_row(row_to_write.path.clone());
     if failed {
@@ -174,6 +202,22 @@ fn write_and_reread_row(row_to_write: TrackRow) -> Result<TrackRow, String> {
 
     reread.id = row_to_write.id;
     Ok(reread)
+}
+
+fn apply_saved_artwork_to_cache(state: &mut Sonora, ids: &[TrackId]) {
+    match &state.inspector_art_edit {
+        ArtworkEdit::Unchanged => {}
+        ArtworkEdit::Remove => {
+            for id in ids {
+                state.cover_cache.remove(id);
+            }
+        }
+        ArtworkEdit::Replace { preview, .. } => {
+            for id in ids {
+                state.cover_cache.insert(*id, preview.clone());
+            }
+        }
+    }
 }
 
 fn build_row_from_inspector_for_id(

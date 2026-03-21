@@ -85,7 +85,7 @@ pub(crate) fn num_pair_row<'a>(
     .align_y(Alignment::Center)
 }
 
-/// Bottom playback bar.
+/// Top playback bar
 pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let engine_ready = state.playback.is_some();
     let play_label = if state.is_playing { "Pause" } else { "Play" };
@@ -181,8 +181,9 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
             .width(Length::Fixed(140.0))
     };
 
-    // "now playing" label
-    let now_playing = match state.now_playing.and_then(|id| state.track_by_id(id)) {
+    let now_playing_row = state.now_playing.and_then(|id| state.track_by_id(id));
+
+    let now_playing_title = match now_playing_row {
         Some(t) => t
             .title
             .clone()
@@ -191,19 +192,40 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         None => "Nothing playing".into(),
     };
 
-    let bar = row![
-        row![prev_btn, play_btn, next_btn]
-            .spacing(8)
-            .align_y(Alignment::Center),
+    let now_playing_artist = match now_playing_row {
+        Some(t) => t.artist.clone().unwrap_or_else(|| "Unknown Artist".into()),
+        None => String::new(),
+    };
+
+    let now_playing_cover = state.now_playing.and_then(|id| state.cover_cache.get(&id));
+
+    let title_block = if now_playing_row.is_some() {
         column![
-            text(now_playing).size(14),
+            text(now_playing_title).size(14),
+            text(now_playing_artist).size(12),
             text(queue_label).size(12),
             row![seek, text(time_text).size(12)]
                 .spacing(10)
                 .align_y(Alignment::Center),
         ]
-        .spacing(6)
-        .width(Length::Fill),
+        .spacing(4)
+    } else {
+        column![
+            text(now_playing_title).size(14),
+            text(queue_label).size(12),
+            row![seek, text(time_text).size(12)]
+                .spacing(10)
+                .align_y(Alignment::Center),
+        ]
+        .spacing(4)
+    };
+
+    let bar = row![
+        row![prev_btn, play_btn, next_btn]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        cover_thumb(now_playing_cover, 52.0),
+        title_block.width(Length::Fill),
         row![shuffle_btn, repeat_btn, text("Vol").size(12), vol_slider]
             .spacing(8)
             .align_y(Alignment::Center),

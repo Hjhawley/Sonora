@@ -8,9 +8,11 @@ use iced::widget::text_input::Status as TextInputStatus;
 use iced::widget::{Column, Row, button, container, row, scrollable, text, text_input};
 use iced::{Alignment, Color, Length, Theme};
 
-use super::super::state::{InspectorField as Field, Message, Sonora, mixed_display_string};
+use super::super::state::{
+    ArtworkEdit, InspectorField as Field, Message, Sonora, mixed_display_string,
+};
 use super::constants::LABEL_W;
-use super::widgets::fmt_duration;
+use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackRow;
 use crate::gui::util::{fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 
@@ -161,6 +163,92 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
         text(library_line).size(12),
     ]
     .spacing(6)
+}
+
+fn artwork_preview_handle<'a>(
+    state: &'a Sonora,
+    rows: &[&TrackRow],
+) -> Option<&'a iced::widget::image::Handle> {
+    match &state.inspector_art_edit {
+        ArtworkEdit::Replace { preview, .. } => Some(preview),
+        ArtworkEdit::Remove => None,
+        ArtworkEdit::Unchanged => {
+            if rows.len() == 1 {
+                state
+                    .selected_track
+                    .and_then(|id| state.cover_cache.get(&id))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+fn artwork_status_text(state: &Sonora, rows: &[&TrackRow]) -> String {
+    match &state.inspector_art_edit {
+        ArtworkEdit::Replace { .. } => "Pending: replace artwork on save".to_string(),
+        ArtworkEdit::Remove => "Pending: remove artwork on save".to_string(),
+        ArtworkEdit::Unchanged => {
+            if rows.is_empty() {
+                "No selection.".to_string()
+            } else if rows.len() == 1 {
+                if rows[0].artwork_count > 0 {
+                    "Embedded artwork present.".to_string()
+                } else {
+                    "No embedded artwork.".to_string()
+                }
+            } else {
+                let all_have_art = rows.iter().all(|r| r.artwork_count > 0);
+                let none_have_art = rows.iter().all(|r| r.artwork_count == 0);
+
+                if all_have_art {
+                    "Artwork present in all selected files.".to_string()
+                } else if none_have_art {
+                    "No artwork in selected files.".to_string()
+                } else {
+                    format!("Artwork state: {}", mixed_display_string())
+                }
+            }
+        }
+    }
+}
+
+fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
+    let rows = selected_rows(state);
+    let can_extract = rows.len() == 1
+        && match &state.inspector_art_edit {
+            ArtworkEdit::Replace { .. } => true,
+            ArtworkEdit::Remove => rows[0].artwork_count > 0,
+            ArtworkEdit::Unchanged => rows[0].artwork_count > 0,
+        };
+
+    let add_btn = if state.scanning || state.saving {
+        button("Add / Replace artwork")
+    } else {
+        button("Add / Replace artwork").on_press(Message::ChooseInspectorArtwork)
+    };
+
+    let remove_btn = if state.scanning || state.saving {
+        button("Remove artwork")
+    } else {
+        button("Remove artwork").on_press(Message::RemoveInspectorArtwork)
+    };
+
+    let extract_btn = if state.scanning || state.saving || !can_extract {
+        button("Extract artwork")
+    } else {
+        button("Extract artwork").on_press(Message::ExtractInspectorArtwork)
+    };
+
+    iced::widget::column![
+        text("Artwork").size(16),
+        cover_thumb(artwork_preview_handle(state, &rows), 150.0),
+        text(artwork_status_text(state, &rows)).size(12),
+        row![add_btn, remove_btn, extract_btn]
+            .spacing(8)
+            .align_y(Alignment::Center),
+    ]
+    .spacing(8)
 }
 
 fn build_all_fields(state: &Sonora) -> Column<'_, Message> {
@@ -338,6 +426,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     }
 
     let top = build_inspector_header(state);
+    let artwork = build_artwork_section(state);
     let fields = build_all_fields(state);
 
     let save_btn = if state.scanning || !state.inspector_dirty {
@@ -354,7 +443,8 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
 
     let buttons = row![save_btn, revert_btn].spacing(8);
 
-    let editor = scrollable(iced::widget::column![top, fields].spacing(12)).height(Length::Fill);
+    let editor =
+        scrollable(iced::widget::column![top, artwork, fields].spacing(12)).height(Length::Fill);
 
     container(iced::widget::column![editor, buttons].spacing(12)).padding(12)
 }

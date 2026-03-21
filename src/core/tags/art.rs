@@ -1,24 +1,96 @@
 //! core/tags/art.rs
-//! Read embedded album art (APIC/PIC) from an MP3 using the id3 crate.
+//! Embedded album-art IO for MP3 files using the id3 crate.
+//! - Prefer front cover art when reading
+//! - Fall back to the first embedded picture
+//! - Only write JPEG / PNG for MVP
+//! - Artwork is stored in the file tags, not in SQLite
 
 use std::path::Path;
 
-use id3::Tag;
+use id3::frame::{Content, Picture, PictureType};
+use id3::{Frame, Tag, TagLike, Version};
 
-/// Returns '(image_bytes, mime)' for the first embedded picture (APIC/PIC).
-pub fn read_embedded_art(path: &Path) -> Result<Option<(Vec<u8>, String)>, String> {
+#[derive(Debug, Clone)]
+pub struct EmbeddedArt {
+    pub data: Vec<u8>,
+    pub mime: String,
+}
+
+/// Returns the preferred embedded picture:
+/// 1) front cover if present
+/// 2) otherwise the first picture
+pub fn read_embedded_art(path: &Path) -> Result<Option<EmbeddedArt>, String> {
     let tag = match Tag::read_from_path(path) {
         Ok(t) => t,
-        // For now, treat any tag-read failure as "no embedded art".
-        // If we later need better diagnostics, distinguish missing-tag from
-        // true IO / parse failures here.
+        // Keep current app behavior: missing/invalid tag == no art for now.
         Err(_) => return Ok(None),
     };
 
-    // Use the crate's official picture iterator rather than matching raw frame content.
-    if let Some(p) = tag.pictures().next() {
-        return Ok(Some((p.data.clone(), p.mime_type.clone())));
+    let chosen = tag
+        .pictures()
+        .find(|p| p.picture_type == PictureType::CoverFront)
+        .or_else(|| tag.pictures().next());
+
+    Ok(chosen.map(|p| EmbeddedArt {
+        data: p.data.clone(),
+        mime: p.mime_type.clone(),
+    }))
+}
+
+/// Replace all existing embedded artwork with a single front-cover image.
+pub fn set_embedded_art(path: &Path, data: &[u8], mime: &str) -> Result<(), String> {
+    let normalized_mime = normalize_supported_mime(mime)?;
+
+    let mut tag = match Tag::read_from_path(path) {
+        Ok(t) => t,
+        Err(_) => Tag::new(),
+    };
+
+    remove_all_picture_frames(&mut tag);
+
+    let picture = Picture {
+        mime_type: normalized_mime.to_string(),
+        picture_type: PictureType::CoverFront,
+        description: String::new(),
+        data: data.to_vec(),
+    };
+
+    tag.add_frame(Frame::with_content("APIC", Content::Picture(picture)));
+
+    tag.write_to_path(path, Version::Id3v24)
+        .map_err(|e| format!("Failed to write embedded artwork: {e}"))
+}
+
+/// Remove all embedded pictures. Returns `true` if anything was removed.
+pub fn remove_embedded_art(path: &Path) -> Result<bool, String> {
+    let mut tag = match Tag::read_from_path(path) {
+        Ok(t) => t,
+        Err(_) => return Ok(false),
+    };
+
+    let removed_any = remove_all_picture_frames(&mut tag);
+    if !removed_any {
+        return Ok(false);
     }
 
-    Ok(None)
+    tag.write_to_path(path, Version::Id3v24)
+        .map_err(|e| format!("Failed to remove embedded artwork: {e}"))?;
+
+    Ok(true)
+}
+
+fn normalize_supported_mime(mime: &str) -> Result<&'static str, String> {
+    match mime.trim().to_ascii_lowercase().as_str() {
+        "image/jpeg" | "image/jpg" => Ok("image/jpeg"),
+        "image/png" => Ok("image/png"),
+        other => Err(format!(
+            "Unsupported artwork type '{other}'. Only JPEG and PNG are supported right now."
+        )),
+    }
+}
+
+fn remove_all_picture_frames(tag: &mut Tag) -> bool {
+    let removed_apic = !tag.remove("APIC").is_empty();
+    let removed_pic = !tag.remove("PIC").is_empty();
+    removed_apic || removed_pic
 }

@@ -1,6 +1,6 @@
 [package]
 name = "sonora"
-version = "0.9.4"
+version = "0.10.0"
 edition = "2024"
 
 [dependencies]
@@ -18,3 +18,4 @@ symphonia = { version = "0.5.5", features = [
 ] }
 rand = "0.8"
 rusqlite = { version = "0.32", features = ["bundled"] }
+rfd = "0.14"

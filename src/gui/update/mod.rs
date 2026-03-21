@@ -7,6 +7,7 @@ use iced::Task;
 
 use super::state::{Message, Sonora};
 
+mod art;
 mod inspector;
 mod keyboard;
 mod playback;
@@ -70,6 +71,15 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         // Cover
         Message::CoverLoaded(id, handle) => selection::cover_loaded(state, id, handle),
+
+        // Inspector artwork
+        Message::ChooseInspectorArtwork => art::choose_inspector_artwork(state),
+        Message::InspectorArtworkChosen(result) => art::inspector_artwork_chosen(state, result),
+        Message::RemoveInspectorArtwork => art::remove_inspector_artwork(state),
+        Message::ExtractInspectorArtwork => art::extract_inspector_artwork(state),
+        Message::InspectorArtworkExtracted(result) => {
+            art::inspector_artwork_extracted(state, result)
+        }
 
         // Playback
         Message::PlaySelected => playback::play_selected(state),

@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 
 use super::super::state::{InspectorDraft, InspectorField, Message, Sonora};
 use super::super::util::filename_stem;
+use super::art::reset_inspector_artwork_state;
 use crate::core::types::TrackId;
 
 pub(crate) fn inspector_changed(
@@ -64,12 +65,15 @@ pub(crate) fn clear_inspector(state: &mut Sonora) {
     state.inspector = Default::default();
     state.inspector_dirty = false;
     state.inspector_mixed.clear();
+    reset_inspector_artwork_state(state);
 }
 
 /// Load inspector fields from the current selection.
 /// - Works for single-track and multi-track selection.
 /// - Writes '<mixed>' into fields that disagree across selected tracks.
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
+    reset_inspector_artwork_state(state);
+
     let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()
     } else if let Some(id) = state.selected_track {

@@ -196,6 +196,29 @@ pub(crate) enum InspectorField {
     Copyright,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct PickedArtwork {
+    pub bytes: Vec<u8>,
+    pub mime: String,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum ArtworkEdit {
+    Unchanged,
+    Remove,
+    Replace {
+        bytes: Vec<u8>,
+        mime: String,
+        preview: iced::widget::image::Handle,
+    },
+}
+
+impl Default for ArtworkEdit {
+    fn default() -> Self {
+        Self::Unchanged
+    }
+}
+
 pub(crate) struct Sonora {
     // Status + lifecycle
     pub status: String,
@@ -291,6 +314,7 @@ pub(crate) struct Sonora {
     pub inspector: InspectorDraft,
     pub inspector_dirty: bool,
     pub saving: bool,
+    pub inspector_art_edit: ArtworkEdit,
 
     /// 'true' means "selected files disagree on this field".
     ///
@@ -406,6 +430,7 @@ impl Sonora {
             inspector: InspectorDraft::default(),
             inspector_dirty: false,
             saving: false,
+            inspector_art_edit: ArtworkEdit::Unchanged,
             inspector_mixed: BTreeMap::new(),
         };
 
@@ -594,6 +619,13 @@ pub(crate) enum Message {
 
     // Cover art
     CoverLoaded(TrackId, Option<iced::widget::image::Handle>),
+
+    // Inspector artwork
+    ChooseInspectorArtwork,
+    InspectorArtworkChosen(Result<Option<PickedArtwork>, String>),
+    RemoveInspectorArtwork,
+    ExtractInspectorArtwork,
+    InspectorArtworkExtracted(Result<Option<PathBuf>, String>),
 
     // Playback controls (from UI)
     PlaySelected,

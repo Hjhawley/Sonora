@@ -21,6 +21,7 @@ use std::path::Path;
 
 use super::super::query;
 use super::super::state::{AlbumKey, Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
+use super::art;
 use crate::core::playback::{PlayerCommand, PlayerEvent, start_playback};
 use crate::core::types::TrackId;
 
@@ -286,6 +287,18 @@ fn refresh_next_queue_hint(state: &mut Sonora) {
     }
 }
 
+fn maybe_load_now_playing_cover(state: &Sonora, id: TrackId) -> Task<Message> {
+    let Some(row) = state.track_by_id(id) else {
+        return Task::none();
+    };
+
+    if row.artwork_count == 0 || state.cover_cache.contains_key(&id) {
+        return Task::none();
+    }
+
+    art::load_cover_for_track(id, row.path.clone())
+}
+
 fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     ensure_engine(state);
 
@@ -316,7 +329,7 @@ fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
 
     refresh_next_queue_hint(state);
 
-    Task::none()
+    maybe_load_now_playing_cover(state, id)
 }
 
 pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
@@ -621,12 +634,16 @@ pub(crate) fn handle_event(state: &mut Sonora, event: PlayerEvent) -> Task<Messa
             state.position_ms = start_ms;
             state.seek_preview_ratio = None;
 
+            let mut task = Task::none();
+
             if let Some(id) = track_id_by_path(state, &path) {
                 state.now_playing = Some(id);
+                task = maybe_load_now_playing_cover(state, id);
             }
 
             state.status = format!("Now playing: {}", path.display());
             refresh_next_queue_hint(state);
+            return task;
         }
 
         PlayerEvent::Paused { playback_id } => {
