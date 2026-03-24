@@ -16,11 +16,18 @@ use super::super::query::{SortDirection, TrackSortField};
 use super::super::state::{LibraryScope, Message, Sonora};
 use super::super::util::{filename_stem, fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 use super::constants::{
-    HEADER_TEXT, ROW_TEXT, TRACK_COL_ALBUM_ARTIST_W, TRACK_COL_ALBUM_W, TRACK_COL_ARTIST_W,
-    TRACK_COL_BITRATE_W, TRACK_COL_CHANNELS_W, TRACK_COL_DISC_NO_W, TRACK_COL_GENRE_W,
-    TRACK_COL_LEN_W, TRACK_COL_MARKER_W, TRACK_COL_PLAYS_W, TRACK_COL_RATING_W,
-    TRACK_COL_RELEASE_DATE_W, TRACK_COL_SAMPLE_RATE_W, TRACK_COL_SPACING, TRACK_COL_TITLE_W,
-    TRACK_COL_TRACK_NO_W, TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
+    HEADER_TEXT, ROW_TEXT, TRACK_COL_ALBUM_ARTIST_SORT_W, TRACK_COL_ALBUM_ARTIST_W,
+    TRACK_COL_ALBUM_SORT_W, TRACK_COL_ALBUM_W, TRACK_COL_ARTIST_SORT_W, TRACK_COL_ARTIST_W,
+    TRACK_COL_ARTWORK_COUNT_W, TRACK_COL_BITRATE_W, TRACK_COL_BPM_W, TRACK_COL_CHANNELS_W,
+    TRACK_COL_COMMENT_W, TRACK_COL_COMPILATION_W, TRACK_COL_COMPOSER_W, TRACK_COL_CONDUCTOR_W,
+    TRACK_COL_COPYRIGHT_W, TRACK_COL_DISC_NO_W, TRACK_COL_DISC_TOTAL_W, TRACK_COL_ENCODED_BY_W,
+    TRACK_COL_ENCODER_SETTINGS_W, TRACK_COL_GENRE_W, TRACK_COL_GROUPING_W, TRACK_COL_ISRC_W,
+    TRACK_COL_KEY_W, TRACK_COL_LANGUAGE_W, TRACK_COL_LEN_W, TRACK_COL_LYRICIST_W,
+    TRACK_COL_LYRICS_W, TRACK_COL_MARKER_W, TRACK_COL_MOOD_W, TRACK_COL_PATH_W, TRACK_COL_PLAYS_W,
+    TRACK_COL_PUBLISHER_W, TRACK_COL_RATING_W, TRACK_COL_RELEASE_DATE_W, TRACK_COL_REMIXER_W,
+    TRACK_COL_SAMPLE_RATE_W, TRACK_COL_SPACING, TRACK_COL_SUBTITLE_W, TRACK_COL_TITLE_SORT_W,
+    TRACK_COL_TITLE_W, TRACK_COL_TRACK_NO_W, TRACK_COL_TRACK_TOTAL_W, TRACK_COL_YEAR_W,
+    TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
 use super::widgets::{ellipsize_for_width, fmt_duration};
 
@@ -30,38 +37,97 @@ const FALLBACK_VIEWPORT_H: f32 = 700.0;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ColumnKind {
     Marker,
+    Path,
+
     TrackNo,
+    TrackTotal,
     DiscNo,
+    DiscTotal,
+
     Title,
     Artist,
     Album,
     AlbumArtist,
+    Composer,
+
     ReleaseDate,
+    Year,
     Genre,
+    Grouping,
+    Comment,
+    Lyrics,
+    Lyricist,
+    Conductor,
+    Remixer,
+    Publisher,
+    Subtitle,
+    Bpm,
+    Key,
+    Mood,
+    Language,
+    Isrc,
+    EncoderSettings,
+    EncodedBy,
+    Copyright,
+
+    ArtworkCount,
+    TitleSort,
+    ArtistSort,
+    AlbumSort,
+    AlbumArtistSort,
+
+    Duration,
     Bitrate,
     SampleRate,
     Channels,
-    Plays,
     Rating,
-    Duration,
+    PlayCount,
+    Compilation,
 }
 
-const TABLE_COLUMNS: [ColumnKind; 15] = [
+const TABLE_COLUMNS: [ColumnKind; 42] = [
     ColumnKind::Marker,
+    ColumnKind::Path,
     ColumnKind::TrackNo,
+    ColumnKind::TrackTotal,
     ColumnKind::DiscNo,
+    ColumnKind::DiscTotal,
     ColumnKind::Title,
     ColumnKind::Artist,
     ColumnKind::Album,
     ColumnKind::AlbumArtist,
+    ColumnKind::Composer,
     ColumnKind::ReleaseDate,
+    ColumnKind::Year,
     ColumnKind::Genre,
+    ColumnKind::Grouping,
+    ColumnKind::Comment,
+    ColumnKind::Lyrics,
+    ColumnKind::Lyricist,
+    ColumnKind::Conductor,
+    ColumnKind::Remixer,
+    ColumnKind::Publisher,
+    ColumnKind::Subtitle,
+    ColumnKind::Bpm,
+    ColumnKind::Key,
+    ColumnKind::Mood,
+    ColumnKind::Language,
+    ColumnKind::Isrc,
+    ColumnKind::EncoderSettings,
+    ColumnKind::EncodedBy,
+    ColumnKind::Copyright,
+    ColumnKind::ArtworkCount,
+    ColumnKind::TitleSort,
+    ColumnKind::ArtistSort,
+    ColumnKind::AlbumSort,
+    ColumnKind::AlbumArtistSort,
+    ColumnKind::Duration,
     ColumnKind::Bitrate,
     ColumnKind::SampleRate,
     ColumnKind::Channels,
-    ColumnKind::Plays,
     ColumnKind::Rating,
-    ColumnKind::Duration,
+    ColumnKind::PlayCount,
+    ColumnKind::Compilation,
 ];
 
 pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
@@ -150,23 +216,22 @@ fn build_tracks_table_region<'a>(
 }
 
 fn build_tracks_header(state: &Sonora) -> iced::widget::Container<'_, Message> {
-    let mut row = row![];
-    let col_count = TABLE_COLUMNS.len();
+    let mut r = row![];
 
     for (i, col) in TABLE_COLUMNS.iter().enumerate() {
-        row = row.push(build_header_cell(
+        r = r.push(build_header_cell(
             *col,
             state.track_query.sort_field,
             state.track_query.sort_direction,
         ));
 
-        if i + 1 < col_count {
-            row = row.spacing(TRACK_COL_SPACING);
+        if i + 1 < TABLE_COLUMNS.len() {
+            r = r.spacing(TRACK_COL_SPACING);
         }
     }
 
     container(
-        row.spacing(TRACK_COL_SPACING)
+        r.spacing(TRACK_COL_SPACING)
             .align_y(Alignment::Center)
             .width(Length::Fixed(table_content_width())),
     )
@@ -235,8 +300,12 @@ fn build_tracks_body<'a>(
             ""
         };
 
+        let path = t.path.to_string_lossy().to_string();
         let track_no = t.track_no.map(|n| n.to_string()).unwrap_or_default();
+        let track_total = t.track_total.map(|n| n.to_string()).unwrap_or_default();
         let disc_no = t.disc_no.map(|n| n.to_string()).unwrap_or_default();
+        let disc_total = t.disc_total.map(|n| n.to_string()).unwrap_or_default();
+
         let title = t.title.clone().unwrap_or_else(|| filename_stem(&t.path));
         let artist = t.artist.clone().unwrap_or_else(|| "Unknown".into());
         let album = t.album.clone().unwrap_or_else(|| "Unknown".into());
@@ -245,31 +314,89 @@ fn build_tracks_body<'a>(
             .clone()
             .or_else(|| t.artist.clone())
             .unwrap_or_else(|| "Unknown".into());
+        let composer = t.composer.clone().unwrap_or_default();
+
         let release_date = t.release_date.clone().unwrap_or_default();
+        let year = t.year.map(|n| n.to_string()).unwrap_or_default();
         let genre = t.genre.clone().unwrap_or_default();
+        let grouping = t.grouping.clone().unwrap_or_default();
+        let comment = t.comment.clone().unwrap_or_default();
+        let lyrics = t.lyrics.clone().unwrap_or_default();
+        let lyricist = t.lyricist.clone().unwrap_or_default();
+        let conductor = t.conductor.clone().unwrap_or_default();
+        let remixer = t.remixer.clone().unwrap_or_default();
+        let publisher = t.publisher.clone().unwrap_or_default();
+        let subtitle = t.subtitle.clone().unwrap_or_default();
+        let bpm = t.bpm.map(|n| n.to_string()).unwrap_or_default();
+        let key = t.key.clone().unwrap_or_default();
+        let mood = t.mood.clone().unwrap_or_default();
+        let language = t.language.clone().unwrap_or_default();
+        let isrc = t.isrc.clone().unwrap_or_default();
+        let encoder_settings = t.encoder_settings.clone().unwrap_or_default();
+        let encoded_by = t.encoded_by.clone().unwrap_or_default();
+        let copyright = t.copyright.clone().unwrap_or_default();
+
+        let artwork_count = t.artwork_count.to_string();
+        let title_sort = t.title_sort.clone().unwrap_or_default();
+        let artist_sort = t.artist_sort.clone().unwrap_or_default();
+        let album_sort = t.album_sort.clone().unwrap_or_default();
+        let album_artist_sort = t.album_artist_sort.clone().unwrap_or_default();
+
+        let len = fmt_duration(t.duration_ms);
         let bitrate = fmt_bitrate_kbps(t.bitrate_kbps);
         let sample_rate = fmt_sample_rate_hz(t.sample_rate_hz);
         let channels = fmt_channels(t.channels);
-        let plays = t.play_count.map(|n| n.to_string()).unwrap_or_default();
         let rating = t.rating.map(|n| n.to_string()).unwrap_or_default();
-        let len = fmt_duration(t.duration_ms);
+        let play_count = t.play_count.map(|n| n.to_string()).unwrap_or_default();
+        let compilation = match t.compilation {
+            Some(true) => "true".to_string(),
+            Some(false) => "false".to_string(),
+            None => String::new(),
+        };
 
         let row_cells = row![
             build_text_cell(marker, TRACK_COL_MARKER_W),
+            build_text_cell(&path, TRACK_COL_PATH_W),
             build_text_cell(&track_no, TRACK_COL_TRACK_NO_W),
+            build_text_cell(&track_total, TRACK_COL_TRACK_TOTAL_W),
             build_text_cell(&disc_no, TRACK_COL_DISC_NO_W),
+            build_text_cell(&disc_total, TRACK_COL_DISC_TOTAL_W),
             build_text_cell(&title, TRACK_COL_TITLE_W),
             build_text_cell(&artist, TRACK_COL_ARTIST_W),
             build_text_cell(&album, TRACK_COL_ALBUM_W),
             build_text_cell(&album_artist, TRACK_COL_ALBUM_ARTIST_W),
+            build_text_cell(&composer, TRACK_COL_COMPOSER_W),
             build_text_cell(&release_date, TRACK_COL_RELEASE_DATE_W),
+            build_text_cell(&year, TRACK_COL_YEAR_W),
             build_text_cell(&genre, TRACK_COL_GENRE_W),
+            build_text_cell(&grouping, TRACK_COL_GROUPING_W),
+            build_text_cell(&comment, TRACK_COL_COMMENT_W),
+            build_text_cell(&lyrics, TRACK_COL_LYRICS_W),
+            build_text_cell(&lyricist, TRACK_COL_LYRICIST_W),
+            build_text_cell(&conductor, TRACK_COL_CONDUCTOR_W),
+            build_text_cell(&remixer, TRACK_COL_REMIXER_W),
+            build_text_cell(&publisher, TRACK_COL_PUBLISHER_W),
+            build_text_cell(&subtitle, TRACK_COL_SUBTITLE_W),
+            build_text_cell(&bpm, TRACK_COL_BPM_W),
+            build_text_cell(&key, TRACK_COL_KEY_W),
+            build_text_cell(&mood, TRACK_COL_MOOD_W),
+            build_text_cell(&language, TRACK_COL_LANGUAGE_W),
+            build_text_cell(&isrc, TRACK_COL_ISRC_W),
+            build_text_cell(&encoder_settings, TRACK_COL_ENCODER_SETTINGS_W),
+            build_text_cell(&encoded_by, TRACK_COL_ENCODED_BY_W),
+            build_text_cell(&copyright, TRACK_COL_COPYRIGHT_W),
+            build_text_cell(&artwork_count, TRACK_COL_ARTWORK_COUNT_W),
+            build_text_cell(&title_sort, TRACK_COL_TITLE_SORT_W),
+            build_text_cell(&artist_sort, TRACK_COL_ARTIST_SORT_W),
+            build_text_cell(&album_sort, TRACK_COL_ALBUM_SORT_W),
+            build_text_cell(&album_artist_sort, TRACK_COL_ALBUM_ARTIST_SORT_W),
+            build_text_cell(&len, TRACK_COL_LEN_W),
             build_text_cell(&bitrate, TRACK_COL_BITRATE_W),
             build_text_cell(&sample_rate, TRACK_COL_SAMPLE_RATE_W),
             build_text_cell(&channels, TRACK_COL_CHANNELS_W),
-            build_text_cell(&plays, TRACK_COL_PLAYS_W),
             build_text_cell(&rating, TRACK_COL_RATING_W),
-            build_text_cell(&len, TRACK_COL_LEN_W),
+            build_text_cell(&play_count, TRACK_COL_PLAYS_W),
+            build_text_cell(&compilation, TRACK_COL_COMPILATION_W),
         ]
         .spacing(TRACK_COL_SPACING)
         .align_y(Alignment::Center)
@@ -359,60 +486,141 @@ fn build_text_cell(value: &str, width: f32) -> iced::widget::Container<'static, 
 fn column_label(column: ColumnKind) -> &'static str {
     match column {
         ColumnKind::Marker => "",
+        ColumnKind::Path => "Path",
         ColumnKind::TrackNo => "#",
+        ColumnKind::TrackTotal => "# Tot",
         ColumnKind::DiscNo => "Disc",
+        ColumnKind::DiscTotal => "Disc Tot",
         ColumnKind::Title => "Title",
         ColumnKind::Artist => "Artist",
         ColumnKind::Album => "Album",
         ColumnKind::AlbumArtist => "Album Artist",
+        ColumnKind::Composer => "Composer",
         ColumnKind::ReleaseDate => "Release Date",
+        ColumnKind::Year => "Year",
         ColumnKind::Genre => "Genre",
+        ColumnKind::Grouping => "Grouping",
+        ColumnKind::Comment => "Comment",
+        ColumnKind::Lyrics => "Lyrics",
+        ColumnKind::Lyricist => "Lyricist",
+        ColumnKind::Conductor => "Conductor",
+        ColumnKind::Remixer => "Remixer",
+        ColumnKind::Publisher => "Publisher",
+        ColumnKind::Subtitle => "Subtitle",
+        ColumnKind::Bpm => "BPM",
+        ColumnKind::Key => "Key",
+        ColumnKind::Mood => "Mood",
+        ColumnKind::Language => "Language",
+        ColumnKind::Isrc => "ISRC",
+        ColumnKind::EncoderSettings => "Encoder",
+        ColumnKind::EncodedBy => "Encoded By",
+        ColumnKind::Copyright => "Copyright",
+        ColumnKind::ArtworkCount => "Art",
+        ColumnKind::TitleSort => "Title Sort",
+        ColumnKind::ArtistSort => "Artist Sort",
+        ColumnKind::AlbumSort => "Album Sort",
+        ColumnKind::AlbumArtistSort => "Album Artist Sort",
+        ColumnKind::Duration => "Len",
         ColumnKind::Bitrate => "kbps",
         ColumnKind::SampleRate => "Hz",
         ColumnKind::Channels => "Ch",
-        ColumnKind::Plays => "Plays",
         ColumnKind::Rating => "Rate",
-        ColumnKind::Duration => "Len",
+        ColumnKind::PlayCount => "Plays",
+        ColumnKind::Compilation => "Comp",
     }
 }
 
 fn sort_field_for_column(column: ColumnKind) -> Option<TrackSortField> {
     match column {
         ColumnKind::Marker => None,
+        ColumnKind::Path => Some(TrackSortField::Path),
         ColumnKind::TrackNo => Some(TrackSortField::TrackNo),
-        ColumnKind::DiscNo => None,
+        ColumnKind::TrackTotal => Some(TrackSortField::TrackTotal),
+        ColumnKind::DiscNo => Some(TrackSortField::DiscNo),
+        ColumnKind::DiscTotal => Some(TrackSortField::DiscTotal),
         ColumnKind::Title => Some(TrackSortField::Title),
         ColumnKind::Artist => Some(TrackSortField::Artist),
         ColumnKind::Album => Some(TrackSortField::Album),
         ColumnKind::AlbumArtist => Some(TrackSortField::AlbumArtist),
+        ColumnKind::Composer => Some(TrackSortField::Composer),
         ColumnKind::ReleaseDate => Some(TrackSortField::ReleaseDate),
+        ColumnKind::Year => Some(TrackSortField::Year),
         ColumnKind::Genre => Some(TrackSortField::Genre),
-        ColumnKind::Bitrate => None,
-        ColumnKind::SampleRate => None,
-        ColumnKind::Channels => None,
-        ColumnKind::Plays => None,
-        ColumnKind::Rating => None,
+        ColumnKind::Grouping => Some(TrackSortField::Grouping),
+        ColumnKind::Comment => Some(TrackSortField::Comment),
+        ColumnKind::Lyrics => Some(TrackSortField::Lyrics),
+        ColumnKind::Lyricist => Some(TrackSortField::Lyricist),
+        ColumnKind::Conductor => Some(TrackSortField::Conductor),
+        ColumnKind::Remixer => Some(TrackSortField::Remixer),
+        ColumnKind::Publisher => Some(TrackSortField::Publisher),
+        ColumnKind::Subtitle => Some(TrackSortField::Subtitle),
+        ColumnKind::Bpm => Some(TrackSortField::Bpm),
+        ColumnKind::Key => Some(TrackSortField::Key),
+        ColumnKind::Mood => Some(TrackSortField::Mood),
+        ColumnKind::Language => Some(TrackSortField::Language),
+        ColumnKind::Isrc => Some(TrackSortField::Isrc),
+        ColumnKind::EncoderSettings => Some(TrackSortField::EncoderSettings),
+        ColumnKind::EncodedBy => Some(TrackSortField::EncodedBy),
+        ColumnKind::Copyright => Some(TrackSortField::Copyright),
+        ColumnKind::ArtworkCount => Some(TrackSortField::ArtworkCount),
+        ColumnKind::TitleSort => Some(TrackSortField::TitleSort),
+        ColumnKind::ArtistSort => Some(TrackSortField::ArtistSort),
+        ColumnKind::AlbumSort => Some(TrackSortField::AlbumSort),
+        ColumnKind::AlbumArtistSort => Some(TrackSortField::AlbumArtistSort),
         ColumnKind::Duration => Some(TrackSortField::Duration),
+        ColumnKind::Bitrate => Some(TrackSortField::Bitrate),
+        ColumnKind::SampleRate => Some(TrackSortField::SampleRate),
+        ColumnKind::Channels => Some(TrackSortField::Channels),
+        ColumnKind::Rating => Some(TrackSortField::Rating),
+        ColumnKind::PlayCount => Some(TrackSortField::PlayCount),
+        ColumnKind::Compilation => Some(TrackSortField::Compilation),
     }
 }
 
 fn column_width(column: ColumnKind) -> f32 {
     match column {
         ColumnKind::Marker => TRACK_COL_MARKER_W,
+        ColumnKind::Path => TRACK_COL_PATH_W,
         ColumnKind::TrackNo => TRACK_COL_TRACK_NO_W,
+        ColumnKind::TrackTotal => TRACK_COL_TRACK_TOTAL_W,
         ColumnKind::DiscNo => TRACK_COL_DISC_NO_W,
+        ColumnKind::DiscTotal => TRACK_COL_DISC_TOTAL_W,
         ColumnKind::Title => TRACK_COL_TITLE_W,
         ColumnKind::Artist => TRACK_COL_ARTIST_W,
         ColumnKind::Album => TRACK_COL_ALBUM_W,
         ColumnKind::AlbumArtist => TRACK_COL_ALBUM_ARTIST_W,
+        ColumnKind::Composer => TRACK_COL_COMPOSER_W,
         ColumnKind::ReleaseDate => TRACK_COL_RELEASE_DATE_W,
+        ColumnKind::Year => TRACK_COL_YEAR_W,
         ColumnKind::Genre => TRACK_COL_GENRE_W,
+        ColumnKind::Grouping => TRACK_COL_GROUPING_W,
+        ColumnKind::Comment => TRACK_COL_COMMENT_W,
+        ColumnKind::Lyrics => TRACK_COL_LYRICS_W,
+        ColumnKind::Lyricist => TRACK_COL_LYRICIST_W,
+        ColumnKind::Conductor => TRACK_COL_CONDUCTOR_W,
+        ColumnKind::Remixer => TRACK_COL_REMIXER_W,
+        ColumnKind::Publisher => TRACK_COL_PUBLISHER_W,
+        ColumnKind::Subtitle => TRACK_COL_SUBTITLE_W,
+        ColumnKind::Bpm => TRACK_COL_BPM_W,
+        ColumnKind::Key => TRACK_COL_KEY_W,
+        ColumnKind::Mood => TRACK_COL_MOOD_W,
+        ColumnKind::Language => TRACK_COL_LANGUAGE_W,
+        ColumnKind::Isrc => TRACK_COL_ISRC_W,
+        ColumnKind::EncoderSettings => TRACK_COL_ENCODER_SETTINGS_W,
+        ColumnKind::EncodedBy => TRACK_COL_ENCODED_BY_W,
+        ColumnKind::Copyright => TRACK_COL_COPYRIGHT_W,
+        ColumnKind::ArtworkCount => TRACK_COL_ARTWORK_COUNT_W,
+        ColumnKind::TitleSort => TRACK_COL_TITLE_SORT_W,
+        ColumnKind::ArtistSort => TRACK_COL_ARTIST_SORT_W,
+        ColumnKind::AlbumSort => TRACK_COL_ALBUM_SORT_W,
+        ColumnKind::AlbumArtistSort => TRACK_COL_ALBUM_ARTIST_SORT_W,
+        ColumnKind::Duration => TRACK_COL_LEN_W,
         ColumnKind::Bitrate => TRACK_COL_BITRATE_W,
         ColumnKind::SampleRate => TRACK_COL_SAMPLE_RATE_W,
         ColumnKind::Channels => TRACK_COL_CHANNELS_W,
-        ColumnKind::Plays => TRACK_COL_PLAYS_W,
         ColumnKind::Rating => TRACK_COL_RATING_W,
-        ColumnKind::Duration => TRACK_COL_LEN_W,
+        ColumnKind::PlayCount => TRACK_COL_PLAYS_W,
+        ColumnKind::Compilation => TRACK_COL_COMPILATION_W,
     }
 }
 

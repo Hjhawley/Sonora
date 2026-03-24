@@ -23,14 +23,52 @@ use super::util::filename_stem;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TrackSortField {
+    Path,
+
     TrackNo,
+    TrackTotal,
+    DiscNo,
+    DiscTotal,
+
     Title,
     Artist,
     Album,
     AlbumArtist,
+    Composer,
+
     ReleaseDate,
+    Year,
     Genre,
+    Grouping,
+    Comment,
+    Lyrics,
+    Lyricist,
+    Conductor,
+    Remixer,
+    Publisher,
+    Subtitle,
+    Bpm,
+    Key,
+    Mood,
+    Language,
+    Isrc,
+    EncoderSettings,
+    EncodedBy,
+    Copyright,
+
+    ArtworkCount,
+    TitleSort,
+    ArtistSort,
+    AlbumSort,
+    AlbumArtistSort,
+
     Duration,
+    Bitrate,
+    SampleRate,
+    Channels,
+    Rating,
+    PlayCount,
+    Compilation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +109,8 @@ impl Default for TrackQuery {
 /// This is aligned by Vec index with `Sonora::tracks`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QueryTrackCache {
+    pub path: String,
+
     pub title: String,
     pub title_sort: String,
     pub artist: String,
@@ -79,14 +119,42 @@ pub(crate) struct QueryTrackCache {
     pub album_sort: String,
     pub album_artist: String,
     pub album_artist_sort: String,
+    pub composer: String,
+
     pub release_date: String,
     pub genre: String,
+    pub grouping: String,
+    pub comment: String,
+    pub lyrics: String,
+    pub lyricist: String,
+    pub conductor: String,
+    pub remixer: String,
+    pub publisher: String,
+    pub subtitle: String,
+    pub key_name: String,
+    pub mood: String,
+    pub language: String,
+    pub isrc: String,
+    pub encoder_settings: String,
+    pub encoded_by: String,
+    pub copyright: String,
+
     pub search_blob: String,
 
-    pub year: u32,
-    pub disc_no: u32,
+    pub year: i32,
     pub track_no: u32,
+    pub track_total: u32,
+    pub disc_no: u32,
+    pub disc_total: u32,
+    pub bpm: u32,
+    pub artwork_count: u32,
     pub duration_ms: u64,
+    pub bitrate_kbps: u32,
+    pub sample_rate_hz: u32,
+    pub channels: u8,
+    pub rating: u8,
+    pub play_count: u64,
+    pub compilation: bool,
 }
 
 pub(crate) fn build_query_cache_rows(tracks: &[TrackRow]) -> Vec<QueryTrackCache> {
@@ -144,8 +212,10 @@ fn build_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
 
         let base = compare_query_rows(qa, qb, state.track_query.sort_field)
             .then_with(|| compare_query_rows(qa, qb, TrackSortField::Album))
+            .then_with(|| compare_query_rows(qa, qb, TrackSortField::DiscNo))
             .then_with(|| compare_query_rows(qa, qb, TrackSortField::TrackNo))
             .then_with(|| compare_query_rows(qa, qb, TrackSortField::Title))
+            .then_with(|| compare_query_rows(qa, qb, TrackSortField::Path))
             .then_with(|| id_a.cmp(id_b));
 
         match state.track_query.sort_direction {
@@ -174,6 +244,8 @@ fn build_ids_with_options(state: &Sonora, apply_search: bool) -> Vec<TrackId> {
 }
 
 fn build_query_cache_row(row: &TrackRow) -> QueryTrackCache {
+    let path = normalize_path(row);
+
     let title = normalized_title(row);
     let title_sort = normalized_title_sort(row);
     let artist = normalized_artist(row);
@@ -182,20 +254,90 @@ fn build_query_cache_row(row: &TrackRow) -> QueryTrackCache {
     let album_sort = normalized_album_sort(row);
     let album_artist = normalized_album_artist(row);
     let album_artist_sort = normalized_album_artist_sort(row);
+    let composer = opt_norm(row.composer.as_deref());
+
     let release_date = normalized_release_date(row);
     let genre = normalized_genre(row);
+    let grouping = opt_norm(row.grouping.as_deref());
+    let comment = opt_norm(row.comment.as_deref());
+    let lyrics = opt_norm(row.lyrics.as_deref());
+    let lyricist = opt_norm(row.lyricist.as_deref());
+    let conductor = opt_norm(row.conductor.as_deref());
+    let remixer = opt_norm(row.remixer.as_deref());
+    let publisher = opt_norm(row.publisher.as_deref());
+    let subtitle = opt_norm(row.subtitle.as_deref());
+    let key_name = opt_norm(row.key.as_deref());
+    let mood = opt_norm(row.mood.as_deref());
+    let language = opt_norm(row.language.as_deref());
+    let isrc = opt_norm(row.isrc.as_deref());
+    let encoder_settings = opt_norm(row.encoder_settings.as_deref());
+    let encoded_by = opt_norm(row.encoded_by.as_deref());
+    let copyright = opt_norm(row.copyright.as_deref());
+
+    let bpm = row.bpm.unwrap_or(0);
+    let artwork_count = row.artwork_count;
+    let duration_ms = row.duration_ms.unwrap_or(0) as u64;
+    let bitrate_kbps = row.bitrate_kbps.unwrap_or(0);
+    let sample_rate_hz = row.sample_rate_hz.unwrap_or(0);
+    let channels = row.channels.unwrap_or(0);
+    let rating = row.rating.unwrap_or(0);
+    let play_count = row.play_count.unwrap_or(0);
+    let compilation = row.compilation.unwrap_or(false);
+
+    let year = row.year.unwrap_or(0);
+    let track_no = row.track_no.unwrap_or(0);
+    let track_total = row.track_total.unwrap_or(0);
+    let disc_no = row.disc_no.unwrap_or(0);
+    let disc_total = row.disc_total.unwrap_or(0);
 
     let search_blob = [
+        path.as_str(),
         title.as_str(),
+        title_sort.as_str(),
         artist.as_str(),
+        artist_sort.as_str(),
         album.as_str(),
+        album_sort.as_str(),
         album_artist.as_str(),
-        genre.as_str(),
+        album_artist_sort.as_str(),
+        composer.as_str(),
         release_date.as_str(),
+        genre.as_str(),
+        grouping.as_str(),
+        comment.as_str(),
+        lyrics.as_str(),
+        lyricist.as_str(),
+        conductor.as_str(),
+        remixer.as_str(),
+        publisher.as_str(),
+        subtitle.as_str(),
+        key_name.as_str(),
+        mood.as_str(),
+        language.as_str(),
+        isrc.as_str(),
+        encoder_settings.as_str(),
+        encoded_by.as_str(),
+        copyright.as_str(),
+        &year.to_string(),
+        &track_no.to_string(),
+        &track_total.to_string(),
+        &disc_no.to_string(),
+        &disc_total.to_string(),
+        &bpm.to_string(),
+        &artwork_count.to_string(),
+        &duration_ms.to_string(),
+        &bitrate_kbps.to_string(),
+        &sample_rate_hz.to_string(),
+        &channels.to_string(),
+        &rating.to_string(),
+        &play_count.to_string(),
+        if compilation { "true" } else { "false" },
     ]
     .join(" ");
 
     QueryTrackCache {
+        path,
+
         title,
         title_sort,
         artist,
@@ -204,13 +346,42 @@ fn build_query_cache_row(row: &TrackRow) -> QueryTrackCache {
         album_sort,
         album_artist,
         album_artist_sort,
+        composer,
+
         release_date,
         genre,
+        grouping,
+        comment,
+        lyrics,
+        lyricist,
+        conductor,
+        remixer,
+        publisher,
+        subtitle,
+        key_name,
+        mood,
+        language,
+        isrc,
+        encoder_settings,
+        encoded_by,
+        copyright,
+
         search_blob,
-        year: row.year.unwrap_or(0).max(0) as u32,
-        disc_no: row.disc_no.unwrap_or(0),
-        track_no: row.track_no.unwrap_or(0),
-        duration_ms: row.duration_ms.unwrap_or(0) as u64,
+
+        year,
+        track_no,
+        track_total,
+        disc_no,
+        disc_total,
+        bpm,
+        artwork_count,
+        duration_ms,
+        bitrate_kbps,
+        sample_rate_hz,
+        channels,
+        rating,
+        play_count,
+        compilation,
     }
 }
 
@@ -228,14 +399,30 @@ fn query_row_matches(row: &QueryTrackCache, query: &TrackQuery) -> bool {
 
 fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSortField) -> Ordering {
     match field {
+        TrackSortField::Path => a.path.cmp(&b.path),
+
         TrackSortField::TrackNo => {
             (a.disc_no, a.track_no, &a.title).cmp(&(b.disc_no, b.track_no, &b.title))
         }
+        TrackSortField::TrackTotal => (a.track_total, a.disc_no, a.track_no, &a.title).cmp(&(
+            b.track_total,
+            b.disc_no,
+            b.track_no,
+            &b.title,
+        )),
+        TrackSortField::DiscNo => {
+            (a.disc_no, a.track_no, &a.title).cmp(&(b.disc_no, b.track_no, &b.title))
+        }
+        TrackSortField::DiscTotal => (a.disc_total, a.disc_no, a.track_no, &a.title).cmp(&(
+            b.disc_total,
+            b.disc_no,
+            b.track_no,
+            &b.title,
+        )),
 
         TrackSortField::Title => {
             (&a.title_sort, &a.title, &a.artist).cmp(&(&b.title_sort, &b.title, &b.artist))
         }
-
         TrackSortField::Artist => (
             &a.artist_sort,
             &a.artist,
@@ -252,7 +439,6 @@ fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSort
                 b.track_no,
                 &b.title,
             )),
-
         TrackSortField::Album => (
             &a.album_sort,
             &a.album_artist,
@@ -269,7 +455,6 @@ fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSort
                 b.track_no,
                 &b.title,
             )),
-
         TrackSortField::AlbumArtist => (
             &a.album_artist_sort,
             &a.album_artist,
@@ -281,6 +466,22 @@ fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSort
             .cmp(&(
                 &b.album_artist_sort,
                 &b.album_artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Composer => (
+            &a.composer,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.composer,
+                &b.artist,
                 &b.album,
                 b.disc_no,
                 b.track_no,
@@ -303,12 +504,287 @@ fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSort
                 b.track_no,
                 &b.title,
             )),
-
+        TrackSortField::Year => (
+            a.year,
+            &a.release_date,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                b.year,
+                &b.release_date,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
         TrackSortField::Genre => (
             &a.genre, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
         )
             .cmp(&(
                 &b.genre, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::Grouping => (
+            &a.grouping,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.grouping,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Comment => (
+            &a.comment, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
+        )
+            .cmp(&(
+                &b.comment, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::Lyrics => (
+            &a.lyrics, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
+        )
+            .cmp(&(
+                &b.lyrics, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::Lyricist => (
+            &a.lyricist,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.lyricist,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Conductor => (
+            &a.conductor,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.conductor,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Remixer => (
+            &a.remixer, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
+        )
+            .cmp(&(
+                &b.remixer, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::Publisher => (
+            &a.publisher,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.publisher,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Subtitle => (
+            &a.subtitle,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.subtitle,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Bpm => (a.bpm, &a.artist, &a.album, a.disc_no, a.track_no, &a.title)
+            .cmp(&(b.bpm, &b.artist, &b.album, b.disc_no, b.track_no, &b.title)),
+        TrackSortField::Key => (
+            &a.key_name,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.key_name,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Mood => (
+            &a.mood, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
+        )
+            .cmp(&(
+                &b.mood, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::Language => (
+            &a.language,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.language,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Isrc => (
+            &a.isrc, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
+        )
+            .cmp(&(
+                &b.isrc, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::EncoderSettings => (
+            &a.encoder_settings,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.encoder_settings,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::EncodedBy => (
+            &a.encoded_by,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.encoded_by,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Copyright => (
+            &a.copyright,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.copyright,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+
+        TrackSortField::ArtworkCount => (
+            a.artwork_count,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                b.artwork_count,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::TitleSort => {
+            (&a.title_sort, &a.title, &a.artist).cmp(&(&b.title_sort, &b.title, &b.artist))
+        }
+        TrackSortField::ArtistSort => (
+            &a.artist_sort,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.artist_sort,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::AlbumSort => (
+            &a.album_sort,
+            &a.album_artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.album_sort,
+                &b.album_artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::AlbumArtistSort => (
+            &a.album_artist_sort,
+            &a.album_artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.album_artist_sort,
+                &b.album_artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
             )),
 
         TrackSortField::Duration => (
@@ -321,6 +797,82 @@ fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSort
         )
             .cmp(&(
                 b.duration_ms,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Bitrate => (
+            a.bitrate_kbps,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                b.bitrate_kbps,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::SampleRate => (
+            a.sample_rate_hz,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                b.sample_rate_hz,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Channels => (
+            a.channels, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
+        )
+            .cmp(&(
+                b.channels, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::Rating => (
+            a.rating, &a.artist, &a.album, a.disc_no, a.track_no, &a.title,
+        )
+            .cmp(&(
+                b.rating, &b.artist, &b.album, b.disc_no, b.track_no, &b.title,
+            )),
+        TrackSortField::PlayCount => (
+            a.play_count,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                b.play_count,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::Compilation => (
+            a.compilation,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                b.compilation,
                 &b.artist,
                 &b.album,
                 b.disc_no,
@@ -341,6 +893,11 @@ fn opt_norm(s: Option<&str>) -> String {
 }
 
 #[inline]
+fn normalize_path(row: &TrackRow) -> String {
+    row.path.to_string_lossy().trim().to_lowercase()
+}
+
+#[inline]
 fn normalized_title(row: &TrackRow) -> String {
     match row.title.as_deref().filter(|s| !s.trim().is_empty()) {
         Some(s) => opt_norm(Some(s)),
@@ -354,7 +911,7 @@ fn normalized_artist(row: &TrackRow) -> String {
         row.artist
             .as_deref()
             .filter(|s| !s.trim().is_empty())
-            .or(Some("Unknown")),
+            .or(Some("unknown")),
     )
 }
 
@@ -364,7 +921,7 @@ fn normalized_album(row: &TrackRow) -> String {
         row.album
             .as_deref()
             .filter(|s| !s.trim().is_empty())
-            .or(Some("Unknown")),
+            .or(Some("unknown")),
     )
 }
 
@@ -375,7 +932,7 @@ fn normalized_album_artist(row: &TrackRow) -> String {
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .or_else(|| row.artist.as_deref().filter(|s| !s.trim().is_empty()))
-            .or(Some("Unknown")),
+            .or(Some("unknown")),
     )
 }
 
