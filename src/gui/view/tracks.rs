@@ -295,7 +295,7 @@ fn build_tracks_body<'a>(
         let marker = if is_now_playing {
             "▷"
         } else if is_selected {
-            "•"
+            "*"
         } else {
             ""
         };
@@ -487,10 +487,10 @@ fn column_label(column: ColumnKind) -> &'static str {
     match column {
         ColumnKind::Marker => "",
         ColumnKind::Path => "Path",
-        ColumnKind::TrackNo => "#",
-        ColumnKind::TrackTotal => "# Tot",
+        ColumnKind::TrackNo => "Track",
+        ColumnKind::TrackTotal => "of",
         ColumnKind::DiscNo => "Disc",
-        ColumnKind::DiscTotal => "Disc Tot",
+        ColumnKind::DiscTotal => "of",
         ColumnKind::Title => "Title",
         ColumnKind::Artist => "Artist",
         ColumnKind::Album => "Album",
