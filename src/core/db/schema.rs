@@ -1,8 +1,5 @@
 //! core/db/schema.rs
-//!
 //! SQLite schema + additive migrations.
-//!
-//! Phase 2 goal:
 //! - DB stores enough common metadata to build TrackRow directly at startup
 //! - filesystem tag reads happen during scan/save, not every launch
 
@@ -33,15 +30,6 @@ impl Db {
                     key     TEXT PRIMARY KEY,
                     value   TEXT NOT NULL
                 );
-
-                CREATE INDEX IF NOT EXISTS idx_tracks_present_hidden_path
-                ON tracks(present, hidden, path);
-
-                CREATE INDEX IF NOT EXISTS idx_tracks_present_path
-                ON tracks(present, path);
-
-                CREATE INDEX IF NOT EXISTS idx_tracks_hidden_path
-                ON tracks(hidden, path);
                 "#,
             )
             .map_err(|e| e.to_string())?;
@@ -100,6 +88,22 @@ impl Db {
         self.ensure_column("tracks", "rating", "INTEGER")?;
         self.ensure_column("tracks", "play_count", "INTEGER")?;
         self.ensure_column("tracks", "compilation", "INTEGER")?;
+
+        // Indexes must come AFTER migrations that add the referenced columns.
+        self.conn
+            .execute_batch(
+                r#"
+                CREATE INDEX IF NOT EXISTS idx_tracks_present_hidden_path
+                ON tracks(present, hidden, path);
+
+                CREATE INDEX IF NOT EXISTS idx_tracks_present_path
+                ON tracks(present, path);
+
+                CREATE INDEX IF NOT EXISTS idx_tracks_hidden_path
+                ON tracks(hidden, path);
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
 
         Ok(())
     }
