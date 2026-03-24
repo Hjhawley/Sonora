@@ -1,6 +1,7 @@
 features:
-online tag pulling
+
 smart playlists
+online tag pulling
 open with audacity
 smart shuffle
 rhythmbox?
