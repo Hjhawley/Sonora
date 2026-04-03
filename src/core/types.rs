@@ -3,7 +3,6 @@
 // Core domain data only.
 // No GUI, no DB logic, no tag parsing
 
-use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
@@ -69,10 +68,6 @@ pub struct TrackRow {
     pub rating: Option<u8>,
     pub play_count: Option<u64>,
     pub compilation: Option<bool>,
-
-    pub user_text: BTreeMap<String, String>,
-    pub urls: BTreeMap<String, String>,
-    pub extra_text: BTreeMap<String, String>,
 }
 
 impl TrackRow {
@@ -126,16 +121,6 @@ impl TrackRow {
             rating: None,
             play_count: None,
             compilation: None,
-
-            user_text: BTreeMap::new(),
-            urls: BTreeMap::new(),
-            extra_text: BTreeMap::new(),
         }
-    }
-
-    #[inline]
-    pub fn with_id(mut self, id: TrackId) -> Self {
-        self.id = Some(id);
-        self
     }
 }

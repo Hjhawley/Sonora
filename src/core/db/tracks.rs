@@ -253,10 +253,6 @@ impl Db {
             rating: row.get::<_, Option<i64>>(39)?.map(|v| v as u8),
             play_count: row.get::<_, Option<i64>>(40)?.map(|v| v as u64),
             compilation: row.get::<_, Option<i64>>(41)?.map(|v| v != 0),
-
-            user_text: Default::default(),
-            urls: Default::default(),
-            extra_text: Default::default(),
         })
     }
 

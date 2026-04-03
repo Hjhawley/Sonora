@@ -5,7 +5,6 @@
 //! - 'TrackRow.id' is set by the scanning / DB layer.
 //! - This module therefore always returns 'id: None'.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use id3::frame::Content;
@@ -67,12 +66,9 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
     let comment = first_comment(tag);
     let lyrics = first_lyrics(tag);
 
-    let user_text = collect_user_text(tag);
-    let urls = collect_urls(tag);
-
     let compilation = text_frame(tag, "TCMP")
         .and_then(|s| parse_boolish(&s))
-        .or_else(|| user_text.get("COMPILATION").and_then(|s| parse_boolish(s)));
+        .or_else(|| user_text_value(tag, "COMPILATION").and_then(|s| parse_boolish(&s)));
 
     let (rating, popm_count) = popm_rating_and_count(tag);
     let pcnt_count = pcnt_count(tag);
@@ -86,8 +82,6 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
         let audio_bytes = mp3_audio_bytes_excluding_id3(&path)?;
         average_bitrate_kbps_from_audio_bytes(audio_bytes, duration_ms)
     });
-
-    let extra_text = collect_extra_text(tag);
 
     TrackRow {
         id: None,
@@ -149,10 +143,6 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
         rating,
         play_count,
         compilation,
-
-        user_text,
-        urls,
-        extra_text,
     }
 }
 
@@ -198,42 +188,20 @@ fn first_lyrics(tag: &Tag) -> Option<String> {
     None
 }
 
-fn collect_user_text(tag: &Tag) -> BTreeMap<String, String> {
-    let mut out = BTreeMap::new();
-
+fn user_text_value(tag: &Tag, description: &str) -> Option<String> {
     for frame in tag.frames() {
-        if frame.id() == "TXXX" {
-            if let Content::ExtendedText(et) = frame.content() {
-                out.insert(et.description.clone(), et.value.clone());
-            }
-        }
-    }
-
-    out
-}
-
-fn collect_urls(tag: &Tag) -> BTreeMap<String, String> {
-    let mut out = BTreeMap::new();
-
-    for frame in tag.frames() {
-        let id = frame.id();
-        if !id.starts_with('W') {
+        if frame.id() != "TXXX" {
             continue;
         }
 
-        match frame.content() {
-            Content::Link(url) => {
-                out.insert(id.to_string(), url.clone());
+        if let Content::ExtendedText(et) = frame.content() {
+            if et.description.eq_ignore_ascii_case(description) {
+                return Some(et.value.clone());
             }
-            Content::ExtendedLink(el) => {
-                let key = format!("WXXX:{}", el.description);
-                out.insert(key, el.link.clone());
-            }
-            _ => {}
         }
     }
 
-    out
+    None
 }
 
 fn popm_rating_and_count(tag: &Tag) -> (Option<u8>, Option<u64>) {
@@ -259,65 +227,4 @@ fn pcnt_count(tag: &Tag) -> Option<u64> {
     }
 
     None
-}
-
-fn collect_extra_text(tag: &Tag) -> BTreeMap<String, String> {
-    let mut out = BTreeMap::new();
-
-    for frame in tag.frames() {
-        let id = frame.id();
-
-        if !id.starts_with('T') || is_known_text_frame(id) {
-            continue;
-        }
-
-        if let Content::Text(s) = frame.content() {
-            out.insert(id.to_string(), s.clone());
-        }
-    }
-
-    out
-}
-
-fn is_known_text_frame(id: &str) -> bool {
-    matches!(
-        id,
-        "TIT2"
-            | "TPE1"
-            | "TALB"
-            | "TPE2"
-            | "TRCK"
-            | "TPOS"
-            | "TYER"
-            | "TDRC"
-            | "TCON"
-            | "TCOM"
-            | "TEXT"
-            | "TPE3"
-            | "TPE4"
-            | "TPUB"
-            | "TIT1"
-            | "TIT3"
-            | "TBPM"
-            | "TKEY"
-            | "TMOO"
-            | "TLAN"
-            | "TSRC"
-            | "TSSE"
-            | "TENC"
-            | "TCOP"
-            | "TSOT"
-            | "TSOP"
-            | "TSOA"
-            | "TSO2"
-            | "TLEN"
-            | "TCMP"
-            | "TXXX"
-            | "COMM"
-            | "USLT"
-            | "POPM"
-            | "PCNT"
-            | "APIC"
-            | "PIC"
-    )
 }
