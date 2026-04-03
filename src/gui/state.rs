@@ -394,7 +394,7 @@ impl Sonora {
 
             tracks_scroll_offset_y: 0.0,
             tracks_viewport_height: 0.0,
-            tracks_overscan_rows: 12,
+            tracks_overscan_rows: 5,
 
             playback: Some(playback_controller),
             playback_events: Some(RefCell::new(playback_events)),

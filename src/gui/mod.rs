@@ -11,6 +11,7 @@
 pub(crate) mod query;
 pub(crate) mod state;
 pub(crate) mod subscription;
+pub(crate) mod theme;
 pub(crate) mod update;
 pub(crate) mod util;
 pub(crate) mod view;
