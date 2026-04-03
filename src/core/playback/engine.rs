@@ -26,9 +26,7 @@ struct TrackStart {
 struct ActiveTrack {
     playback_id: u64,
     path: PathBuf,
-    duration_ms: Option<u64>,
     start_ms: u64,
-    /// Absolute sink position when this track became active.
     sink_origin_ms: u64,
 }
 
@@ -322,7 +320,6 @@ impl PlaybackEngine {
             self.active = Some(ActiveTrack {
                 playback_id: start.playback_id,
                 path: start.path.clone(),
-                duration_ms: start.duration_ms,
                 start_ms: start.start_ms,
                 sink_origin_ms: sink_pos_ms,
             });
@@ -445,7 +442,6 @@ impl PlaybackEngine {
         self.active = Some(ActiveTrack {
             playback_id,
             path: path.clone(),
-            duration_ms,
             start_ms,
             sink_origin_ms: 0,
         });
