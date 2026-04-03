@@ -28,7 +28,7 @@
 ├── gui
 │   ├── mod.rs - Top-level GUI boundary. Exposes state, theme, subscriptions, update logic, query logic, view logic, and shared UI helpers, and re-exports the main entry points used by main.rs.
 │   ├── query.rs - Pure Track View derivation layer. Handles search matching, full-table sorting across supported metadata columns, normalized query caches, and derived TrackId orderings for visible display order versus playback order.
-│   ├── state.rs - Central shared GUI state. Defines the message enum, scope/view/playback enums, query state, selection state, playback UI state, caches, inspector state, artwork-edit state, and startup initialization/restoration.
+│   ├── state.rs - Central shared GUI state. Defines the message enum, scope/view/playback enums, query state, selection state, playback UI state, caches, inspector state, artwork-edit state, and startup initialization of playback, saved roots/volume, cached library rows, and derived caches.
 │   ├── subscription.rs - Application-level GUI subscriptions, including the periodic playback tick and global keyboard event listener.
 │   ├── theme.rs - App-wide visual defaults such as the bundled font, forced dark theme, and custom palette for more consistent cross-platform styling.
 │   ├── update
@@ -55,5 +55,5 @@
 │       ├── sidebar.rs - Renders the left sidebar with scan controls, scope controls, layout controls, action buttons, and root-folder controls.
 │       ├── style.rs - Reusable widget styling helpers for Sonora-specific buttons and text inputs so the UI palette and control appearance stay consistent.
 │       ├── tracks.rs - Renders Track View as a searchable, sortable, horizontally scrollable metadata table using derived visible TrackId order rather than raw Vec order. Supports all tracked metadata columns, displays selection/now-playing markers, truncates overflowing text, and window-renders only the visible slice plus overscan.
-│       └── widgets.rs - Reusable GUI widgets and helpers such as duration formatting, text truncation, cover thumbnails/placeholders, field-row builders, and the top playback bar.
+│       └── widgets.rs - Reusable GUI widgets and helpers such as duration formatting, text truncation, cover thumbnails/placeholders, field-row builders, and the structured top playback bar.
 └── main.rs - Bootstraps the Iced application, configures the window, applies the global theme/font, and wires together Sonora::default, update, view, and subscription through the GUI module.

@@ -22,8 +22,14 @@ use crate::gui::theme::{APP_FONT, APP_FONT_BYTES, app_theme};
 use crate::gui::view::constants::{WINDOW_H, WINDOW_W};
 use crate::gui::{Sonora, subscription, update, view};
 
+const APP_ICON_BYTES: &[u8] = include_bytes!("../assets/icon.png");
+
 fn sonora_theme(_: &Sonora) -> Theme {
     app_theme()
+}
+
+fn app_icon() -> Option<window::Icon> {
+    window::icon::from_file_data(APP_ICON_BYTES, None).ok()
 }
 
 fn main() -> iced::Result {
@@ -37,6 +43,7 @@ fn main() -> iced::Result {
             size: Size::new(WINDOW_W, WINDOW_H),
             min_size: Some(Size::new(720.0, 540.0)),
             resizable: true,
+            icon: app_icon(),
             ..Default::default()
         })
         .run()
