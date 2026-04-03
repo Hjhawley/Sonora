@@ -135,6 +135,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         LibraryScope::Missing => "Missing",
     };
 
+    // sidebar layout
     let col = column![
         text(&state.status).size(12),
         scan_btn,
@@ -142,6 +143,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         scope_toggle,
         text("Layout").size(16),
         view_toggle,
+        text("Actions").size(16),
         visibility_btn,
         text("Library folders").size(16),
         add_row,
