@@ -13,11 +13,15 @@
 
 use std::time::Instant;
 
-use super::style::{sonora_button, sonora_input};
+use super::style::{
+    ACCENT, ACCENT_HOVER, MUTED_TEXT, PATH_TEXT, SECONDARY_TEXT, TEXT, sonora_button,
+    sonora_header_button, sonora_input, table_header_band_style, track_row_style,
+};
+
 use iced::widget::{
     Column, Row, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
-use iced::{Alignment, Background, Border, Color, Length, Theme};
+use iced::{Alignment, Color, Length, Theme};
 
 use super::super::query::{SortDirection, TrackSortField};
 use super::super::state::{LibraryScope, Message, Sonora};
@@ -44,29 +48,8 @@ use super::widgets::{ellipsize_for_width, fmt_duration};
 /// Reasonable first-frame fallback before we receive a real viewport height.
 const FALLBACK_VIEWPORT_H: f32 = 700.0;
 
-const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
-const HEADER_TEXT_MUTED: Color = Color::from_rgb8(0xC8, 0xC8, 0xC8);
-const SECONDARY_TEXT: Color = Color::from_rgb8(0xB0, 0xB0, 0xB0);
-const PATH_TEXT: Color = Color::from_rgb8(0x9A, 0x9A, 0x9A);
-
-const ACCENT: Color = Color::from_rgb8(0x33, 0xAA, 0xBB);
-const ACCENT_HOVER: Color = Color::from_rgb8(0x22, 0xFF, 0xCC);
-
-const HEADER_BG: Color = Color::from_rgb8(0x1E, 0x22, 0x24);
-const HEADER_BG_ACTIVE: Color = Color::from_rgb8(0x24, 0x33, 0x36);
-const HEADER_BG_HOVER: Color = Color::from_rgb8(0x2A, 0x31, 0x34);
-const HEADER_BORDER: Color = Color::from_rgb8(0x3C, 0x3C, 0x3C);
-
-const ROW_BG_EVEN: Color = Color::from_rgb8(0x1B, 0x1B, 0x1B);
-const ROW_BG_ODD: Color = Color::from_rgb8(0x1F, 0x1F, 0x1F);
-const ROW_BG_SELECTED: Color = Color::from_rgb8(0x28, 0x35, 0x39);
-const ROW_BG_PLAYING: Color = Color::from_rgb8(0x1F, 0x3D, 0x42);
-const ROW_BG_SELECTED_PLAYING: Color = Color::from_rgb8(0x29, 0x50, 0x57);
-const ROW_BORDER: Color = Color::from_rgb8(0x2A, 0x2A, 0x2A);
-const ROW_BORDER_ACTIVE: Color = Color::from_rgb8(0x33, 0xAA, 0xBB);
-
 fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
-    text(label).color(BUTTON_TEXT)
+    text(label).color(TEXT)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,17 +261,7 @@ fn build_tracks_header(state: &Sonora) -> iced::widget::Container<'_, Message> {
     )
     .padding([TRACK_ROW_VPAD + 1.0, TRACK_ROW_HPAD])
     .width(Length::Fixed(table_outer_width()))
-    // Header gets its own band so the body scans as a separate region.
-    .style(|_theme: &Theme| {
-        let mut style = iced::widget::container::Style::default();
-        style.background = Some(Background::Color(HEADER_BG));
-        style.border = Border {
-            color: HEADER_BORDER,
-            width: 1.0,
-            radius: 0.0.into(),
-        };
-        style
-    })
+    .style(|_theme: &Theme| table_header_band_style())
 }
 
 fn build_tracks_body<'a>(
@@ -521,7 +494,7 @@ fn build_header_cell(
         None => container(
             text(ellipsize_for_width(column_label(column), width))
                 .size(HEADER_TEXT)
-                .color(HEADER_TEXT_MUTED)
+                .color(MUTED_TEXT)
                 .width(Length::Fixed(width)),
         )
         .width(Length::Fixed(width))
@@ -530,7 +503,7 @@ fn build_header_cell(
 }
 
 fn build_text_cell(value: &str, width: f32) -> iced::widget::Container<'static, Message> {
-    build_text_cell_with_color(value, width, BUTTON_TEXT)
+    build_text_cell_with_color(value, width, TEXT)
 }
 
 fn build_text_cell_with_color(
@@ -714,90 +687,9 @@ fn marker_for_row_state(is_selected: bool, is_now_playing: bool) -> (&'static st
         (true, true) => ("▷ ", ACCENT_HOVER),
         // Current track should always be obvious.
         (false, true) => ("▷ ", ACCENT),
-        (true, false) => ("", HEADER_TEXT_MUTED),
-        (false, false) => ("", BUTTON_TEXT),
+        (true, false) => ("", MUTED_TEXT),
+        (false, false) => ("", TEXT),
     }
-}
-
-fn track_row_style(
-    is_selected: bool,
-    is_now_playing: bool,
-    zebra_even: bool,
-) -> iced::widget::container::Style {
-    let bg = match (is_selected, is_now_playing) {
-        (true, true) => ROW_BG_SELECTED_PLAYING,
-        (false, true) => ROW_BG_PLAYING,
-        (true, false) => ROW_BG_SELECTED,
-        (false, false) => {
-            if zebra_even {
-                ROW_BG_EVEN
-            } else {
-                ROW_BG_ODD
-            }
-        }
-    };
-
-    let border_color = if is_selected || is_now_playing {
-        ROW_BORDER_ACTIVE
-    } else {
-        ROW_BORDER
-    };
-
-    let mut style = iced::widget::container::Style::default();
-    style.background = Some(Background::Color(bg));
-    style.border = Border {
-        color: border_color,
-        width: if is_selected || is_now_playing {
-            1.0
-        } else {
-            0.0
-        },
-        radius: 0.0.into(),
-    };
-    style
-}
-
-fn track_header_button_style(active: bool, theme: &Theme, status: button::Status) -> button::Style {
-    // Table headers should feel like sortable column headers, not like primary
-    // app action buttons. So we use a flatter local style here instead of the
-    // generic cyan action button style.
-    let mut style = button::secondary(theme, status);
-
-    style.border = Border {
-        color: if active { ACCENT } else { HEADER_BORDER },
-        width: 1.0,
-        radius: 0.0.into(),
-    };
-
-    style.text_color = if active {
-        BUTTON_TEXT
-    } else {
-        HEADER_TEXT_MUTED
-    };
-
-    match status {
-        button::Status::Active | button::Status::Pressed => {
-            style.background = Some(Background::Color(if active {
-                HEADER_BG_ACTIVE
-            } else {
-                HEADER_BG
-            }));
-        }
-        button::Status::Hovered => {
-            style.background = Some(Background::Color(if active {
-                HEADER_BG_ACTIVE
-            } else {
-                HEADER_BG_HOVER
-            }));
-            style.text_color = if active { ACCENT_HOVER } else { BUTTON_TEXT };
-        }
-        button::Status::Disabled => {
-            style.background = Some(Background::Color(HEADER_BG));
-            style.text_color = HEADER_TEXT_MUTED;
-        }
-    }
-
-    style
 }
 
 fn sort_header_button(
@@ -830,5 +722,5 @@ fn sort_header_button(
     )
     .width(Length::Fixed(width))
     .on_press(Message::SetTrackSortField(field))
-    .style(move |theme: &Theme, status| track_header_button_style(is_active, theme, status))
+    .style(move |theme: &Theme, status| sonora_header_button(is_active, theme, status))
 }
