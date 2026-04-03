@@ -14,7 +14,8 @@ use super::style::{sonora_button, sonora_input};
 const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
 const SECONDARY_TEXT: Color = Color::from_rgb8(0xB8, 0xB8, 0xB8);
 
-const PLAYBACK_PROGRESS_MAX_W: f32 = 760.0;
+// Shared centered lane for both transport buttons and progress row.
+const PLAYBACK_CENTER_LANE_W: f32 = 760.0;
 
 // Keep the left and right playback clusters the same width so the transport
 // cluster stays visually centered in the full bar.
@@ -304,19 +305,23 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         .color(SECONDARY_TEXT),
     ]
     .spacing(10)
-    .align_y(Alignment::Center);
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
 
-    let center_block = column![
+    // Put both transport and progress inside the exact same centered lane.
+    // This is the actual fix: both rows now share the same geometry.
+    let center_lane = column![
         container(transport_row)
             .width(Length::Fill)
             .center_x(Length::Fill),
-        container(progress_row)
-            .width(Length::Fill)
-            .max_width(PLAYBACK_PROGRESS_MAX_W)
-            .center_x(Length::Fill),
+        progress_row,
     ]
     .spacing(10)
-    .width(Length::Fill);
+    .width(Length::Fixed(PLAYBACK_CENTER_LANE_W));
+
+    let center_block = container(center_lane)
+        .width(Length::Fill)
+        .center_x(Length::Fill);
 
     let right_block = column![
         row![shuffle_btn, repeat_btn]

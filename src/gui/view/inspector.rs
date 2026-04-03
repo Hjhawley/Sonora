@@ -229,7 +229,7 @@ fn artwork_status_text(state: &Sonora, rows: &[&TrackRow]) -> String {
                 "No selection.".to_string()
             } else if rows.len() == 1 {
                 if rows[0].artwork_count > 0 {
-                    " ".to_string()
+                    String::new()
                 } else {
                     "No embedded artwork.".to_string()
                 }
