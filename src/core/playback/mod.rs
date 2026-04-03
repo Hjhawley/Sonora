@@ -23,26 +23,14 @@ impl PlaybackController {
 
 #[derive(Debug)]
 pub enum PlayerCommand {
-    /// Clear current playback and start this file immediately.
     PlayFile(PathBuf),
-
-    /// Append a file to the upcoming queue.
     QueueFile(PathBuf),
-
-    /// Clear queued upcoming files without stopping the current track.
     ClearQueue,
-
-    /// Temporary compatibility aliases for legacy GUI code.
-    /// Remove once the GUI is fully migrated to QueueFile / ClearQueue.
-    SetNextFile(PathBuf),
-    ClearNextFile,
-
     Pause,
     Resume,
     Stop,
-    Seek(u64),      // ms
-    SetVolume(f32), // 0.0..=1.0
-    Shutdown,
+    Seek(u64),
+    SetVolume(f32),
 }
 
 #[derive(Debug, Clone)]

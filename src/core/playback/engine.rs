@@ -188,14 +188,10 @@ impl PlaybackEngine {
         loop {
             match command_rx.recv_timeout(tick) {
                 Ok(cmd) => {
-                    if self.handle_command(cmd) {
-                        break;
-                    }
+                    self.handle_command(cmd);
 
                     while let Ok(cmd) = command_rx.try_recv() {
-                        if self.handle_command(cmd) {
-                            return;
-                        }
+                        self.handle_command(cmd);
                     }
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
@@ -208,7 +204,7 @@ impl PlaybackEngine {
         self.stop_and_clear_state();
     }
 
-    fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
+    fn handle_command(&mut self, cmd: PlayerCommand) {
         match cmd {
             PlayerCommand::PlayFile(path) => {
                 #[cfg(debug_assertions)]
@@ -219,7 +215,7 @@ impl PlaybackEngine {
                 }
             }
 
-            PlayerCommand::QueueFile(path) | PlayerCommand::SetNextFile(path) => {
+            PlayerCommand::QueueFile(path) => {
                 #[cfg(debug_assertions)]
                 eprintln!("[ENGINE] QueueFile {}", path.display());
 
@@ -228,7 +224,7 @@ impl PlaybackEngine {
                 }
             }
 
-            PlayerCommand::ClearQueue | PlayerCommand::ClearNextFile => {
+            PlayerCommand::ClearQueue => {
                 #[cfg(debug_assertions)]
                 eprintln!("[ENGINE] ClearQueue");
                 self.clear_upcoming_queue();
@@ -279,7 +275,7 @@ impl PlaybackEngine {
                 );
 
                 let Some(active) = self.active.clone() else {
-                    return false;
+                    return;
                 };
 
                 let resume_playing = self.sink.as_ref().map(|s| !s.is_paused()).unwrap_or(true);
@@ -305,15 +301,7 @@ impl PlaybackEngine {
                     sink.set_volume(self.volume);
                 }
             }
-
-            PlayerCommand::Shutdown => {
-                #[cfg(debug_assertions)]
-                eprintln!("[ENGINE] Shutdown");
-                return true;
-            }
         }
-
-        false
     }
 
     fn tick(&mut self) {
