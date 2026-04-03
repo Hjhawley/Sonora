@@ -229,7 +229,7 @@ fn artwork_status_text(state: &Sonora, rows: &[&TrackRow]) -> String {
                 "No selection.".to_string()
             } else if rows.len() == 1 {
                 if rows[0].artwork_count > 0 {
-                    "Embedded artwork present.".to_string()
+                    " ".to_string()
                 } else {
                     "No embedded artwork.".to_string()
                 }
@@ -374,9 +374,7 @@ fn build_primary_tag_fields(state: &Sonora) -> Column<'_, Message> {
 
 fn build_descriptive_tag_fields(state: &Sonora) -> Column<'_, Message> {
     iced::widget::column![
-        text("―――――――――")
-            .size(12)
-            .color(SECONDARY_TEXT),
+        text("―――――――――").size(12).color(SECONDARY_TEXT),
         field_row(
             "Grouping",
             &state.inspector.grouping,

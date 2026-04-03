@@ -2,6 +2,8 @@
 //! Reusable helpers used across view modules.
 #![allow(dead_code)]
 
+use std::sync::OnceLock;
+
 use iced::widget::{button, column, container, image, row, slider, text, text_input};
 use iced::{Alignment, Color, Element, Length};
 
@@ -11,6 +13,12 @@ use super::style::{sonora_button, sonora_input};
 
 const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
 const SECONDARY_TEXT: Color = Color::from_rgb8(0xB8, 0xB8, 0xB8);
+
+const PLAYBACK_PROGRESS_MAX_W: f32 = 760.0;
+
+// Keep the left and right playback clusters the same width so the transport
+// cluster stays visually centered in the full bar.
+const PLAYBACK_SIDE_CLUSTER_W: f32 = 280.0;
 
 /// Real placeholder artwork instead of the old text-based placeholder.
 /// This makes the now-playing block feel more like part of a music app and less
@@ -63,13 +71,17 @@ fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
 }
 
 fn placeholder_cover_handle() -> iced::widget::image::Handle {
-    iced::widget::image::Handle::from_bytes(PLACEHOLDER_COVER_BYTES)
+    // Cache the placeholder once.
+    // Rebuilding Handle::from_bytes(...) every frame causes pointless work and,
+    // in practice, visible flashing when no artwork is present.
+    static HANDLE: OnceLock<iced::widget::image::Handle> = OnceLock::new();
+
+    HANDLE
+        .get_or_init(|| iced::widget::image::Handle::from_bytes(PLACEHOLDER_COVER_BYTES))
+        .clone()
 }
 
 pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, Message> {
-    // The placeholder is now an actual image asset.
-    // This makes both the playback bar and inspector feel less like they are
-    // waiting for a future design pass.
     container(
         image(placeholder_cover_handle())
             .width(Length::Fixed(size))
@@ -210,8 +222,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let shown_ratio = state.seek_preview_ratio.unwrap_or(live_ratio);
 
-    // Give the progress control more presence by centering it in its own row
-    // under transport, instead of treating it like a thin afterthought.
     let seek = if seek_enabled {
         slider(0.0..=1.0, shown_ratio, Message::SeekTo)
             .step(0.001)
@@ -253,8 +263,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let now_playing_cover = state.now_playing.and_then(|id| state.cover_cache.get(&id));
 
-    // Left cluster = cover + now playing metadata.
-    // This makes the playback bar feel anchored instead of floaty.
     let now_playing_meta = if now_playing_row.is_some() {
         column![
             text("Now Playing").size(11).color(SECONDARY_TEXT),
@@ -278,10 +286,8 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     ]
     .spacing(12)
     .align_y(Alignment::Center)
-    .width(Length::Fixed(280.0));
+    .width(Length::Fixed(PLAYBACK_SIDE_CLUSTER_W));
 
-    // Center cluster = transport + progress.
-    // Grouping these visually makes the top bar feel like one real playback surface.
     let transport_row = row![prev_btn, play_btn, next_btn]
         .spacing(8)
         .align_y(Alignment::Center);
@@ -304,24 +310,24 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         container(transport_row)
             .width(Length::Fill)
             .center_x(Length::Fill),
-        progress_row,
+        container(progress_row)
+            .width(Length::Fill)
+            .max_width(PLAYBACK_PROGRESS_MAX_W)
+            .center_x(Length::Fill),
     ]
     .spacing(10)
     .width(Length::Fill);
 
-    // Right cluster = playback options.
-    // Keeping shuffle/repeat above volume makes this read as one utilities block
-    // instead of a few stray controls bolted to the far edge.
     let right_block = column![
         row![shuffle_btn, repeat_btn]
             .spacing(8)
             .align_y(Alignment::Center),
-        row![text("Volume").size(12).color(SECONDARY_TEXT), vol_slider,]
+        row![text("Volume").size(12).color(SECONDARY_TEXT), vol_slider]
             .spacing(8)
             .align_y(Alignment::Center),
     ]
     .spacing(10)
-    .width(Length::Fixed(260.0));
+    .width(Length::Fixed(PLAYBACK_SIDE_CLUSTER_W));
 
     let bar = row![left_block, center_block, right_block]
         .spacing(18)
