@@ -77,7 +77,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         }
 
         // Playback
-        Message::PlayTrack(id) => playback::play_track(state, id),
         Message::PlayAlbum(key) => playback::play_album(state, key),
         Message::TogglePlayPause => playback::toggle_play_pause(state),
         Message::ToggleShuffle => playback::toggle_shuffle(state),
@@ -99,7 +98,6 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::SaveInspectorToFile => save::save_inspector_to_file(state),
         Message::SaveFinished(id, result) => save::save_finished(state, id, result),
         Message::SaveFinishedBatch(result) => save::save_finished_batch(state, result),
-        Message::RevertInspector => save::revert_inspector(state),
 
         // Sonora-only visibility / DB record actions
         Message::HideSelected => actions::hide_selected(state),

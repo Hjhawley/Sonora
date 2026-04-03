@@ -161,12 +161,6 @@ pub(crate) fn build_query_cache_rows(tracks: &[TrackRow]) -> Vec<QueryTrackCache
     tracks.iter().map(build_query_cache_row).collect()
 }
 
-/// Cached Track View ids for the current dataset/scope.
-/// This is what the user sees in Track View.
-pub(crate) fn track_ids_for_current_view(state: &Sonora) -> Vec<TrackId> {
-    state.track_view_ids.clone()
-}
-
 /// Cached library playback ids for the current dataset/scope.
 /// This respects the current sort field/direction, but intentionally ignores
 /// search filtering so temporary narrowing does not redefine the queue.

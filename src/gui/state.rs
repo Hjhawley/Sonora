@@ -632,7 +632,6 @@ pub(crate) enum Message {
     InspectorArtworkExtracted(Result<Option<PathBuf>, String>),
 
     // Playback controls (from UI)
-    PlayTrack(TrackId),
     PlayAlbum(AlbumKey),
     TogglePlayPause,
     ToggleShuffle,
@@ -652,7 +651,6 @@ pub(crate) enum Message {
     SaveInspectorToFile,
     SaveFinished(TrackId, Result<TrackRow, String>),
     SaveFinishedBatch(Result<Vec<(TrackId, TrackRow)>, String>),
-    RevertInspector,
 
     // Sonora-only visibility / DB record actions
     HideSelected,
