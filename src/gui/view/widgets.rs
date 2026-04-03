@@ -10,6 +10,12 @@ use super::constants::{LABEL_W, PLAYBACK_COVER};
 use super::style::{sonora_button, sonora_input};
 
 const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
+const SECONDARY_TEXT: Color = Color::from_rgb8(0xB8, 0xB8, 0xB8);
+
+/// Real placeholder artwork instead of the old text-based placeholder.
+/// This makes the now-playing block feel more like part of a music app and less
+/// like a temporary utility stub.
+const PLACEHOLDER_COVER_BYTES: &[u8] = include_bytes!("../../../assets/placeholder.jpg");
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
     let Some(ms) = ms else {
@@ -56,17 +62,18 @@ fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
     text(label).color(BUTTON_TEXT)
 }
 
+fn placeholder_cover_handle() -> iced::widget::image::Handle {
+    iced::widget::image::Handle::from_bytes(PLACEHOLDER_COVER_BYTES)
+}
+
 pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, Message> {
+    // The placeholder is now an actual image asset.
+    // This makes both the playback bar and inspector feel less like they are
+    // waiting for a future design pass.
     container(
-        container(
-            column![text("♪").size(28), text("cover").size(12)]
-                .spacing(4)
-                .align_x(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill),
+        image(placeholder_cover_handle())
+            .width(Length::Fixed(size))
+            .height(Length::Fixed(size)),
     )
     .width(Length::Fixed(size))
     .height(Length::Fixed(size))
@@ -203,6 +210,8 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let shown_ratio = state.seek_preview_ratio.unwrap_or(live_ratio);
 
+    // Give the progress control more presence by centering it in its own row
+    // under transport, instead of treating it like a thin afterthought.
     let seek = if seek_enabled {
         slider(0.0..=1.0, shown_ratio, Message::SeekTo)
             .step(0.001)
@@ -212,12 +221,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         slider(0.0..=1.0, shown_ratio, |_| Message::Noop)
             .step(0.001)
             .width(Length::Fill)
-    };
-
-    let time_text = if dur > 0 {
-        format!("{} / {}", fmt_duration_u64(pos), fmt_duration_u64(dur))
-    } else {
-        format!("{} / -:--", fmt_duration_u64(pos))
     };
 
     let vol = state.volume.clamp(0.0, 1.0);
@@ -250,41 +253,78 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let now_playing_cover = state.now_playing.and_then(|id| state.cover_cache.get(&id));
 
-    let meta_block = if now_playing_row.is_some() {
+    // Left cluster = cover + now playing metadata.
+    // This makes the playback bar feel anchored instead of floaty.
+    let now_playing_meta = if now_playing_row.is_some() {
         column![
-            text(now_playing_title).size(14),
-            text(now_playing_artist).size(12),
-            text(queue_label).size(12),
+            text("Now Playing").size(11).color(SECONDARY_TEXT),
+            text(now_playing_title).size(15),
+            text(now_playing_artist).size(12).color(SECONDARY_TEXT),
+            text(queue_label).size(11).color(SECONDARY_TEXT),
         ]
         .spacing(2)
     } else {
-        column![text(now_playing_title).size(14), text(queue_label).size(12)].spacing(2)
+        column![
+            text("Now Playing").size(11).color(SECONDARY_TEXT),
+            text(now_playing_title).size(15),
+            text(queue_label).size(11).color(SECONDARY_TEXT),
+        ]
+        .spacing(2)
     };
 
-    let center_block = column![
-        row![
-            cover_thumb(now_playing_cover, PLAYBACK_COVER),
-            meta_block.width(Length::Fill),
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center),
-        row![seek, text(time_text).size(12)]
-            .spacing(10)
-            .align_y(Alignment::Center),
+    let left_block = row![
+        cover_thumb(now_playing_cover, PLAYBACK_COVER),
+        now_playing_meta.width(Length::Fill),
     ]
-    .spacing(8)
+    .spacing(12)
+    .align_y(Alignment::Center)
+    .width(Length::Fixed(280.0));
+
+    // Center cluster = transport + progress.
+    // Grouping these visually makes the top bar feel like one real playback surface.
+    let transport_row = row![prev_btn, play_btn, next_btn]
+        .spacing(8)
+        .align_y(Alignment::Center);
+
+    let progress_row = row![
+        text(fmt_duration_u64(pos)).size(12).color(SECONDARY_TEXT),
+        seek,
+        text(if dur > 0 {
+            fmt_duration_u64(dur)
+        } else {
+            "-:--".to_string()
+        })
+        .size(12)
+        .color(SECONDARY_TEXT),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center);
+
+    let center_block = column![
+        container(transport_row)
+            .width(Length::Fill)
+            .center_x(Length::Fill),
+        progress_row,
+    ]
+    .spacing(10)
     .width(Length::Fill);
 
-    let controls_left = row![prev_btn, play_btn, next_btn]
-        .spacing(8)
-        .align_y(Alignment::Center);
+    // Right cluster = playback options.
+    // Keeping shuffle/repeat above volume makes this read as one utilities block
+    // instead of a few stray controls bolted to the far edge.
+    let right_block = column![
+        row![shuffle_btn, repeat_btn]
+            .spacing(8)
+            .align_y(Alignment::Center),
+        row![text("Volume").size(12).color(SECONDARY_TEXT), vol_slider,]
+            .spacing(8)
+            .align_y(Alignment::Center),
+    ]
+    .spacing(10)
+    .width(Length::Fixed(260.0));
 
-    let controls_right = row![shuffle_btn, repeat_btn, text("Vol").size(12), vol_slider]
-        .spacing(8)
-        .align_y(Alignment::Center);
-
-    let bar = row![controls_left, center_block, controls_right]
-        .spacing(16)
+    let bar = row![left_block, center_block, right_block]
+        .spacing(18)
         .align_y(Alignment::Center)
         .width(Length::Fill);
 
