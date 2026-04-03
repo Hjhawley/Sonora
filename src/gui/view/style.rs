@@ -16,7 +16,7 @@ const DISABLED_TEXT: Color = Color::from_rgb8(0x8E, 0x8E, 0x8E);
 
 const BORDER: Color = Color::from_rgb8(0x44, 0x44, 0x44); // #444
 
-/// Accent button: use for active toggles and primary actions.
+/// Accent button: primary actions like Scan/Add/Playback controls.
 pub(crate) fn sonora_button(theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::primary(theme, status);
 
@@ -39,7 +39,7 @@ pub(crate) fn sonora_button(theme: &Theme, status: button::Status) -> button::St
     style
 }
 
-/// Muted button: use for inactive toggles.
+/// Muted button: inactive toggles.
 pub(crate) fn sonora_button_muted(theme: &Theme, status: button::Status) -> button::Style {
     let mut style = button::secondary(theme, status);
 
@@ -57,6 +57,26 @@ pub(crate) fn sonora_button_muted(theme: &Theme, status: button::Status) -> butt
         button::Status::Disabled => {
             style.background = Some(Background::Color(ALT_BG));
             style.text_color = DISABLED_TEXT;
+        }
+    }
+
+    style
+}
+
+/// Selected toggle: currently active scope/view.
+/// Important: disabled state stays cyan too, because selected toggles are intentionally not clickable.
+pub(crate) fn sonora_button_selected(theme: &Theme, status: button::Status) -> button::Style {
+    let mut style = button::primary(theme, status);
+
+    style.text_color = TEXT;
+    style.border = border::rounded(0.0);
+
+    match status {
+        button::Status::Active | button::Status::Pressed | button::Status::Disabled => {
+            style.background = Some(Background::Color(PRIMARY));
+        }
+        button::Status::Hovered => {
+            style.background = Some(Background::Color(PRIMARY_HOVER));
         }
     }
 

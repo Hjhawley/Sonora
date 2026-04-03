@@ -5,7 +5,7 @@ use iced::Length;
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 
 use super::super::state::{LibraryScope, Message, Sonora, ViewMode};
-use super::style::{sonora_button, sonora_button_muted, sonora_input};
+use super::style::{sonora_button, sonora_button_muted, sonora_button_selected, sonora_input};
 
 pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let busy = state.scanning || state.saving;
@@ -20,7 +20,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     };
 
     let library_btn = if state.library_scope == LibraryScope::Library {
-        button("▷ Library").style(sonora_button)
+        button("▷ Library").style(sonora_button_selected)
     } else {
         button("Library")
             .on_press(Message::SetLibraryScope(LibraryScope::Library))
@@ -28,7 +28,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     };
 
     let hidden_btn = if state.library_scope == LibraryScope::Hidden {
-        button("▷ Hidden").style(sonora_button)
+        button("▷ Hidden").style(sonora_button_selected)
     } else {
         button("Hidden")
             .on_press(Message::SetLibraryScope(LibraryScope::Hidden))
@@ -36,7 +36,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     };
 
     let missing_btn = if state.library_scope == LibraryScope::Missing {
-        button("▷ Missing").style(sonora_button)
+        button("▷ Missing").style(sonora_button_selected)
     } else {
         button("Missing")
             .on_press(Message::SetLibraryScope(LibraryScope::Missing))
@@ -46,7 +46,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     let scope_toggle = row![library_btn, hidden_btn, missing_btn].spacing(8);
 
     let albums_btn = if state.view_mode == ViewMode::Albums {
-        button("▷ Album View").style(sonora_button)
+        button("▷ Album View").style(sonora_button_selected)
     } else {
         button("Album View")
             .on_press(Message::SetViewMode(ViewMode::Albums))
@@ -54,7 +54,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     };
 
     let tracks_btn = if state.view_mode == ViewMode::Tracks {
-        button("▷ Track View").style(sonora_button)
+        button("▷ Track View").style(sonora_button_selected)
     } else {
         button("Track View")
             .on_press(Message::SetViewMode(ViewMode::Tracks))
