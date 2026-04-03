@@ -7,6 +7,7 @@
 
 use std::time::Instant;
 
+use super::style::{sonora_button, sonora_input};
 use iced::widget::{
     Column, Row, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
@@ -180,9 +181,12 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
     .on_input(Message::TrackSearchChanged)
     .padding(8)
     .size(14)
-    .width(Length::Fill);
+    .width(Length::Fill)
+    .style(sonora_input);
 
-    let clear_button = button(text("Clear").size(14)).on_press(Message::ClearTrackSearch);
+    let clear_button = button(text("Clear").size(14))
+        .on_press(Message::ClearTrackSearch)
+        .style(sonora_button);
 
     row![search, clear_button]
         .spacing(8)
@@ -659,4 +663,5 @@ fn sort_header_button(
     )
     .width(Length::Fixed(width))
     .on_press(Message::SetTrackSortField(field))
+    .style(sonora_button)
 }

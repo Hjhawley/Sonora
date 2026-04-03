@@ -5,47 +5,60 @@ use iced::Length;
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 
 use super::super::state::{LibraryScope, Message, Sonora, ViewMode};
+use super::style::{sonora_button, sonora_input};
 
 pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let busy = state.scanning || state.saving;
     let has_selection = state.has_selection();
 
     let scan_btn = if state.scanning {
-        button("Scanning...")
+        button("Scanning...").style(sonora_button)
     } else {
-        button("Scan Library").on_press(Message::ScanLibrary)
+        button("Scan Library")
+            .on_press(Message::ScanLibrary)
+            .style(sonora_button)
     };
 
     let library_btn = if state.library_scope == LibraryScope::Library {
-        button("▷ Library")
+        button("▷ Library").style(sonora_button)
     } else {
-        button("Library").on_press(Message::SetLibraryScope(LibraryScope::Library))
+        button("Library")
+            .on_press(Message::SetLibraryScope(LibraryScope::Library))
+            .style(sonora_button)
     };
 
     let hidden_btn = if state.library_scope == LibraryScope::Hidden {
-        button("▷ Hidden")
+        button("▷ Hidden").style(sonora_button)
     } else {
-        button("Hidden").on_press(Message::SetLibraryScope(LibraryScope::Hidden))
+        button("Hidden")
+            .on_press(Message::SetLibraryScope(LibraryScope::Hidden))
+            .style(sonora_button)
     };
 
     let missing_btn = if state.library_scope == LibraryScope::Missing {
-        button("▷ Missing")
+        button("▷ Missing").style(sonora_button)
     } else {
-        button("Missing").on_press(Message::SetLibraryScope(LibraryScope::Missing))
+        button("Missing")
+            .on_press(Message::SetLibraryScope(LibraryScope::Missing))
+            .style(sonora_button)
     };
 
     let scope_toggle = row![library_btn, hidden_btn, missing_btn].spacing(8);
 
     let albums_btn = if state.view_mode == ViewMode::Albums {
-        button("▷ Album View")
+        button("▷ Album View").style(sonora_button)
     } else {
-        button("Album View").on_press(Message::SetViewMode(ViewMode::Albums))
+        button("Album View")
+            .on_press(Message::SetViewMode(ViewMode::Albums))
+            .style(sonora_button)
     };
 
     let tracks_btn = if state.view_mode == ViewMode::Tracks {
-        button("▷ Track View")
+        button("▷ Track View").style(sonora_button)
     } else {
-        button("Track View").on_press(Message::SetViewMode(ViewMode::Tracks))
+        button("Track View")
+            .on_press(Message::SetViewMode(ViewMode::Tracks))
+            .style(sonora_button)
     };
 
     let view_toggle = row![albums_btn, tracks_btn].spacing(8);
@@ -53,23 +66,29 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     let visibility_btn = match state.library_scope {
         LibraryScope::Library => {
             if busy || !has_selection {
-                button("Hide from Sonora")
+                button("Hide from Sonora").style(sonora_button)
             } else {
-                button("Hide from Sonora").on_press(Message::HideSelected)
+                button("Hide from Sonora")
+                    .on_press(Message::HideSelected)
+                    .style(sonora_button)
             }
         }
         LibraryScope::Hidden => {
             if busy || !has_selection {
-                button("Unhide")
+                button("Unhide").style(sonora_button)
             } else {
-                button("Unhide").on_press(Message::UnhideSelected)
+                button("Unhide")
+                    .on_press(Message::UnhideSelected)
+                    .style(sonora_button)
             }
         }
         LibraryScope::Missing => {
             if busy || !has_selection {
-                button("Delete from Sonora")
+                button("Delete from Sonora").style(sonora_button)
             } else {
-                button("Delete from Sonora").on_press(Message::DeleteSelectedFromSonora)
+                button("Delete from Sonora")
+                    .on_press(Message::DeleteSelectedFromSonora)
+                    .style(sonora_button)
             }
         }
     };
@@ -77,12 +96,15 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     let root_input = text_input("Add folder path", &state.root_input)
         .on_input(Message::RootInputChanged)
         .on_submit(Message::AddRootPressed)
-        .width(Length::Fill);
+        .width(Length::Fill)
+        .style(sonora_input);
 
     let add_btn = if busy {
-        button("Add")
+        button("Add").style(sonora_button)
     } else {
-        button("Add").on_press(Message::AddRootPressed)
+        button("Add")
+            .on_press(Message::AddRootPressed)
+            .style(sonora_button)
     };
 
     let add_row = row![root_input, add_btn].spacing(8);
@@ -90,9 +112,11 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     let mut roots_list = column![];
     for (i, p) in state.roots.iter().enumerate() {
         let remove_btn = if busy {
-            button("×")
+            button("✕").style(sonora_button)
         } else {
-            button("×").on_press(Message::RemoveRoot(i))
+            button("✕")
+                .on_press(Message::RemoveRoot(i))
+                .style(sonora_button)
         };
 
         let path_txt = text(p.display().to_string()).size(12).width(Length::Fill);

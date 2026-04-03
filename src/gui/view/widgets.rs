@@ -7,6 +7,7 @@ use iced::{Alignment, Element, Length};
 
 use super::super::state::{Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
 use super::constants::{LABEL_W, PLAYBACK_COVER};
+use super::style::{sonora_button, sonora_input};
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
     let Some(ms) = ms else {
@@ -32,7 +33,6 @@ pub(crate) fn ellipsize_for_width(value: &str, width: f32) -> String {
         return String::new();
     }
 
-    // Rough average width
     let approx_chars = ((width - 10.0) / 7.2).floor().max(1.0) as usize;
 
     let char_count = text.chars().count();
@@ -66,7 +66,6 @@ pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, M
     .height(Length::Fixed(size))
 }
 
-/// If 'handle' exists, show it; otherwise show the placeholder.
 pub(crate) fn cover_thumb(
     handle: Option<&iced::widget::image::Handle>,
     size: f32,
@@ -91,7 +90,10 @@ pub(crate) fn field_row<'a>(
 ) -> iced::widget::Row<'a, Message> {
     row![
         text(label).width(Length::Fixed(LABEL_W)),
-        text_input("", value).on_input(on_input).width(Length::Fill),
+        text_input("", value)
+            .on_input(on_input)
+            .width(Length::Fill)
+            .style(sonora_input),
     ]
     .spacing(8)
     .align_y(Alignment::Center)
@@ -108,11 +110,13 @@ pub(crate) fn num_pair_row<'a>(
         text(label).width(Length::Fixed(LABEL_W)),
         text_input("", left)
             .on_input(left_on)
-            .width(Length::Fixed(70.0)),
+            .width(Length::Fixed(70.0))
+            .style(sonora_input),
         text("/"),
         text_input("", right)
             .on_input(right_on)
-            .width(Length::Fixed(70.0)),
+            .width(Length::Fixed(70.0))
+            .style(sonora_input),
     ]
     .spacing(6)
     .align_y(Alignment::Center)
@@ -124,21 +128,23 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let play_label = if state.is_playing { "Pause" } else { "Play" };
 
     let prev_btn = if engine_ready {
-        button("Prev").on_press(Message::Prev)
+        button("Prev").on_press(Message::Prev).style(sonora_button)
     } else {
-        button("Prev")
+        button("Prev").style(sonora_button)
     };
 
     let play_btn = if engine_ready {
-        button(play_label).on_press(Message::TogglePlayPause)
-    } else {
         button(play_label)
+            .on_press(Message::TogglePlayPause)
+            .style(sonora_button)
+    } else {
+        button(play_label).style(sonora_button)
     };
 
     let next_btn = if engine_ready {
-        button("Next").on_press(Message::Next)
+        button("Next").on_press(Message::Next).style(sonora_button)
     } else {
-        button("Next")
+        button("Next").style(sonora_button)
     };
 
     let shuffle_label = match state.play_order {
@@ -158,18 +164,21 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     };
 
     let shuffle_btn = if engine_ready {
-        button(shuffle_label).on_press(Message::ToggleShuffle)
-    } else {
         button(shuffle_label)
+            .on_press(Message::ToggleShuffle)
+            .style(sonora_button)
+    } else {
+        button(shuffle_label).style(sonora_button)
     };
 
     let repeat_btn = if engine_ready {
-        button(repeat_label).on_press(Message::CycleRepeatMode)
-    } else {
         button(repeat_label)
+            .on_press(Message::CycleRepeatMode)
+            .style(sonora_button)
+    } else {
+        button(repeat_label).style(sonora_button)
     };
 
-    // seek slider
     let pos = state.position_ms;
     let dur = state.duration_ms.unwrap_or(0);
 
@@ -181,7 +190,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         0.0
     };
 
-    // If the user is currently dragging, show their preview value
     let shown_ratio = state.seek_preview_ratio.unwrap_or(live_ratio);
 
     let seek = if seek_enabled {
@@ -201,7 +209,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         format!("{} / -:--", fmt_duration_u64(pos))
     };
 
-    // volume slider
     let vol = state.volume.clamp(0.0, 1.0);
 
     let vol_slider = if engine_ready {
@@ -265,7 +272,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         .spacing(8)
         .align_y(Alignment::Center);
 
-    let bar = row![controls_left, center_block, controls_right,]
+    let bar = row![controls_left, center_block, controls_right]
         .spacing(16)
         .align_y(Alignment::Center)
         .width(Length::Fill);

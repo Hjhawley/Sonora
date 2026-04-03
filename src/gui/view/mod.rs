@@ -8,6 +8,7 @@ mod center;
 pub(crate) mod constants;
 mod inspector;
 mod sidebar;
+pub(crate) mod style;
 mod tracks;
 mod widgets;
 
