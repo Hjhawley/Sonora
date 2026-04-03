@@ -130,3 +130,85 @@ pub(crate) fn fmt_channels(v: Option<u8>) -> String {
         _ => "—".to_string(),
     }
 }
+
+fn approx_chars_for_width(width: f32) -> usize {
+    ((width - 10.0) / 7.2).floor().max(1.0) as usize
+}
+
+/// Tail-preserving path truncation for the Track View.
+///
+/// Why this exists:
+/// Generic right-side ellipsis is bad for paths because the most useful part is
+/// usually the filename and the last couple of folders, not the common prefix.
+///
+/// Examples:
+/// - `C:\Music\OST\Chrono Trigger\Battle 1.mp3`
+///   becomes something like:
+///   `…\OST\Chrono Trigger\Battle 1.mp3`
+pub(crate) fn ellipsize_path_tail_for_width(path: &str, width: f32) -> String {
+    let raw = path.trim();
+    if raw.is_empty() {
+        return String::new();
+    }
+
+    let approx_chars = approx_chars_for_width(width);
+
+    if raw.chars().count() <= approx_chars {
+        return raw.to_string();
+    }
+
+    if approx_chars <= 1 {
+        return "…".to_string();
+    }
+
+    let separator = if raw.contains('\\') { "\\" } else { "/" };
+
+    let parts: Vec<&str> = raw.split(['\\', '/']).filter(|s| !s.is_empty()).collect();
+
+    if parts.is_empty() {
+        let keep = approx_chars.saturating_sub(1);
+        let tail: String = raw
+            .chars()
+            .rev()
+            .take(keep)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        return format!("…{tail}");
+    }
+
+    let mut kept_rev: Vec<&str> = Vec::new();
+    let mut used = 1; // the ellipsis itself
+
+    for part in parts.iter().rev() {
+        let extra = if kept_rev.is_empty() {
+            part.chars().count()
+        } else {
+            separator.chars().count() + part.chars().count()
+        };
+
+        if used + extra > approx_chars {
+            break;
+        }
+
+        kept_rev.push(*part);
+        used += extra;
+    }
+
+    if kept_rev.is_empty() {
+        let keep = approx_chars.saturating_sub(1);
+        let tail: String = raw
+            .chars()
+            .rev()
+            .take(keep)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        return format!("…{tail}");
+    }
+
+    kept_rev.reverse();
+    format!("…{}{}", separator, kept_rev.join(separator))
+}

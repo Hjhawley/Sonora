@@ -19,15 +19,18 @@ pub(crate) const HEADER_TEXT: f32 = 14.0;
 pub(crate) const ROW_TEXT: f32 = 14.0;
 
 // Track list
-pub(crate) const TRACK_ROW_H: f32 = 26.0;
-pub(crate) const TRACK_ROW_VPAD: f32 = 2.0;
+pub(crate) const TRACK_ROW_H: f32 = 28.0;
+pub(crate) const TRACK_ROW_VPAD: f32 = 3.0;
 pub(crate) const TRACK_ROW_HPAD: f32 = 8.0;
-pub(crate) const TRACK_LIST_SPACING: f32 = 1.0;
+pub(crate) const TRACK_LIST_SPACING: f32 = 2.0;
 pub(crate) const TRACK_COL_SPACING: f32 = 10.0;
 
 // Track view column widths
 pub(crate) const TRACK_COL_MARKER_W: f32 = 24.0;
-pub(crate) const TRACK_COL_PATH_W: f32 = 360.0;
+
+// Narrowed so Path stops dominating the whole table.
+// The new path-specific truncation keeps this column useful even at a smaller width.
+pub(crate) const TRACK_COL_PATH_W: f32 = 280.0;
 
 pub(crate) const TRACK_COL_TRACK_NO_W: f32 = 44.0;
 pub(crate) const TRACK_COL_TRACK_TOTAL_W: f32 = 52.0;
