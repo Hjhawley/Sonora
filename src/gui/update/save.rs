@@ -159,12 +159,6 @@ pub(crate) fn save_finished_batch(
     Task::none()
 }
 
-pub(crate) fn revert_inspector(state: &mut Sonora) -> Task<Message> {
-    load_inspector_from_selection(state);
-    reset_inspector_artwork_state(state);
-    Task::none()
-}
-
 fn selected_ids_for_save(state: &Sonora) -> Vec<TrackId> {
     let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
         state.selected_tracks.iter().copied().collect()

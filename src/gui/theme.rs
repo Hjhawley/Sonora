@@ -13,9 +13,6 @@ pub(crate) const APP_FONT_BYTES: &[u8] = include_bytes!("../../assets/fonts/Aile
 /// This must match the family name embedded in the font file
 pub(crate) const APP_FONT: Font = Font::with_name("Aileron");
 
-/// Global default text size for the app
-pub(crate) const DEFAULT_TEXT_SIZE: f32 = 14.0;
-
 /// Force dark mode everywhere with Sonora's own palette
 pub(crate) fn app_theme() -> Theme {
     Theme::custom(

@@ -46,12 +46,3 @@ pub(crate) fn set_track_sort_field(state: &mut Sonora, field: TrackSortField) ->
     state.rebuild_track_query_caches();
     Task::none()
 }
-
-pub(crate) fn toggle_track_sort_direction(state: &mut Sonora) -> Task<Message> {
-    state.track_query.sort_direction = state.track_query.sort_direction.toggled();
-
-    state.tracks_scroll_offset_y = 0.0;
-
-    state.rebuild_track_query_caches();
-    Task::none()
-}

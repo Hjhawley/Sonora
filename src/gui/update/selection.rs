@@ -60,10 +60,6 @@ pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     Task::batch(preload_tasks)
 }
 
-pub(crate) fn select_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
-    select_single_track(state, id)
-}
-
 pub(crate) fn track_pressed(state: &mut Sonora, id: TrackId) -> Task<Message> {
     let shift = state.modifiers.shift();
     let ctrl = state.modifiers.control();
