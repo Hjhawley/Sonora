@@ -4,7 +4,7 @@
 //! - album detail screen when an album is selected
 
 use iced::widget::{button, column, container, mouse_area, responsive, row, scrollable, text};
-use iced::{Alignment, Length, Size};
+use iced::{Alignment, Color, Length, Size};
 
 use super::super::state::{AlbumKey, LibraryScope, Message, Sonora};
 use super::super::util::filename_stem;
@@ -13,8 +13,15 @@ use super::constants::{
     ALBUM_GRID_SPACING_X, ALBUM_GRID_SPACING_Y, ALBUM_TILE_COVER, ALBUM_TILE_W, ROW_TEXT,
     TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
+use super::style::sonora_button;
 use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackId;
+
+const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
+
+fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
+    text(label).color(BUTTON_TEXT)
+}
 
 #[derive(Clone)]
 struct AlbumTile {
@@ -148,10 +155,13 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         / 1000
         / 60;
 
-    let back_btn = button("◁ Back to albums")
-        .on_press(Message::SetViewMode(super::super::state::ViewMode::Albums));
+    let back_btn = button(button_text("◁ Back to albums"))
+        .on_press(Message::SetViewMode(super::super::state::ViewMode::Albums))
+        .style(sonora_button);
 
-    let play_album_btn = button("Play Album").on_press(Message::PlayAlbum(key.clone()));
+    let play_album_btn = button(button_text("Play Album"))
+        .on_press(Message::PlayAlbum(key.clone()))
+        .style(sonora_button);
 
     let rep_id = state.representative_cover_track_id(&key);
     let big_cover = rep_id
@@ -164,7 +174,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         column![
             text(key.album.clone()).size(30),
             text(key.album_artist.clone()).size(20),
-            text(format!("{release_date}")).size(14),
+            text(release_date).size(14),
             text(format!("{total_tracks} tracks • {total_minutes} min")).size(13),
             play_album_btn,
         ]

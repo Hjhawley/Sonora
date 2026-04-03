@@ -11,7 +11,7 @@ use super::style::{sonora_button, sonora_input};
 use iced::widget::{
     Column, Row, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
-use iced::{Alignment, Length};
+use iced::{Alignment, Color, Length};
 
 use super::super::query::{SortDirection, TrackSortField};
 use super::super::state::{LibraryScope, Message, Sonora};
@@ -34,6 +34,16 @@ use super::widgets::{ellipsize_for_width, fmt_duration};
 
 /// Reasonable first-frame fallback before we receive a real viewport height.
 const FALLBACK_VIEWPORT_H: f32 = 700.0;
+
+const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
+
+fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
+    text(label).color(BUTTON_TEXT)
+}
+
+fn button_text_owned(label: String) -> iced::widget::Text<'static> {
+    text(label).color(BUTTON_TEXT)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ColumnKind {
@@ -184,7 +194,7 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
     .width(Length::Fill)
     .style(sonora_input);
 
-    let clear_button = button(text("Clear").size(14))
+    let clear_button = button(button_text("Clear").size(14))
         .on_press(Message::ClearTrackSearch)
         .style(sonora_button);
 
@@ -655,9 +665,10 @@ fn sort_header_button(
     };
 
     let text_label = format!("{label}{suffix}");
+    let display_label = ellipsize_for_width(&text_label, width);
 
     button(
-        text(ellipsize_for_width(&text_label, width))
+        button_text_owned(display_label)
             .size(HEADER_TEXT)
             .width(Length::Fixed(width)),
     )

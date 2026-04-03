@@ -11,12 +11,18 @@ use super::super::state::{
     ArtworkEdit, InspectorField as Field, Message, Sonora, mixed_display_string,
 };
 use super::constants::LABEL_W;
+use super::style::{sonora_button, sonora_input};
 use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackRow;
 use crate::gui::util::{fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 
 /// Bright teal used for mixed-field placeholder text.
 const MIXED_TEAL: Color = Color::from_rgb8(0x2C, 0xE8, 0xD3);
+const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
+
+fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
+    text(label).color(BUTTON_TEXT)
+}
 
 fn is_mixed(state: &Sonora, field: Field) -> bool {
     state.inspector_mixed.get(&field).copied().unwrap_or(false)
@@ -38,7 +44,7 @@ fn inspector_input<'a>(
     text_input(placeholder, display_value)
         .on_input(on_input)
         .style(move |theme: &Theme, status: TextInputStatus| {
-            let mut style = iced::widget::text_input::default(theme, status);
+            let mut style = sonora_input(theme, status);
             if mixed {
                 style.placeholder = MIXED_TEAL;
             }
@@ -119,7 +125,7 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     let rows = selected_rows(state);
 
     let Some(primary) = rows.first() else {
-        return iced::widget::column![text("Tag Editor").size(18), text("No selection.").size(12)]
+        return iced::widget::column![text("Tag Inspector").size(18), text("No selection.").size(12)]
             .spacing(6);
     };
 
@@ -155,7 +161,7 @@ fn build_inspector_header(state: &Sonora) -> Column<'_, Message> {
     );
 
     iced::widget::column![
-        text("Tag Editor").size(18),
+        text("Tag Inspector").size(18),
         text(format!("Selected: {sel_count}")).size(12),
         text(format!("File Path: {path_line}")).size(12),
         text(technical_line).size(12),
@@ -230,21 +236,27 @@ fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
         };
 
     let add_btn = if state.scanning || state.saving {
-        button("Add / Replace artwork")
+        button(button_text("Add / Replace artwork")).style(sonora_button)
     } else {
-        button("Add / Replace artwork").on_press(Message::ChooseInspectorArtwork)
+        button(button_text("Add / Replace artwork"))
+            .on_press(Message::ChooseInspectorArtwork)
+            .style(sonora_button)
     };
 
     let remove_btn = if state.scanning || state.saving {
-        button("Remove artwork")
+        button(button_text("Remove artwork")).style(sonora_button)
     } else {
-        button("Remove artwork").on_press(Message::RemoveInspectorArtwork)
+        button(button_text("Remove artwork"))
+            .on_press(Message::RemoveInspectorArtwork)
+            .style(sonora_button)
     };
 
     let extract_btn = if state.scanning || state.saving || !can_extract {
-        button("Extract artwork")
+        button(button_text("Extract artwork")).style(sonora_button)
     } else {
-        button("Extract artwork").on_press(Message::ExtractInspectorArtwork)
+        button(button_text("Extract artwork"))
+            .on_press(Message::ExtractInspectorArtwork)
+            .style(sonora_button)
     };
 
     let artwork_buttons = iced::widget::column![
@@ -430,7 +442,7 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     if !state.has_selection() {
         return container(
             iced::widget::column![
-                text("Tag Editor").size(18),
+                text("Tag Inspector").size(18),
                 text("Select one or more tracks (center panel)."),
             ]
             .spacing(8),
@@ -443,9 +455,11 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     let fields = build_all_fields(state);
 
     let save_btn = if state.scanning || !state.inspector_dirty {
-        button("Save edits")
+        button(button_text("Save edits")).style(sonora_button)
     } else {
-        button("Save edits").on_press(Message::SaveInspectorToFile)
+        button(button_text("Save edits"))
+            .on_press(Message::SaveInspectorToFile)
+            .style(sonora_button)
     };
 
     let close_label = if state.inspector_dirty {
@@ -455,9 +469,11 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     };
 
     let close_btn = if state.scanning {
-        button(close_label)
+        button(button_text(close_label)).style(sonora_button)
     } else {
-        button(close_label).on_press(Message::CloseInspector)
+        button(button_text(close_label))
+            .on_press(Message::CloseInspector)
+            .style(sonora_button)
     };
 
     let buttons = row![save_btn, close_btn].spacing(8);
