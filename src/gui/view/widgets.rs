@@ -24,7 +24,7 @@ const PLAYBACK_SIDE_CLUSTER_W: f32 = 280.0;
 /// Real placeholder artwork instead of the old text-based placeholder.
 /// This makes the now-playing block feel more like part of a music app and less
 /// like a temporary utility stub.
-const PLACEHOLDER_COVER_BYTES: &[u8] = include_bytes!("../../../assets/placeholder.jpg");
+const PLACEHOLDER_COVER_BYTES: &[u8] = include_bytes!("../../../assets/placeholder.png");
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
     let Some(ms) = ms else {
