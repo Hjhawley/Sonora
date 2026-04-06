@@ -2,15 +2,6 @@
 //! Right panel: metadata inspector/editor.
 //! - Selection is TrackId-based.
 //! - We resolve id -> TrackRow on demand for display.
-//!
-//! Phase-1 visual structure pass:
-//! - stronger grouping
-//! - clearer section rhythm
-//! - more deliberate action area
-//! - better unsaved-changes signaling
-//!
-//! The metadata remains intentionally thorough; the goal here is not to hide
-//! capability, but to make the density feel structured instead of noisy.
 
 use iced::widget::text_input::Status as TextInputStatus;
 use iced::widget::{Column, Row, button, container, row, scrollable, text, text_input};
@@ -25,7 +16,6 @@ use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackRow;
 use crate::gui::util::{fmt_bitrate_kbps, fmt_channels, fmt_sample_rate_hz};
 
-/// Bright teal used for mixed-field placeholder text.
 const MIXED_TEAL: Color = Color::from_rgb8(0x2C, 0xE8, 0xD3);
 const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
 const DIRTY_TEXT: Color = Color::from_rgb8(0x33, 0xAA, 0xBB);
@@ -34,11 +24,9 @@ const SECONDARY_TEXT: Color = Color::from_rgb8(0xB8, 0xB8, 0xB8);
 fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
     text(label).color(BUTTON_TEXT)
 }
-
 fn section_title<'a>(label: &'a str) -> iced::widget::Text<'a> {
     text(label).size(14)
 }
-
 fn is_mixed(state: &Sonora, field: Field) -> bool {
     state.inspector_mixed.get(&field).copied().unwrap_or(false)
 }

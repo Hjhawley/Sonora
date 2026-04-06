@@ -1,13 +1,5 @@
 //! gui/view/sidebar.rs
 //! Left sidebar (scan, scope toggles, layout toggles, action buttons, roots list).
-//!
-//! Phase-1 visual structure pass:
-//! - stronger section rhythm
-//! - clearer hierarchy
-//! - more deliberate spacing
-//! - more consistent control sizing
-//!
-//! No behavior changes here; this is purely layout / hierarchy cleanup.
 
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
 use iced::{Color, Length};

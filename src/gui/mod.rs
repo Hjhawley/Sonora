@@ -8,6 +8,7 @@
 //! - subscriptions (polling playback events)
 //! - small UI helpers ('util')
 
+pub(crate) mod columns;
 pub(crate) mod query;
 pub(crate) mod state;
 pub(crate) mod subscription;

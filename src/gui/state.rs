@@ -20,6 +20,7 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
+use super::columns::{TrackColumnState, default_track_columns};
 use super::query::{
     QueryTrackCache, TrackQuery, TrackSortField, build_playback_queue_ids, build_query_cache_rows,
     build_track_view_ids,
@@ -259,6 +260,12 @@ pub(crate) struct Sonora {
     pub tracks_viewport_height: f32,
     pub tracks_overscan_rows: usize,
 
+    /// Track View column config.
+    /// Order in this Vec is display order.
+    /// Visibility/width live here so the table can eventually support
+    /// hide/reorder/resize without hardcoded private view state.
+    pub track_columns: Vec<TrackColumnState>,
+
     // Playback (core handle + UI state)
     pub playback: Option<PlaybackController>,
 
@@ -389,6 +396,7 @@ impl Sonora {
             cover_cache: BTreeMap::new(),
 
             track_query: TrackQuery::default(),
+            track_columns: default_track_columns(),
             track_view_ids: Vec::new(),
             playback_queue_ids: Vec::new(),
 
