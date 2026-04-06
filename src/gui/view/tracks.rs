@@ -25,8 +25,8 @@ use super::constants::{
 };
 use super::widgets::{ellipsize_for_width, fmt_duration};
 
-/// Reasonable first-frame fallback before we receive a real viewport height.
 const FALLBACK_VIEWPORT_H: f32 = 700.0;
+const HEADER_RESIZE_HANDLE_W: f32 = 10.0;
 
 fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
     text(label).color(TEXT)
@@ -280,26 +280,42 @@ fn build_header_cell(
     active_field: TrackSortField,
     active_direction: SortDirection,
 ) -> iced::Element<'static, Message> {
-    let width = column.width;
+    let total_width = column.width.max(HEADER_RESIZE_HANDLE_W + 12.0);
+    let label_width = (total_width - HEADER_RESIZE_HANDLE_W).max(12.0);
 
-    match column.kind.sort_field() {
+    let header_main: iced::Element<'static, Message> = match column.kind.sort_field() {
         Some(field) => sort_header_button(
             active_field,
             active_direction,
             column.kind.label(),
             field,
-            width,
+            label_width,
         )
         .into(),
         None => container(
-            text(ellipsize_for_width(column.kind.label(), width))
+            text(ellipsize_for_width(column.kind.label(), label_width))
                 .size(HEADER_TEXT)
                 .color(MUTED_TEXT)
-                .width(Length::Fixed(width)),
+                .width(Length::Fixed(label_width)),
         )
-        .width(Length::Fixed(width))
+        .width(Length::Fixed(label_width))
         .into(),
-    }
+    };
+
+    let resize_grip = mouse_area(
+        container(text("⋮").size(12).color(MUTED_TEXT))
+            .width(Length::Fixed(HEADER_RESIZE_HANDLE_W)),
+    )
+    .on_press(Message::StartTrackColumnResize(column.kind));
+
+    container(
+        row![header_main, resize_grip]
+            .spacing(0)
+            .align_y(Alignment::Center)
+            .width(Length::Fixed(total_width)),
+    )
+    .width(Length::Fixed(total_width))
+    .into()
 }
 
 fn build_row_cell_for_track(

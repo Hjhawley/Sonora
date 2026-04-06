@@ -2,17 +2,37 @@
 //! Global subscriptions:
 //! - keyboard event listener
 //! - playback polling while active
+//! - mouse movement / release for Track View column resizing
 
 use iced::{Subscription, event, time};
 use std::time::Duration;
 
 use super::state::{Message, Sonora};
 
-pub(crate) fn subscription(state: &Sonora) -> Subscription<Message> {
-    let keyboard_sub = event::listen_with(|event, _status, _window| match event {
+fn map_event(
+    event: iced::Event,
+    _status: iced::event::Status,
+    _window: iced::window::Id,
+) -> Option<Message> {
+    match event {
         iced::Event::Keyboard(key_event) => Some(Message::KeyboardEvent(key_event)),
+
+        iced::Event::Mouse(iced::mouse::Event::CursorMoved { position }) => {
+            Some(Message::UpdateTrackColumnResize {
+                cursor_x: position.x,
+            })
+        }
+
+        iced::Event::Mouse(iced::mouse::Event::ButtonReleased(iced::mouse::Button::Left)) => {
+            Some(Message::EndTrackColumnResize)
+        }
+
         _ => None,
-    });
+    }
+}
+
+pub(crate) fn subscription(state: &Sonora) -> Subscription<Message> {
+    let event_sub = event::listen_with(map_event);
 
     let should_poll = state.playback_events.is_some()
         && (state.is_playing
@@ -22,10 +42,10 @@ pub(crate) fn subscription(state: &Sonora) -> Subscription<Message> {
 
     if should_poll {
         Subscription::batch(vec![
-            keyboard_sub,
+            event_sub,
             time::every(Duration::from_millis(200)).map(|_| Message::TickPlayback),
         ])
     } else {
-        Subscription::batch(vec![keyboard_sub])
+        Subscription::batch(vec![event_sub])
     }
 }

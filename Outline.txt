@@ -27,14 +27,15 @@
 │   └── types.rs - Canonical app-level data model, especially TrackId and TrackRow. These types are shared across tags, DB caching, scan/load flows, GUI state, and query logic.
 ├── gui
 │   ├── columns.rs - Shared Track View column model. Defines column identity, labels, default widths, sort-field mapping, and per-column UI state such as visibility and width.
-│   ├── mod.rs - Top-level GUI boundary. Exposes state, theme, subscriptions, update logic, query logic, view logic, column model, and shared UI helpers, and re-exports the main entry points used by main.rs.
+│   ├── mod.rs - Top-level GUI boundary. Exposes state, theme, subscriptions, update logic, query logic, view logic, and shared UI helpers, and re-exports the main entry points used by main.rs.
 │   ├── query.rs - Pure Track View derivation layer. Handles search matching, full-table sorting across supported metadata columns, normalized query caches, and derived TrackId orderings for visible display order versus playback order.
-│   ├── state.rs - Central shared GUI state. Defines the message enum, scope/view/playback enums, query state, Track View column configuration, selection state, playback UI state, caches, inspector state, artwork-edit state, and startup initialization of playback, saved roots/volume, cached library rows, and derived caches.
-│   ├── subscription.rs - Application-level GUI subscriptions, including the periodic playback tick and global keyboard event listener.
+│   ├── state.rs - Central shared GUI state. Defines the message enum, scope/view/playback enums, query state, selection state, playback UI state, Track View column config, live column-resize state, caches, inspector state, artwork-edit state, and startup initialization of playback, saved roots/volume, cached library rows, and derived caches.
+│   ├── subscription.rs - Application-level GUI subscriptions, including the periodic playback tick, global keyboard event listener, and global mouse events used by Track View column resizing.
 │   ├── theme.rs - App-wide visual defaults such as the bundled font, forced dark theme, and custom palette for more consistent cross-platform styling.
 │   ├── update
 │   │   ├── actions.rs - DB-backed actions applied to the current selection. Performs hide, unhide, and delete-from-Sonora for the active scope, then reloads scope data and clears incompatible selection/inspector state.
 │   │   ├── art.rs - Inspector artwork workflow and cover-loading helpers. Loads embedded artwork into UI image handles, manages choose/replace/remove/extract flows, stores pending artwork edits until save, and supports generic cover loading for tracks.
+│   │   ├── columns.rs - Track View column-layout interactions. Owns live column resize state transitions and mutates per-column width while a header-edge drag is active.
 │   │   ├── inspector.rs - Inspector draft-state and mixed-selection logic. Updates draft fields, tracks structural mixed state, clears/resets inspector state when needed, and loads editable inspector data from the current selection.
 │   │   ├── keyboard.rs - Global keyboard handling. Tracks modifier-key state and maps shortcuts to selection, playback, and save behavior.
 │   │   ├── mod.rs - Routes incoming Message variants to the appropriate GUI update submodule.
@@ -46,15 +47,15 @@
 │   │   ├── scope.rs - Library-scope and view-mode transitions. Reloads the active DB-backed scope asynchronously, applies scope-load results back into Sonora state, resets incompatible selection/inspector state, and triggers album-cover preloading when needed.
 │   │   ├── selection.rs - Track/album selection interactions and cover loading. Manages TrackId-based single/range/toggle selection, album-grid/detail interactions, double-click play behavior, album-track ordering for selection, and selection-driven cover loading.
 │   │   └── util.rs - Small async helper for running blocking work off-thread and awaiting the result from GUI update flows.
-│   ├── util.rs - Pure GUI helpers for fallback title generation, formatting, truncation, and parsing user input values.
+│   ├── util.rs - Pure GUI helpers for fallback title generation, formatting, and parsing user input values.
 │   └── view
 │       ├── albums.rs - Renders Album View in two modes: album grid when no album is selected, and album detail when one is selected. Derives grid tiles from grouped album state, uses representative cached covers, sorts album tracks for detail display, and emits album/tile/header/track interaction messages.
 │       ├── center.rs - Routes the center panel to Track View or Album View based on the current view mode.
-│       ├── constants.rs - Shared layout and sizing constants for the window, sidebar, playback bar, editor, album grid, artwork, and the default Track View column widths consumed by the shared column model.
+│       ├── constants.rs - Shared layout and sizing constants for the window, sidebar, playback bar, editor, album grid, artwork, and default Track View column widths.
 │       ├── inspector.rs - Renders the right-side tag editor, including mixed-state inputs, technical metadata, inspector artwork controls, and inspector action buttons.
 │       ├── mod.rs - Top-level GUI renderer. Composes the sidebar, center panel, inspector, and playback bar into the full app layout.
 │       ├── sidebar.rs - Renders the left sidebar with scan controls, scope controls, layout controls, action buttons, and root-folder controls.
-│       ├── style.rs - Reusable widget styling helpers and shared UI colors for Sonora-specific buttons, table headers, row states, containers, and text inputs so the UI palette and control appearance stay consistent.
-│       ├── tracks.rs - Renders Track View as a searchable, sortable, horizontally scrollable metadata table using derived visible TrackId order and shared per-column state from the Track View column model. Displays selection/now-playing markers, truncates overflowing text, and window-renders only the visible slice plus overscan.
+│       ├── style.rs - Reusable widget styling helpers for Sonora-specific buttons, table/header states, row states, and text inputs so the UI palette and control appearance stay consistent.
+│       ├── tracks.rs - Renders Track View as a searchable, sortable, horizontally scrollable metadata table using derived visible TrackId order and dynamic TrackColumnState config rather than hardcoded column layout. Displays selection/now-playing markers, truncates overflowing text, supports live header-edge resize interaction, and window-renders only the visible slice plus overscan.
 │       └── widgets.rs - Reusable GUI widgets and helpers such as duration formatting, text truncation, cover thumbnails/placeholders, field-row builders, and the structured top playback bar.
 └── main.rs - Bootstraps the Iced application, configures the window, applies the global theme/font, and wires together Sonora::default, update, view, and subscription through the GUI module.

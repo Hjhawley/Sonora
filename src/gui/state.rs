@@ -20,7 +20,7 @@ use crate::core;
 use crate::core::playback::{PlaybackController, PlayerEvent, start_playback};
 use crate::core::types::{TrackId, TrackRow};
 
-use super::columns::{TrackColumnState, default_track_columns};
+use super::columns::{TrackColumn, TrackColumnState, default_track_columns};
 use super::query::{
     QueryTrackCache, TrackQuery, TrackSortField, build_playback_queue_ids, build_query_cache_rows,
     build_track_view_ids,
@@ -220,6 +220,13 @@ impl Default for ArtworkEdit {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ActiveColumnResize {
+    pub column: TrackColumn,
+    pub anchor_x: Option<f32>,
+    pub start_width: f32,
+}
+
 pub(crate) struct Sonora {
     // Status + lifecycle
     pub status: String,
@@ -265,6 +272,9 @@ pub(crate) struct Sonora {
     /// Visibility/width live here so the table can eventually support
     /// hide/reorder/resize without hardcoded private view state.
     pub track_columns: Vec<TrackColumnState>,
+
+    /// Live Track View column resize interaction, if any.
+    pub active_column_resize: Option<ActiveColumnResize>,
 
     // Playback (core handle + UI state)
     pub playback: Option<PlaybackController>,
@@ -397,6 +407,7 @@ impl Sonora {
 
             track_query: TrackQuery::default(),
             track_columns: default_track_columns(),
+            active_column_resize: None,
             track_view_ids: Vec::new(),
             playback_queue_ids: Vec::new(),
 
@@ -613,6 +624,12 @@ pub(crate) enum Message {
     TrackSearchChanged(String),
     ClearTrackSearch,
     SetTrackSortField(TrackSortField),
+
+    StartTrackColumnResize(TrackColumn),
+    UpdateTrackColumnResize {
+        cursor_x: f32,
+    },
+    EndTrackColumnResize,
 
     /// Track View scroll/viewport updates for row virtualization.
     TracksScrolled {

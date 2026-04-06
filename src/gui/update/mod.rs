@@ -9,6 +9,7 @@ use super::state::{Message, Sonora};
 
 mod actions;
 mod art;
+mod columns;
 mod inspector;
 mod keyboard;
 mod playback;
@@ -46,6 +47,16 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::TrackSearchChanged(value) => query::track_search_changed(state, value),
         Message::ClearTrackSearch => query::clear_track_search(state),
         Message::SetTrackSortField(field) => query::set_track_sort_field(state, field),
+
+        // Track View column resize
+        Message::StartTrackColumnResize(column) => {
+            columns::start_track_column_resize(state, column)
+        }
+        Message::UpdateTrackColumnResize { cursor_x } => {
+            columns::update_track_column_resize(state, cursor_x)
+        }
+        Message::EndTrackColumnResize => columns::end_track_column_resize(state),
+
         Message::TracksScrolled {
             offset_y,
             viewport_height,
