@@ -1,45 +1,51 @@
 //! gui/view/tracks.rs
 //! Track view (table list).
+//!
+//! Track View owns:
+//! - column-driven rendering
+//! - table header / resize handle logic
+//! - virtualization
+//!
+//! Shared library-view chrome / row language lives in 'shared.rs'.
 
 use std::time::Instant;
 
+use super::shared::{
+    action_button_text, heading_row, marker_for_row_state, styled_library_row, title_for_scope,
+};
 use super::style::{
-    ACCENT, ACCENT_HOVER, MUTED_TEXT, PATH_TEXT, SECONDARY_TEXT, TEXT, sonora_button,
-    sonora_header_button, sonora_input, table_header_band_style, track_row_style,
+    MUTED_TEXT, PATH_TEXT, TEXT, sonora_button, sonora_header_button, sonora_input,
+    table_header_band_style,
 };
 use iced::widget::{
     Column, Row, button, column, container, mouse_area, row, scrollable, text, text_input,
 };
-use iced::{Alignment, Color, Length, Theme};
+use iced::{Color, Length, Theme};
 
 use super::super::columns::{TrackColumn, TrackColumnState};
 use super::super::query::{SortDirection, TrackSortField};
-use super::super::state::{LibraryScope, Message, Sonora};
+use super::super::state::{Message, Sonora};
 use super::super::util::{
     ellipsize_path_tail_for_width, filename_stem, fmt_bitrate_kbps, fmt_channels,
     fmt_sample_rate_hz,
 };
 use super::constants::{
-    HEADER_TEXT, ROW_TEXT, TRACK_COL_SPACING, TRACK_LIST_SPACING, TRACK_ROW_H, TRACK_ROW_HPAD,
-    TRACK_ROW_VPAD,
+    HEADER_TEXT, ROW_TEXT, TRACK_COL_SPACING, TRACK_LIST_SPACING, TRACK_ROW_HPAD, TRACK_ROW_VPAD,
 };
 use super::widgets::{ellipsize_for_width, fmt_duration};
 
 const FALLBACK_VIEWPORT_H: f32 = 700.0;
 const HEADER_RESIZE_HANDLE_W: f32 = 10.0;
 
-fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
-    text(label).color(TEXT)
-}
-
 pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
     let started = Instant::now();
 
-    let title = match state.library_scope {
-        LibraryScope::Library => "All Tracks",
-        LibraryScope::Hidden => "Hidden Tracks",
-        LibraryScope::Missing => "Missing Tracks",
-    };
+    let title = title_for_scope(
+        state.library_scope,
+        "All Tracks",
+        "Hidden Tracks",
+        "Missing Tracks",
+    );
 
     let visible_ids = &state.track_view_ids;
     let visible_count = visible_ids.len();
@@ -64,17 +70,7 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
         visible_count, total_count, table_ms, total_ms
     );
 
-    column![
-        row![
-            text(title).size(18),
-            text(count_label).size(14).color(SECONDARY_TEXT),
-        ]
-        .spacing(12)
-        .align_y(Alignment::Center),
-        controls,
-        table,
-    ]
-    .spacing(12)
+    column![heading_row(title, count_label), controls, table].spacing(12)
 }
 
 fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
@@ -88,13 +84,11 @@ fn build_track_controls(state: &Sonora) -> Row<'_, Message> {
     .width(Length::Fill)
     .style(sonora_input);
 
-    let clear_button = button(button_text("Clear").size(14))
+    let clear_button = button(action_button_text("Clear").size(14))
         .on_press(Message::ClearTrackSearch)
         .style(sonora_button);
 
-    row![search, clear_button]
-        .spacing(8)
-        .align_y(Alignment::Center)
+    row![search, clear_button].spacing(8)
 }
 
 fn build_tracks_table_region<'a>(
@@ -133,7 +127,7 @@ fn build_tracks_header<'a>(
 
     let mut r = row![]
         .spacing(TRACK_COL_SPACING)
-        .align_y(Alignment::Center)
+        .align_y(iced::Alignment::Center)
         .width(Length::Fixed(table_content_w));
 
     for col in columns {
@@ -160,7 +154,7 @@ fn build_tracks_body<'a>(
     let table_content_w = table_content_width(columns);
     let table_outer_w = table_outer_width(columns);
 
-    let row_pitch = TRACK_ROW_H + TRACK_LIST_SPACING;
+    let row_pitch = super::constants::TRACK_ROW_H + TRACK_LIST_SPACING;
     let viewport_height = if state.tracks_viewport_height > 1.0 {
         state.tracks_viewport_height
     } else {
@@ -200,7 +194,7 @@ fn build_tracks_body<'a>(
     };
 
     for (rel_i, &id) in window.iter().enumerate() {
-        let Some(t) = state.track_by_id(id) else {
+        let Some(track) = state.track_by_id(id) else {
             continue;
         };
 
@@ -214,23 +208,25 @@ fn build_tracks_body<'a>(
 
         let mut row_cells = row![]
             .spacing(TRACK_COL_SPACING)
-            .align_y(Alignment::Center)
+            .align_y(iced::Alignment::Center)
             .width(Length::Fixed(table_content_w));
 
         for col_state in columns {
-            row_cells =
-                row_cells.push(build_row_cell_for_track(t, col_state, marker, marker_color));
+            row_cells = row_cells.push(build_row_cell_for_track(
+                track,
+                col_state,
+                marker,
+                marker_color,
+            ));
         }
 
-        let row_widget = mouse_area(
-            container(row_cells)
-                .padding([TRACK_ROW_VPAD, TRACK_ROW_HPAD])
-                .height(Length::Fixed(TRACK_ROW_H))
-                .width(Length::Fixed(table_outer_w))
-                .style(move |_theme: &Theme| {
-                    track_row_style(is_selected, is_now_playing, zebra_even)
-                }),
-        )
+        let row_widget = mouse_area(styled_library_row(
+            row_cells,
+            is_selected,
+            is_now_playing,
+            zebra_even,
+            Length::Fixed(table_outer_w),
+        ))
         .on_press(Message::TrackPressed(id));
 
         col = col.push(row_widget);
@@ -280,20 +276,21 @@ fn build_header_cell(
     active_field: TrackSortField,
     active_direction: SortDirection,
 ) -> iced::Element<'static, Message> {
+    let kind = column.kind;
     let total_width = column.width.max(HEADER_RESIZE_HANDLE_W + 12.0);
     let label_width = (total_width - HEADER_RESIZE_HANDLE_W).max(12.0);
 
-    let header_main: iced::Element<'static, Message> = match column.kind.sort_field() {
+    let header_main: iced::Element<'static, Message> = match kind.sort_field() {
         Some(field) => sort_header_button(
             active_field,
             active_direction,
-            column.kind.label(),
+            kind.label(),
             field,
             label_width,
         )
         .into(),
         None => container(
-            text(ellipsize_for_width(column.kind.label(), label_width))
+            text(ellipsize_for_width(kind.label(), label_width))
                 .size(HEADER_TEXT)
                 .color(MUTED_TEXT)
                 .width(Length::Fixed(label_width)),
@@ -306,12 +303,12 @@ fn build_header_cell(
         container(text("⋮").size(12).color(MUTED_TEXT))
             .width(Length::Fixed(HEADER_RESIZE_HANDLE_W)),
     )
-    .on_press(Message::StartTrackColumnResize(column.kind));
+    .on_press(Message::StartTrackColumnResize(kind));
 
     container(
         row![header_main, resize_grip]
             .spacing(0)
-            .align_y(Alignment::Center)
+            .align_y(iced::Alignment::Center)
             .width(Length::Fixed(total_width)),
     )
     .width(Length::Fixed(total_width))
@@ -436,15 +433,6 @@ fn table_content_width(columns: &[&TrackColumnState]) -> f32 {
 
 fn table_outer_width(columns: &[&TrackColumnState]) -> f32 {
     table_content_width(columns) + (TRACK_ROW_HPAD * 2.0)
-}
-
-fn marker_for_row_state(is_selected: bool, is_now_playing: bool) -> (&'static str, Color) {
-    match (is_selected, is_now_playing) {
-        (true, true) => ("▷ ", ACCENT_HOVER),
-        (false, true) => ("▷ ", ACCENT),
-        (true, false) => ("", MUTED_TEXT),
-        (false, false) => ("", TEXT),
-    }
 }
 
 fn sort_header_button(

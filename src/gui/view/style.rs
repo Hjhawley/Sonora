@@ -211,3 +211,14 @@ pub(crate) fn sonora_input(theme: &Theme, status: text_input::Status) -> text_in
 
     style
 }
+
+pub(crate) fn surface_card_style() -> container::Style {
+    let mut style = container::Style::default();
+    style.background = Some(Background::Color(SURFACE_1));
+    style.border = Border {
+        color: BORDER,
+        width: 1.0,
+        radius: 0.0.into(),
+    };
+    style
+}

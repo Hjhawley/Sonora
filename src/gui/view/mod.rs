@@ -7,6 +7,7 @@ mod albums;
 mod center;
 pub(crate) mod constants;
 mod inspector;
+mod shared;
 mod sidebar;
 pub(crate) mod style;
 mod tracks;
