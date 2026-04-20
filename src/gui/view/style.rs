@@ -222,3 +222,14 @@ pub(crate) fn surface_card_style() -> container::Style {
     };
     style
 }
+
+pub(crate) fn surface_card_style_selected() -> container::Style {
+    let mut style = container::Style::default();
+    style.background = Some(Background::Color(SURFACE_2));
+    style.border = Border {
+        color: BORDER_ACTIVE,
+        width: 1.0,
+        radius: 0.0.into(),
+    };
+    style
+}

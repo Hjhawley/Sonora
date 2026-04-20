@@ -2,25 +2,17 @@
 //! Left sidebar (scan, scope toggles, layout toggles, action buttons, roots list).
 
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
-use iced::{Color, Length};
+use iced::{Alignment, Length};
 
 use super::super::state::{LibraryScope, Message, Sonora, ViewMode};
+use super::constants::{PANEL_PAD, PANEL_SUBGROUP_SPACING};
+use super::shared::{content_group, helper_text, panel_stack, section_block};
 use super::style::{sonora_button, sonora_button_muted, sonora_button_selected, sonora_input};
-
-/// Slightly muted utility text for low-priority status/readout lines.
-const SECONDARY_TEXT: Color = Color::from_rgb8(0xB8, 0xB8, 0xB8);
-
-fn section_title<'a>(label: &'a str) -> iced::widget::Text<'a> {
-    text(label).size(14)
-}
 
 pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Message> {
     let busy = state.scanning || state.saving;
     let has_selection = state.has_selection();
 
-    // Top-level primary action for the sidebar.
-    // Give it full width so it reads like a real section action,
-    // not a loose floating button.
     let scan_btn = if state.scanning {
         button("Scanning...").style(sonora_button)
     } else {
@@ -30,7 +22,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     }
     .width(Length::Fill);
 
-    // Scope buttons: equal width so the section reads as one coherent control group.
     let library_btn = if state.library_scope == LibraryScope::Library {
         button("▷ Library").style(sonora_button_selected)
     } else {
@@ -60,7 +51,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
 
     let scope_toggle = row![library_btn, hidden_btn, missing_btn].spacing(8);
 
-    // Layout mode buttons: same sizing rule as scope toggles.
     let albums_btn = if state.view_mode == ViewMode::Albums {
         button("▷ Album View").style(sonora_button_selected)
     } else {
@@ -81,9 +71,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
 
     let view_toggle = row![albums_btn, tracks_btn].spacing(8);
 
-    // Context-sensitive action section:
-    // still one button for now, but giving it its own group makes the sidebar
-    // read as navigation + layout + actions instead of one flat pile of controls.
     let visibility_btn = match state.library_scope {
         LibraryScope::Library => {
             if busy || !has_selection {
@@ -121,7 +108,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         .width(Length::Fill)
         .style(sonora_input);
 
-    // Keep Add compact but intentional.
     let add_btn = if busy {
         button("Add").style(sonora_button)
     } else {
@@ -131,7 +117,9 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     }
     .width(Length::Fixed(64.0));
 
-    let add_row = row![root_input, add_btn].spacing(8);
+    let add_row = row![root_input, add_btn]
+        .spacing(8)
+        .align_y(Alignment::Center);
 
     let mut roots_list = column![];
 
@@ -145,21 +133,17 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         }
         .width(Length::Fixed(40.0));
 
-        // Keep roots visually compact, but give them enough breathing room that
-        // the list feels maintained rather than dumped into the panel.
-        let path_txt = text(p.display().to_string())
-            .size(12)
-            .color(SECONDARY_TEXT)
-            .width(Length::Fill);
+        let path_txt = text(p.display().to_string()).size(12).width(Length::Fill);
 
         roots_list = roots_list.push(
             row![path_txt, remove_btn]
                 .spacing(8)
-                .align_y(iced::Alignment::Center),
+                .align_y(Alignment::Center),
         );
     }
 
-    let roots_panel = scrollable(roots_list.spacing(8)).height(Length::Fixed(180.0));
+    let roots_panel =
+        scrollable(roots_list.spacing(PANEL_SUBGROUP_SPACING)).height(Length::Fixed(180.0));
 
     let scope_label = match state.library_scope {
         LibraryScope::Library => "Library",
@@ -167,40 +151,36 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         LibraryScope::Missing => "Missing",
     };
 
-    // Sidebar hierarchy:
-    // - top status/scan cluster
-    // - clearly separated sections
-    // - more vertical rhythm between sections than within sections
-    let col = column![
-        // Status cluster:
-        // visually low priority, but kept near Scan because they are part of the
-        // same mental model: "what state is the library in right now?"
-        column![text(&state.status).size(12).color(SECONDARY_TEXT), scan_btn,].spacing(10),
-        // Scope section
-        column![
-            section_title("Scope"),
-            scope_toggle,
-            text(format!("Current: {scope_label}"))
-                .size(12)
-                .color(SECONDARY_TEXT),
-        ]
-        .spacing(8),
-        // Layout section
-        column![section_title("Layout"), view_toggle,].spacing(8),
-        // Actions section
-        column![section_title("Actions"), visibility_btn,].spacing(8),
-        // Folder management section
-        column![
-            section_title("Library folders"),
-            text("Saved library roots").size(12).color(SECONDARY_TEXT),
-            add_row,
-            roots_panel,
-        ]
-        .spacing(8),
-    ]
-    // Larger gap between sections than inside sections.
-    // This is the main rhythm fix for the sidebar.
-    .spacing(18);
+    let status_block = content_group([helper_text(state.status.clone()).into(), scan_btn.into()]);
 
-    container(scrollable(col).height(Length::Fill)).padding(14)
+    let scope_block = section_block(
+        "Scope",
+        content_group([
+            scope_toggle.into(),
+            helper_text(format!("Current: {scope_label}")).into(),
+        ]),
+    );
+
+    let layout_block = section_block("Layout", view_toggle);
+
+    let actions_block = section_block("Actions", visibility_btn);
+
+    let folders_block = section_block(
+        "Library folders",
+        content_group([
+            helper_text("Saved library roots").into(),
+            add_row.into(),
+            roots_panel.into(),
+        ]),
+    );
+
+    let content = panel_stack([
+        status_block.into(),
+        scope_block.into(),
+        layout_block.into(),
+        actions_block.into(),
+        folders_block.into(),
+    ]);
+
+    container(scrollable(content).height(Length::Fill)).padding(PANEL_PAD)
 }

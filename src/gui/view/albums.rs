@@ -16,13 +16,16 @@ use super::super::state::{AlbumKey, Message, Sonora};
 use super::super::util::filename_stem;
 use super::constants::{
     ALBUM_DETAIL_COVER, ALBUM_DETAIL_TRACK_W_LEN, ALBUM_DETAIL_TRACK_W_NO, ALBUM_GRID_MIN_COLS,
-    ALBUM_GRID_SPACING_X, ALBUM_GRID_SPACING_Y, ALBUM_TILE_COVER, ALBUM_TILE_W, ROW_TEXT,
-    TRACK_LIST_SPACING,
+    ALBUM_GRID_SPACING_X, ALBUM_GRID_SPACING_Y, ALBUM_TILE_COVER, ALBUM_TILE_W, CARD_PAD,
+    HEADER_BLOCK_PAD, HEADER_META_SPACING, PANEL_GROUP_SPACING, ROW_TEXT, TRACK_LIST_SPACING,
 };
 use super::shared::{
     action_button_text, heading_row, marker_for_row_state, styled_library_row, title_for_scope,
+    toolbar_row,
 };
-use super::style::{SECONDARY_TEXT, TEXT, surface_card_style, table_header_band_style};
+use super::style::{
+    SECONDARY_TEXT, TEXT, surface_card_style, surface_card_style_selected, table_header_band_style,
+};
 use super::widgets::{cover_thumb, fmt_duration};
 use crate::core::types::TrackId;
 
@@ -62,14 +65,18 @@ fn build_album_grid_screen(state: &Sonora) -> iced::widget::Column<'_, Message> 
         .collect();
 
     let count_label = format!("{} albums", albums.len());
+    let selected_album = state.selected_album.clone();
 
-    let grid = responsive(move |size: Size| build_album_grid_for_width(&albums, size.width).into());
+    let grid = responsive(move |size: Size| {
+        build_album_grid_for_width(&albums, selected_album.as_ref(), size.width).into()
+    });
 
     column![heading_row(heading, count_label), grid.height(Length::Fill)].spacing(12)
 }
 
 fn build_album_grid_for_width(
     albums: &[AlbumTile],
+    selected_album: Option<&AlbumKey>,
     available_width: f32,
 ) -> iced::widget::Scrollable<'static, Message> {
     let footprint = ALBUM_TILE_W + ALBUM_GRID_SPACING_X;
@@ -82,9 +89,10 @@ fn build_album_grid_for_width(
         let mut r = row![].spacing(ALBUM_GRID_SPACING_X);
 
         for album in chunk {
+            let is_selected = selected_album == Some(&album.key);
             let cover = cover_thumb(album.cover.as_ref(), ALBUM_TILE_COVER);
 
-            let tile = column![
+            let tile_body = column![
                 cover,
                 text(album.key.album.clone())
                     .size(15)
@@ -103,10 +111,16 @@ fn build_album_grid_for_width(
             .width(Length::Fixed(ALBUM_TILE_W));
 
             let tile_widget = mouse_area(
-                container(tile)
+                container(tile_body)
                     .width(Length::Fixed(ALBUM_TILE_W))
-                    .padding(10)
-                    .style(|_| surface_card_style()),
+                    .padding(CARD_PAD)
+                    .style(move |_| {
+                        if is_selected {
+                            surface_card_style_selected()
+                        } else {
+                            surface_card_style()
+                        }
+                    }),
             )
             .on_press(Message::AlbumTilePressed(album.key.clone()));
 
@@ -179,27 +193,27 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         .map(|h| cover_thumb(Some(h), ALBUM_DETAIL_COVER))
         .unwrap_or_else(|| cover_thumb(None, ALBUM_DETAIL_COVER));
 
-    let toolbar = row![back_btn, play_album_btn].spacing(8);
+    let toolbar = toolbar_row([back_btn.into(), play_album_btn.into()]);
 
-    let header_content = row![
-        big_cover,
-        column![
-            text(key.album.clone()).size(28).color(TEXT),
-            text(key.album_artist.clone())
-                .size(18)
-                .color(SECONDARY_TEXT),
-            text(release_date).size(13).color(SECONDARY_TEXT),
-        ]
-        .spacing(8)
-        .width(Length::Fill),
+    let meta_block = column![
+        text(key.album.clone()).size(30).color(TEXT),
+        text(key.album_artist.clone())
+            .size(19)
+            .color(SECONDARY_TEXT),
+        text(release_date).size(13).color(SECONDARY_TEXT),
+        text(count_label.clone()).size(13).color(SECONDARY_TEXT),
     ]
-    .spacing(20)
-    .align_y(Alignment::Center);
+    .spacing(HEADER_META_SPACING)
+    .width(Length::Fill);
+
+    let header_content = row![big_cover, meta_block]
+        .spacing(20)
+        .align_y(Alignment::Center);
 
     let header = mouse_area(
         container(header_content)
             .width(Length::Fill)
-            .padding(14)
+            .padding(HEADER_BLOCK_PAD)
             .style(|_| table_header_band_style()),
     )
     .on_press(Message::AlbumHeaderPressed(key.clone()));
@@ -270,5 +284,5 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         header,
         scrollable(list).height(Length::Fill),
     ]
-    .spacing(12)
+    .spacing(PANEL_GROUP_SPACING)
 }
