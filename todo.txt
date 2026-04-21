@@ -1,32 +1,35 @@
 0.12.1
-- disable pause/play/prev/next shortcuts while in inspector view
-- persistent album/track view
-- album view doesn't auto select all tracks; clicking album art selects all tracks
-- don't highlight the now-playing track (unless it's selected, obviously)
 
-0.12.2
-- Add “Browse…” folder picker to Library Folders instead of forcing manual path entry
-“Browse…” opens a directory picker on Windows/macOS/Linux
-Selecting a folder adds it to Library Folders
-Cancel closes dialog with no changes
-Duplicate folder selections are ignored or surfaced as "already added"
-Paths are displayed in a consistent format for the platform
-As a follow-up: add folders via drag-and-drop
+* disable pause/play/prev/next shortcuts while in inspector view
+* persistent album/track view
+* album view doesn't auto select all tracks; clicking album art selects all tracks
+* don't highlight the now-playing track (unless it's selected, obviously)
 
-0.12.3
-Implement persistent 5-star rating system using ID3v2 POPM (Popularimeter) tag
-Stars | POPM value
-0 | 0
-1 | 1
-2 | 64
-3 | 128
-4 | 196
-5 | 255
+  0.12.2
 
-0.12.4
-"Reset Library" button
-nuclear option for users but also very helpful for dev
+* Add “Browse…” folder picker to Library Folders instead of forcing manual path entry
+  “Browse…” opens a directory picker on Windows/macOS/Linux
+  Selecting a folder adds it to Library Folders
+  Cancel closes dialog with no changes
+  Duplicate folder selections are ignored or surfaced as "already added"
+  Paths are displayed in a consistent format for the platform
+  As a follow-up: add folders via drag-and-drop
 
-1.0.0
-- custom playlists
-- smart playlists
+  0.12.3
+  Implement persistent 5-star rating system using ID3v2 POPM (Popularimeter) tag
+  Stars | POPM value
+  0 | 0
+  1 | 1+
+  2 | 64+
+  3 | 128+
+  4 | 196+
+  5 | 255
+
+  0.12.4
+  "Reset Library" button
+  nuclear option for users but also very helpful for dev
+
+  1.0.0
+
+* custom playlists
+* smart playlists
