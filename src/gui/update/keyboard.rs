@@ -50,12 +50,15 @@ fn handle_key_pressed(state: &mut Sonora, key: Key, modified_key: Key) -> Task<M
         }
     }
 
+    // Don't let playback shortcuts mess with text editing
+    let playback_shortcuts_enabled = state.playback_shortcuts_enabled();
+
     match key {
         Key::Named(Named::ArrowUp) => selection::select_adjacent_track(state, -1, shift),
         Key::Named(Named::ArrowDown) => selection::select_adjacent_track(state, 1, shift),
 
-        Key::Named(Named::ArrowLeft) => playback::prev(state),
-        Key::Named(Named::ArrowRight) => playback::next(state),
+        Key::Named(Named::ArrowLeft) if playback_shortcuts_enabled => playback::prev(state),
+        Key::Named(Named::ArrowRight) if playback_shortcuts_enabled => playback::next(state),
 
         Key::Named(Named::Enter) => {
             if state.inspector_dirty {
@@ -67,7 +70,9 @@ fn handle_key_pressed(state: &mut Sonora, key: Key, modified_key: Key) -> Task<M
 
         Key::Named(Named::Escape) => selection::clear_selection(state),
 
-        Key::Named(Named::Space) => playback::toggle_play_pause(state),
+        Key::Named(Named::Space) if playback_shortcuts_enabled => {
+            playback::toggle_play_pause(state)
+        }
 
         _ => Task::none(),
     }

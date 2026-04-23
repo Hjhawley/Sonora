@@ -454,6 +454,16 @@ impl Sonora {
     }
 
     #[inline]
+    pub fn inspector_has_keyboard_priority(&self) -> bool {
+        self.inspector_open
+    }
+
+    #[inline]
+    pub fn playback_shortcuts_enabled(&self) -> bool {
+        !self.inspector_has_keyboard_priority()
+    }
+
+    #[inline]
     pub fn index_of_id(&self, id: TrackId) -> Option<usize> {
         self.track_index.get(&id).copied()
     }
