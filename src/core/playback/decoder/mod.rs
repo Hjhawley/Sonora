@@ -1,14 +1,9 @@
 //! core/playback/decoder/mod.rs
+//!
 //! Audio decoding utilities (Symphonia) -> rodio::Source.
-//!
-//! Seeking strategy:
-//! - Try Symphonia demuxer seek first (coarse, timestamp-based).
+//! Seek:
+//! - Try Symphonia demuxer seek first.
 //! - If seek undershoots or fails, decode-skip the remaining delta.
-//!
-//! Gapless note:
-//! - Symphonia does not enable gapless handling by default.
-//! - We explicitly enable it so encoder delay / end padding can be removed
-//!   when container and codec metadata support it.
 
 use std::fs::File;
 use std::path::Path;
@@ -25,7 +20,7 @@ mod source;
 
 pub use source::SymphoniaSource;
 
-/// Construct a seekable rodio Source from `path`, starting at `start_ms`.
+/// Construct a seekable rodio Source from 'path', starting at 'start_ms'.
 pub fn open_source_at_ms(
     path: &Path,
     start_ms: u64,

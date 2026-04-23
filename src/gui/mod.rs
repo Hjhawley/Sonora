@@ -1,6 +1,6 @@
 //! gui/mod.rs
 //!
-//! This folder contains ONLY frontend concerns:
+//! Frontend concerns:
 //! - app state ('Sonora')
 //! - messages ('Message')
 //! - update logic ('update()')

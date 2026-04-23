@@ -1,4 +1,5 @@
 //! gui/view/center.rs
+//!
 //! Center panel router (tracks vs albums).
 
 use std::time::Instant;

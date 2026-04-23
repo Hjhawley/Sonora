@@ -1,6 +1,5 @@
 //! core/mod.rs
 //!
-//! Public core surface.
 //! - scan flows discover filesystem candidates, reconcile them into SQLite,
 //!   refresh metadata only for changed files, and reload the requested scope
 //! - hydration reads real metadata from disk for selected files

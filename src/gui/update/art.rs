@@ -1,4 +1,5 @@
 //! gui/update/art.rs
+//!
 //! Inspector artwork actions + generic cover loading helpers.
 
 use std::fs;

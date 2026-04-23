@@ -1,7 +1,6 @@
 //! core/tags/mod.rs
-//! Metadata IO boundary (tag read/write + art helpers).
 //!
-//! Public surface area is intentionally small:
+//! Metadata IO boundary (tag read/write + art helpers).
 //! - 'read_track_row(path) -> (TrackRow, failed)'
 //! - 'write_track_row(row, write_extended) -> Result<(), String>'
 //! - embedded artwork read/write/remove helpers

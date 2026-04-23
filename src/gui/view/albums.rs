@@ -1,13 +1,11 @@
 //! gui/view/albums.rs
+//!
 //! Album view:
 //! - album grid when no album is selected
 //! - album detail screen when an album is selected
-//!
 //! Album View owns:
 //! - album grid layout
 //! - album detail layout
-//!
-//! Shared library chrome / row language lives in 'shared.rs'.
 
 use iced::widget::{button, column, container, mouse_area, responsive, row, scrollable, text};
 use iced::{Alignment, Length, Size};

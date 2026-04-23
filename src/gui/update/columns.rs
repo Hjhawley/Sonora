@@ -1,7 +1,7 @@
 //! gui/update/columns.rs
-//! Track View column layout interactions.
 //!
-//! For now this owns only live width resizing.
+//! Track View column layout interactions.
+//! TODO: For now this owns only live width resizing.
 //! Visibility / reorder can build on the same state later.
 
 use iced::Task;

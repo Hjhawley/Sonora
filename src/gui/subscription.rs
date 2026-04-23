@@ -1,4 +1,5 @@
 //! gui/subscription.rs
+//!
 //! Global subscriptions:
 //! - keyboard event listener
 //! - playback polling while active

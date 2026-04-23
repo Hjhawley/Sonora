@@ -1,6 +1,6 @@
 //! gui/theme.rs
 //!
-//! Global look and feel for parity between OS
+//! Global look and feel for parity between operating systems
 //! Keep layout metrics in 'gui/view/constants.rs'
 //! Keep fonts, theme, and app-wide visual defaults here
 
@@ -9,11 +9,9 @@ use iced::{Color, Font, Theme};
 
 /// Bundled font bytes
 pub(crate) const APP_FONT_BYTES: &[u8] = include_bytes!("../../assets/fonts/Aileron-Regular.otf");
-
-/// This must match the family name embedded in the font file
 pub(crate) const APP_FONT: Font = Font::with_name("Aileron");
 
-/// Force dark mode everywhere with Sonora's own palette
+/// Force Sonora's own color palette
 pub(crate) fn app_theme() -> Theme {
     Theme::custom(
         "Sonora Dark",

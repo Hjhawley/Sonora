@@ -1,4 +1,5 @@
 //! core/playback/decoder/source.rs
+//!
 //! Streaming Symphonia decoder exposed as a rodio::Source.
 
 use std::time::Duration;

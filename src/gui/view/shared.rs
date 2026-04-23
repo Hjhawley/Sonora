@@ -1,4 +1,5 @@
 //! gui/view/shared.rs
+//!
 //! Shared library-view helpers used by both Track View and Album View.
 
 use iced::widget::{container, row, text};

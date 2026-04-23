@@ -1,6 +1,7 @@
 //! gui/util.rs
+//!
 //! Small pure helper functions used by the GUI.
-//! - no UI widgets or state mutation
+//! No UI widgets or state mutation
 
 #![allow(dead_code)]
 
@@ -100,8 +101,6 @@ pub(crate) fn fmt_bitrate_kbps(v: Option<u32>) -> String {
 /// Format Sample Rate in a friendly kHz form.
 /// Examples:
 /// - 44100 -> 44.1 kHz
-/// - 48000 -> 48 kHz
-/// - 96000 -> 96 kHz
 pub(crate) fn fmt_sample_rate_hz(v: Option<u32>) -> String {
     let Some(hz) = v else {
         return "—".to_string();
@@ -136,15 +135,6 @@ fn approx_chars_for_width(width: f32) -> usize {
 }
 
 /// Tail-preserving path truncation for the Track View.
-///
-/// Why this exists:
-/// Generic right-side ellipsis is bad for paths because the most useful part is
-/// usually the filename and the last couple of folders, not the common prefix.
-///
-/// Examples:
-/// - `C:\Music\OST\Chrono Trigger\Battle 1.mp3`
-///   becomes something like:
-///   `…\OST\Chrono Trigger\Battle 1.mp3`
 pub(crate) fn ellipsize_path_tail_for_width(path: &str, width: f32) -> String {
     let raw = path.trim();
     if raw.is_empty() {

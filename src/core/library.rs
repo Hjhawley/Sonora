@@ -1,21 +1,16 @@
 //! core/library.rs
 //!
 //! Filesystem discovery (read-only).
-//!
-//! This module is deliberately "dumb":
-//! - It ONLY walks folders and returns candidate file paths + lightweight file facts.
+//! - It only walks folders and returns candidate file paths + lightweight file facts.
 //! - It DOES NOT read tags.
 //! - It DOES NOT decode audio.
 //! - It DOES NOT know about the GUI.
-//!
-//! This is scan pipeline stage (A): discover paths.
 
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 /// Lightweight filesystem facts discovered during scan.
-///
-/// These are intentionally cheap to collect and useful for DB-based incremental scans.
+/// These are cheap to collect and useful for DB-based incremental scans.
 #[derive(Debug, Clone)]
 pub struct DiscoveredFile {
     pub path: PathBuf,
@@ -25,15 +20,12 @@ pub struct DiscoveredFile {
 
 /// Recursively scan a directory tree and return all supported audio files
 /// with lightweight filesystem facts.
-///
-/// Behavior:
 /// - Root must be a directory (else Err).
 /// - Non-fatal walk errors are skipped (PermissionDenied, NotFound).
 /// - Symlinked directories are NOT traversed (prevents cycles).
 /// - Symlinked files ARE allowed if they resolve to a file.
 /// - Output is sorted by full path.
-///
-/// Note:
+
 /// Path identity is currently lexical/path-based. A symlinked file and its
 /// real path may therefore appear as separate library entries.
 pub fn scan_audio_files(root: &Path) -> Result<Vec<DiscoveredFile>, String> {
@@ -68,9 +60,7 @@ pub fn scan_audio_files(root: &Path) -> Result<Vec<DiscoveredFile>, String> {
 
             let path: PathBuf = entry.path();
 
-            // Prefer entry.file_type() because it does NOT follow symlinks.
-            // This lets us decide whether to traverse directories without
-            // accidentally entering symlink cycles.
+            // Prefer entry.file_type() because it does not follow symlinks.
             let ft: std::fs::FileType = match entry.file_type() {
                 Ok(ft) => ft,
                 Err(e) => {
@@ -87,7 +77,6 @@ pub fn scan_audio_files(root: &Path) -> Result<Vec<DiscoveredFile>, String> {
             }
 
             // If it's a symlink, follow it ONLY to decide if it's a file we should include.
-            // We never traverse symlinked directories.
             if ft.is_symlink() {
                 match std::fs::metadata(&path) {
                     Ok(md) => {
@@ -148,10 +137,7 @@ fn is_nonfatal_walk_error(e: &std::io::Error) -> bool {
 }
 
 /// True if the file extension matches a supported audio format.
-///
-/// Currently only MP3 is supported, but this function intentionally
-/// abstracts that decision so additional formats can be added later
-/// without changing the scan pipeline.
+/// Currently only MP3 is supported. Plan to support FLAC and m4a later.
 fn is_supported_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())

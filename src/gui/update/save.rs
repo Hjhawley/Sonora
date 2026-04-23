@@ -1,17 +1,12 @@
 //! gui/update/save.rs
 //!
-//! Turn the InspectorDraft into actual on-disk tag writes (single or batch).
-//!
-//! - Save targets are identified by 'TrackId', not 'Vec' indices.
+//! Write InspectorDraft changes to disk.
+//! - Save targets are identified by 'TrackId'.
 //! - We still update 'state.tracks' (display order Vec), but we locate rows by id.
-//!
-//! Safety features:
 //! - Mixed inspector fields are treated as "leave existing value alone".
 //! - If batch saving, unchanged values that still match the primary track’s
 //!   original value are also treated conservatively to reduce accidental
 //!   overwrite of many files.
-//!
-//! Intentional behavior:
 //! - We never mutate 'state.tracks' until after a successful write + re-read.
 //! - On write failure, UI remains consistent with disk.
 

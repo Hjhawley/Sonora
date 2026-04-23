@@ -1,8 +1,6 @@
 //! core/scan.rs
 //!
 //! Library scan orchestration.
-//!
-//! This module owns the scan pipeline:
 //! - discover candidate audio files under the configured roots
 //! - reconcile discovered filesystem state into SQLite
 //! - hydrate metadata only for changed/new rows
@@ -48,10 +46,8 @@ pub fn run_scan_for_scope(
 }
 
 /// Discover candidate audio files under multiple roots.
-///
-/// - Currently MP3-only for MVP (library enforces extension rules)
-/// - De-dupes across overlapping roots by full path
-/// - Sorts paths once so downstream code gets stable ordering
+/// - de-dupes across overlapping roots by full path
+/// - sorts paths once so downstream code gets stable ordering
 pub fn scan_paths(roots: &[PathBuf]) -> Result<Vec<DiscoveredFile>, String> {
     let mut seen: HashSet<PathBuf> = HashSet::with_capacity(1024);
     let mut out: Vec<DiscoveredFile> = Vec::new();

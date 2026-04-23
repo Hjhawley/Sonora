@@ -1,14 +1,9 @@
 //! core/db/paths.rs
 //!
 //! Platform-specific database file location helpers.
-//!
-//! Current policy:
 //! - Windows: %LOCALAPPDATA%/Sonora/sonora.sqlite3
 //! - macOS: ~/Library/Application Support/Sonora/sonora.sqlite3
 //! - Linux: ~/.local/share/sonora/sonora.sqlite3
-//!
-//! Future expansion could add helpers for cache paths, logs, artwork cache,
-//! waveform cache, exports, or backup locations.
 
 use std::path::PathBuf;
 

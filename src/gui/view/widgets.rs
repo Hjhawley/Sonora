@@ -1,4 +1,5 @@
 //! gui/view/widgets.rs
+//!
 //! Reusable helpers used across view modules.
 #![allow(dead_code)]
 
@@ -21,9 +22,7 @@ const PLAYBACK_CENTER_LANE_W: f32 = 760.0;
 // cluster stays visually centered in the full bar.
 const PLAYBACK_SIDE_CLUSTER_W: f32 = 280.0;
 
-/// Real placeholder artwork instead of the old text-based placeholder.
-/// This makes the now-playing block feel more like part of a music app and less
-/// like a temporary utility stub.
+/// Placeholder artwork
 const PLACEHOLDER_COVER_BYTES: &[u8] = include_bytes!("../../../assets/placeholder.png");
 
 pub(crate) fn fmt_duration(ms: Option<u32>) -> String {
@@ -309,7 +308,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     .width(Length::Fill);
 
     // Put both transport and progress inside the exact same centered lane.
-    // This is the actual fix: both rows now share the same geometry.
     let center_lane = column![
         container(transport_row)
             .width(Length::Fill)

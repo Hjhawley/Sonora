@@ -1,6 +1,6 @@
 //! gui/columns.rs
-//! Shared Track View column model.
-//! source of truth for:
+//!
+//! Shared Track View column model. Source of truth for:
 //! - what columns exist
 //! - their labels
 //! - their default widths
@@ -271,7 +271,7 @@ impl TrackColumnState {
     pub fn new(kind: TrackColumn) -> Self {
         Self {
             kind,
-            visible: true, // preserve current behavior for now
+            visible: true,
             width: kind.default_width(),
         }
     }

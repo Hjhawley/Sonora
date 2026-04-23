@@ -1,4 +1,5 @@
 //! core/db/schema.rs
+//!
 //! SQLite schema + additive migrations.
 //! - DB stores enough common metadata to build TrackRow directly at startup
 //! - filesystem tag reads happen during scan/save, not every launch

@@ -13,12 +13,10 @@ use crate::core::types::TrackId;
 
 impl Db {
     /// Reconcile filesystem facts into DB truth for the scanned roots.
-    ///
-    /// Returns DB-backed `(TrackId, PathBuf)` items whose metadata should be
-    /// re-read from disk because the file is:
+    /// Re-read metadata when the file is:
     /// - new
-    /// - changed by `(mtime, size)`
-    /// - or still missing cached metadata in the DB
+    /// - changed by '(mtime, size)'
+    /// - still missing cached metadata in the DB
     pub fn upsert_discovered(
         &mut self,
         scanned_roots: &[PathBuf],

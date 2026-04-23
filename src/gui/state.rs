@@ -1,12 +1,9 @@
 //! gui/state.rs
 //!
 //! GUI state + message vocabulary.
-//!
-//! This file is intentionally data-centric:
 //! - no view code (rendering)
 //! - no update code (state transitions)
 //! - no blocking IO except light startup library restore
-//!
 //! If you’re looking for "how things change", that lives in 'gui/update/*'.
 //! If you’re looking for "how things look", that lives in 'gui/view/*'.
 
@@ -26,16 +23,10 @@ use super::query::{
     build_track_view_ids,
 };
 
-/// Dev only
-/* pub(crate) const TEST_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/test"); */
-
-/// What the inspector shows when selected files disagree.
-///
-/// Important:
+/// What the inspector shows when selected files have different metadata for the same fields.
 /// - This is a UI display string, not the true source of mixed-state meaning.
 /// - Real mixed-state is tracked structurally in 'Sonora::inspector_mixed'.
-/// - The view can render this in a distinct style/color so it cannot be mistaken
-///   for a real user-entered literal value.
+/// - The view renders this in a distinct color so it cannot be mistaken for a literal value.
 pub(crate) const MIXED_SENTINEL: &str = "<mixed>";
 
 #[inline]
@@ -64,7 +55,6 @@ pub(crate) enum LibraryScope {
 }
 
 /// Playback ordering policy.
-///
 /// - Normal = display order
 /// - Shuffle = persistent shuffled queue order
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +64,6 @@ pub(crate) enum PlayOrder {
 }
 
 /// Repeat policy.
-///
 /// - Off = stop at end of queue
 /// - All = wrap entire queue
 /// - One = replay current track
@@ -86,7 +75,6 @@ pub(crate) enum RepeatMode {
 }
 
 /// Explicit playback queue scope.
-///
 /// This is intentionally separate from:
 /// - current view
 /// - current selection
@@ -98,8 +86,7 @@ pub(crate) enum PlaybackContext {
 }
 
 /// Grouping key for Album View.
-///
-/// Important: This is a UI grouping key, not a DB key.
+/// This is a UI grouping key, not a DB key.
 /// It’s derived from 'TrackRow' values using grouping rules.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct AlbumKey {
@@ -116,7 +103,6 @@ pub(crate) enum AlbumPressTarget {
 }
 
 /// Draft editable metadata (strings so the user can type anything).
-///
 /// Mixed-state is tracked separately in 'Sonora::inspector_mixed'.
 /// When a field is mixed, the draft typically contains 'MIXED_SENTINEL' for display.
 #[derive(Debug, Default, Clone)]
@@ -242,8 +228,7 @@ pub(crate) struct Sonora {
     /// Cache: 'TrackId' -> current 'Vec' index.
     pub track_index: BTreeMap<TrackId, usize>,
 
-    /// Cache: one precomputed normalized query/sort row per entry in `tracks`.
-    /// This is aligned by Vec index with `tracks`.
+    /// Cache: one precomputed normalized query/sort row per entry in 'tracks'.
     pub query_rows: Vec<QueryTrackCache>,
 
     /// Cache: 'AlbumKey' -> ordered list of 'TrackId's in that album group.
@@ -335,7 +320,6 @@ pub(crate) struct Sonora {
     pub inspector_art_edit: ArtworkEdit,
 
     /// 'true' means "selected files disagree on this field".
-    ///
     /// This is the authoritative mixed-state signal.
     /// The inspector draft may display 'MIXED_SENTINEL', but save logic should rely
     /// on this structure rather than trusting the raw string.

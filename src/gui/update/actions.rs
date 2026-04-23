@@ -1,6 +1,6 @@
 //! gui/update/actions.rs
-//! DB-backed actions applied to the current selection.
 //!
+//! DB-backed actions applied to the current selection.
 //! - Hidden/unhide only toggle Sonora visibility state.
 //! - Delete-from-Sonora only removes missing rows from Sonora's DB.
 //! - Each action reloads the active scope afterward.

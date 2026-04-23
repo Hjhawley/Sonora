@@ -1,7 +1,8 @@
 //! gui/view/inspector.rs
+//!
 //! Right panel: metadata inspector/editor.
 //! - Selection is TrackId-based.
-//! - We resolve id -> TrackRow on demand for display.
+//! - Rresolve id -> TrackRow on demand for display.
 
 use iced::widget::text_input::Status as TextInputStatus;
 use iced::widget::{Column, Row, button, container, row, scrollable, text, text_input};

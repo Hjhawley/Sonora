@@ -1,17 +1,13 @@
 //! gui/update/keyboard.rs
-//! Global keyboard shortcuts and keyboard navigation.
 //!
-//! Current behavior:
-//! - Up / Down: move track selection
+//! Global keyboard shortcuts and keyboard navigation.
+//! - Up / Down: track selection
 //! - Shift+Up / Shift+Down: extend selection range
 //! - Left / Right: previous / next track during playback
-//! - Ctrl+A: select all tracks in the current context
-//! - Enter: save inspector edits (if dirty)
+//! - Ctrl+A: select all visible tracks
+//! - Enter: save inspector edits
 //! - Escape: clear selection / close inspector
 //! - Space: toggle play / pause
-//!
-//! This is intentionally global and simple for now.
-//! If you later add explicit focus tracking, this is the file to refine.
 
 use iced::Task;
 use iced::keyboard::{self, Key, key::Named};

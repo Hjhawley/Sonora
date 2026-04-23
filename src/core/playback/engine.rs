@@ -1,4 +1,5 @@
 //! core/playback/engine.rs
+//!
 //! Playback transport and audio streaming driver.
 
 use std::collections::VecDeque;

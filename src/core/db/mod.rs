@@ -1,14 +1,13 @@
 //! core/db/mod.rs
-//! SQLite DB boundary for Sonora.
-//! This module owns:
-//! - the Connection-backed `Db` type
+//!
+//! SQLite DB boundary for Sonora. This module owns:
+//! - the Connection-backed 'Db' type
 //! - database opening + schema initialization
 //! - submodule wiring for roots, scan reconciliation, and track persistence
 //! - small persisted app state kept in SQLite
 
-use std::path::Path;
-
 use rusqlite::{Connection, OptionalExtension, params};
+use std::path::Path;
 
 mod paths;
 mod reconcile;

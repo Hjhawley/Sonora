@@ -1,13 +1,10 @@
 //! core/probe.rs
+//!
 //! Probe for read-only technical audio metadata:
 //! - Duration
 //! - Average bitrate
 //! - Sample rate
 //! - Channels
-//!
-//! Strategy:
-//! - MP3: prefer a fast header-based probe (MPEG frame header + Xing/Info/VBRI).
-//! - Other formats: fall back to Symphonia.
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -32,24 +29,21 @@ pub struct AudioProperties {
 }
 
 /// Probe a file for stream/container-derived audio properties.
-///
-/// Best effort:
 /// - MP3 uses a fast custom header probe first.
 /// - Non-MP3 falls back to Symphonia.
-/// - On failure, callers should tolerate `Err` and degrade to `None` fields.
+/// - On failure, callers should tolerate 'Err' and degrade to 'None' fields.
 pub fn probe_audio_properties(path: &Path) -> Result<AudioProperties, String> {
     if is_mp3_path(path) {
         if let Ok(props) = probe_mp3_properties(path) {
             return Ok(props);
         }
     }
-
     probe_generic_audio_properties(path)
 }
 
 /// Return the estimated number of audio bytes after excluding common ID3 tags.
 /// This is useful for fallback Avg. Bitrate calculation when duration is known
-/// from some other source (e.g. TLEN) but no direct bitrate was probeable.
+/// from some other source (TLEN) but no direct bitrate was probeable.
 pub fn mp3_audio_bytes_excluding_id3(path: &Path) -> Option<u64> {
     if !is_mp3_path(path) {
         return None;
@@ -65,8 +59,7 @@ pub fn mp3_audio_bytes_excluding_id3(path: &Path) -> Option<u64> {
 }
 
 /// Average bitrate in kbps from audio bytes and duration.
-/// Because duration is in milliseconds:
-///   kbps = (bytes * 8) / ms
+/// kbps = (bytes * 8) / ms
 pub fn average_bitrate_kbps_from_audio_bytes(audio_bytes: u64, duration_ms: u32) -> Option<u32> {
     if audio_bytes == 0 || duration_ms == 0 {
         return None;
@@ -160,7 +153,7 @@ fn probe_mp3_properties(path: &Path) -> Result<AudioProperties, String> {
     }
 
     // No Xing/VBRI: keep exact first-frame bitrate for MP3.
-    // Duration is intentionally left None here and may be filled by TLEN or other fallback logic.
+    // Duration is left None here and may be filled by TLEN or other fallback logic.
     let _ = total_size; // reserved for future heuristics
     Ok(props)
 }

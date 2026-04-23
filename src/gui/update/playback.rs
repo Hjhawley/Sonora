@@ -1,15 +1,13 @@
 //! gui/update/playback.rs
-//! GUI-playback engine bridge
 //!
+//! GUI-playback engine bridge
 //! - 'now_playing' and selection are 'TrackId', not Vec indices.
 //! - 'PlayTrack' accepts a 'TrackId' and looks up the current row by id.
 //!
-//! Design goals:
 //! - GUI never touches rodio/symphonia directly.
 //! - All IO / timing is driven by the engine + TickPlayback polling.
 //! - Engine owns continuous playback; GUI provides queue policy.
 //!
-//! Queue policy:
 //! - Track View display order = sort + search
 //! - Library playback order = sort only (search does NOT exclude tracks)
 //! - Album playback order = album order

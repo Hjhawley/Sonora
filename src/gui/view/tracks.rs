@@ -1,12 +1,10 @@
 //! gui/view/tracks.rs
-//! Track view (table list).
 //!
+//! Track view (table list).
 //! Track View owns:
 //! - column-driven rendering
 //! - table header / resize handle logic
 //! - virtualization
-//!
-//! Shared library-view chrome / row language lives in 'shared.rs'.
 
 use std::time::Instant;
 

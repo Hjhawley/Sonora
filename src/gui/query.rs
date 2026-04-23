@@ -1,15 +1,10 @@
 //! gui/query.rs
 //!
 //! Pure query + sorting logic for Track View.
-//!
-//! Important:
 //! - This does NOT mutate app state.
-//! - This derives display order and playback order from canonical in-memory
-//!   'TrackRow's.
+//! - This derives display order and playback order from in-memory 'TrackRow's.
 //! - Track View selection/navigation should use display order.
 //! - Library playback queue should use sort order, but ignore search text.
-//!
-//! Optimization:
 //! - Precompute normalized query/sort fields once per dataset change.
 //! - Rebuild only id lists when search/sort changes.
 
@@ -104,9 +99,8 @@ impl Default for TrackQuery {
     }
 }
 
-/// Precomputed normalized query/sort data for one `TrackRow`.
-///
-/// This is aligned by Vec index with `Sonora::tracks`.
+/// Precomputed normalized query/sort data for one 'TrackRow'.
+/// This is aligned by Vec index with 'Sonora::tracks'.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct QueryTrackCache {
     pub path: String,

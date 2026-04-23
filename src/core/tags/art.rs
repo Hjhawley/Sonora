@@ -1,8 +1,9 @@
 //! core/tags/art.rs
+//!
 //! Embedded album-art IO for MP3 files using the id3 crate.
 //! - Prefer front cover art when reading
 //! - Fall back to the first embedded picture
-//! - Only write JPEG / PNG for MVP
+//! - Only write JPEG / PNG
 //! - Artwork is stored in the file tags, not in SQLite
 
 use std::path::Path;
@@ -16,13 +17,10 @@ pub struct EmbeddedArt {
     pub mime: String,
 }
 
-/// Returns the preferred embedded picture:
-/// 1) front cover if present
-/// 2) otherwise the first picture
 pub fn read_embedded_art(path: &Path) -> Result<Option<EmbeddedArt>, String> {
     let tag = match Tag::read_from_path(path) {
         Ok(t) => t,
-        // Keep current app behavior: missing/invalid tag == no art for now.
+        // Missing/invalid tag == no art (use placeholder)
         Err(_) => return Ok(None),
     };
 
@@ -61,7 +59,7 @@ pub fn set_embedded_art(path: &Path, data: &[u8], mime: &str) -> Result<(), Stri
         .map_err(|e| format!("Failed to write embedded artwork: {e}"))
 }
 
-/// Remove all embedded pictures. Returns `true` if anything was removed.
+/// Remove all embedded pictures. Returns 'true' if anything was removed.
 pub fn remove_embedded_art(path: &Path) -> Result<bool, String> {
     let mut tag = match Tag::read_from_path(path) {
         Ok(t) => t,

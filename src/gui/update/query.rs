@@ -40,7 +40,7 @@ pub(crate) fn set_track_sort_field(state: &mut Sonora, field: TrackSortField) ->
         state.track_query.sort_direction = SortDirection::Asc;
     }
 
-    // sort from the top
+    // Sort from the top
     state.tracks_scroll_offset_y = 0.0;
 
     state.rebuild_track_query_caches();

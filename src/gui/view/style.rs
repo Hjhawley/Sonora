@@ -1,3 +1,6 @@
+//! gui/view/style.rs
+//!
+
 use iced::widget::{button, container, text_input};
 use iced::{Background, Border, Color, Theme};
 

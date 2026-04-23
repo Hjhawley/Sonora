@@ -1,9 +1,8 @@
 //! gui/update/roots.rs
 //!
 //! Root-folder management.
-//!
 //! Roots are DB-backed persistent library configuration.
-//! The GUI keeps an in-memory copy in `state.roots`, but add/remove operations
+//! The GUI keeps an in-memory copy in 'state.roots', but add/remove operations
 //! write through to SQLite immediately.
 
 use iced::Task;

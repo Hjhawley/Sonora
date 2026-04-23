@@ -1,6 +1,6 @@
 //! gui/update/inspector.rs
-//! Inspector draft state machine + mixed-selection semantics.
 //!
+//! Inspector draft state machine + mixed-selection semantics.
 //! - Selection is stored as TrackId(s).
 //! - We resolve ids -> indices only when we need to read TrackRow(s).
 //! - Mixed-state is tracked structurally in 'state.inspector_mixed'.

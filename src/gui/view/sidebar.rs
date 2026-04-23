@@ -1,4 +1,5 @@
 //! gui/view/sidebar.rs
+//!
 //! Left sidebar (scan, scope toggles, layout toggles, action buttons, roots list).
 
 use iced::widget::{button, column, container, row, scrollable, text, text_input};
@@ -19,8 +20,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     let has_selection = state.has_selection();
 
     // Top-level primary action for the sidebar.
-    // Give it full width so it reads like a real section action,
-    // not a loose floating button.
     let scan_btn = if state.scanning {
         button("Scanning...").style(sonora_button)
     } else {
@@ -82,8 +81,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     let view_toggle = row![albums_btn, tracks_btn].spacing(8);
 
     // Context-sensitive action section:
-    // still one button for now, but giving it its own group makes the sidebar
-    // read as navigation + layout + actions instead of one flat pile of controls.
     let visibility_btn = match state.library_scope {
         LibraryScope::Library => {
             if busy || !has_selection {
@@ -145,8 +142,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         }
         .width(Length::Fixed(40.0));
 
-        // Keep roots visually compact, but give them enough breathing room that
-        // the list feels maintained rather than dumped into the panel.
+        // Keep roots visually compact.
         let path_txt = text(p.display().to_string())
             .size(12)
             .color(SECONDARY_TEXT)

@@ -1,4 +1,5 @@
 //! gui/view/mod.rs
+//!
 //! GUI renderer (reads state, produces widgets; no mutation).
 
 use std::time::Instant;

@@ -1,4 +1,5 @@
 //! gui/view/constants.rs
+//!
 //! View constants (layout/sizing)
 
 #![allow(dead_code)]

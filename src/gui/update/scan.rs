@@ -1,7 +1,6 @@
 //! gui/update/scan.rs
 //!
 //! GUI-side scan lifecycle.
-//!
 //! This module starts the background scan task, maps GUI scope to core load scope,
 //! and applies the finished scan result back into Sonora state.
 

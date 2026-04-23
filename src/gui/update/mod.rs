@@ -1,6 +1,6 @@
 //! gui/update/mod.rs
-//! Update logic (router).
 //!
+//! Update logic (router).
 //! Route by TrackId, never by Vec index.
 
 use iced::Task;

@@ -1,9 +1,8 @@
 //! core/load.rs
 //!
 //! DB-backed TrackRow loading helpers.
-//!
 //! These helpers load cached TrackRows directly from SQLite without scanning
-//! the filesystem, which keeps startup and scope switches fast.
+//! the filesystem, which speeds up startup and scope switching.
 
 use crate::core::db;
 use crate::core::types::TrackRow;

@@ -1,13 +1,10 @@
 //! gui/update/selection.rs
 //!
 //! Selection interactions + album interactions + cover loading.
-//!
-//! - All selection is keyed by `TrackId` (stable), not `Vec` indices.
+//! - All selection is keyed by 'TrackId' (stable), not 'Vec' indices.
 //! - Album View:
-//!   - grid when `selected_album == None`
-//!   - album detail screen when `selected_album == Some(...)`
-//! - This module owns user interaction around selecting tracks/albums and
-//!   loading cover art needed for those selections.
+//!   - grid when 'selected_album == None'
+//!   - album detail screen when 'selected_album == Some(...)'
 
 use iced::Task;
 use std::path::{Path, PathBuf};

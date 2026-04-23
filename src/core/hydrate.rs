@@ -1,8 +1,7 @@
 //! core/hydrate.rs
 //!
 //! Metadata hydration from disk.
-//!
-//! Turns DB-backed `(TrackId, PathBuf)` pairs into fully populated TrackRows
+//! Turns DB-backed '(TrackId, PathBuf)' pairs into fully populated TrackRows
 //! by reading tags/probed metadata from the source files.
 
 use std::path::PathBuf;
@@ -10,9 +9,8 @@ use std::path::PathBuf;
 use crate::core::tags;
 use crate::core::types::{TrackId, TrackRow};
 
-/// Hydrate real on-disk metadata for a DB-backed `(TrackId, PathBuf)` list.
-///
-/// Use this during scan/save refreshes, not at startup.
+/// Hydrate real on-disk metadata for a DB-backed '(TrackId, PathBuf)' list.
+/// Use this during scan/save refreshes, not on startup.
 pub fn hydrate_tracks(id_paths: Vec<(TrackId, PathBuf)>) -> (Vec<TrackRow>, usize) {
     let mut rows: Vec<TrackRow> = Vec::with_capacity(id_paths.len());
     let mut tag_failures: usize = 0;

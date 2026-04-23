@@ -1,7 +1,6 @@
 //! gui/update/scope.rs
 //!
 //! Library-scope and view-mode transitions.
-//!
 //! - Scope changes asynchronously reload rows from the DB-backed library cache.
 //! - View-mode changes reset incompatible selection state.
 //! - Album View may trigger representative cover preloading.

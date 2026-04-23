@@ -1,6 +1,6 @@
 //! core/tags/read.rs
-//! Read ID3 tags from an MP3 and convert them into a 'TrackRow'.
 //!
+//! Read ID3 tags from an MP3 and convert them into a 'TrackRow'.
 //! - Tag reading does NOT assign identity.
 //! - 'TrackRow.id' is set by the scanning / DB layer.
 //! - This module therefore always returns 'id: None'.
