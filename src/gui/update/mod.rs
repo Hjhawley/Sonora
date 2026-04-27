@@ -18,7 +18,7 @@ mod roots;
 mod save;
 mod scan;
 mod scope;
-mod selection;
+pub(crate) mod selection;
 mod util;
 
 pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
