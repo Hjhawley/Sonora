@@ -15,6 +15,10 @@ pub(crate) const SIDEBAR_W: f32 = 260.0;
 pub(crate) const EDITOR_W: f32 = 380.0;
 pub(crate) const LABEL_W: f32 = 110.0;
 
+// Fixed text width inside the left now-playing cluster.
+// Keep this narrow enough that long titles get ellipsized instead of wrapping.
+pub(crate) const PLAYBACK_NOW_PLAYING_TEXT_W: f32 = 210.0;
+
 // Text
 pub(crate) const HEADER_TEXT: f32 = 14.0;
 pub(crate) const ROW_TEXT: f32 = 14.0;

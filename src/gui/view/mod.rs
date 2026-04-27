@@ -18,13 +18,15 @@ use iced::Length;
 use iced::widget::{Column, column, row};
 
 use super::state::{Message, Sonora};
-use constants::{EDITOR_W, SIDEBAR_W};
+use constants::{EDITOR_W, PLAYBACK_H, SIDEBAR_W};
 
 pub(crate) fn view(state: &Sonora) -> Column<'_, Message> {
     let started = Instant::now();
 
     let playback_started = Instant::now();
-    let playback = widgets::playback_bar(state).width(Length::Fill);
+    let playback = widgets::playback_bar(state)
+        .width(Length::Fill)
+        .height(Length::Fixed(PLAYBACK_H));
     let playback_ms = playback_started.elapsed().as_secs_f64() * 1000.0;
 
     let sidebar_started = Instant::now();

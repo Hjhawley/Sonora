@@ -9,7 +9,7 @@ use iced::widget::{button, column, container, image, row, slider, text, text_inp
 use iced::{Alignment, Color, Element, Length};
 
 use super::super::state::{Message, PlayOrder, PlaybackContext, RepeatMode, Sonora};
-use super::constants::{LABEL_W, PLAYBACK_COVER};
+use super::constants::{LABEL_W, PLAYBACK_COVER, PLAYBACK_H, PLAYBACK_NOW_PLAYING_TEXT_W};
 use super::style::{sonora_button, sonora_input};
 
 const BUTTON_TEXT: Color = Color::from_rgb8(0xEE, 0xEE, 0xEE);
@@ -71,9 +71,6 @@ fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
 }
 
 fn placeholder_cover_handle() -> iced::widget::image::Handle {
-    // Cache the placeholder once.
-    // Rebuilding Handle::from_bytes(...) every frame causes pointless work and,
-    // in practice, visible flashing when no artwork is present.
     static HANDLE: OnceLock<iced::widget::image::Handle> = OnceLock::new();
 
     HANDLE
@@ -91,7 +88,6 @@ pub(crate) fn cover_placeholder(size: f32) -> iced::widget::Container<'static, M
     .height(Length::Fixed(size))
 }
 
-/// If 'handle' exists, show it; otherwise show the placeholder.
 pub(crate) fn cover_thumb(
     handle: Option<&iced::widget::image::Handle>,
     size: f32,
@@ -188,7 +184,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         RepeatMode::One => "Repeat: One",
     };
 
-    let queue_label = match &state.playback_context {
+    let queue_label_raw = match &state.playback_context {
         PlaybackContext::Library => "Queue: Library".to_string(),
         PlaybackContext::Album(key) => format!("Queue: Album — {}", key.album),
     };
@@ -247,7 +243,7 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
 
     let now_playing_row = state.now_playing.and_then(|id| state.track_by_id(id));
 
-    let now_playing_title = match now_playing_row {
+    let now_playing_title_raw = match now_playing_row {
         Some(t) => t
             .title
             .clone()
@@ -256,33 +252,54 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
         None => "Nothing playing".into(),
     };
 
-    let now_playing_artist = match now_playing_row {
+    let now_playing_artist_raw = match now_playing_row {
         Some(t) => t.artist.clone().unwrap_or_else(|| "Unknown Artist".into()),
         None => String::new(),
     };
 
     let now_playing_cover = state.now_playing.and_then(|id| state.cover_cache.get(&id));
 
+    let now_playing_title =
+        ellipsize_for_width(&now_playing_title_raw, PLAYBACK_NOW_PLAYING_TEXT_W);
+    let now_playing_artist =
+        ellipsize_for_width(&now_playing_artist_raw, PLAYBACK_NOW_PLAYING_TEXT_W);
+    let queue_label = ellipsize_for_width(&queue_label_raw, PLAYBACK_NOW_PLAYING_TEXT_W);
+
     let now_playing_meta = if now_playing_row.is_some() {
         column![
             text("Now Playing").size(11).color(SECONDARY_TEXT),
-            text(now_playing_title).size(15),
-            text(now_playing_artist).size(12).color(SECONDARY_TEXT),
-            text(queue_label).size(11).color(SECONDARY_TEXT),
+            text(now_playing_title)
+                .size(15)
+                .width(Length::Fixed(PLAYBACK_NOW_PLAYING_TEXT_W)),
+            text(now_playing_artist)
+                .size(12)
+                .color(SECONDARY_TEXT)
+                .width(Length::Fixed(PLAYBACK_NOW_PLAYING_TEXT_W)),
+            text(queue_label)
+                .size(11)
+                .color(SECONDARY_TEXT)
+                .width(Length::Fixed(PLAYBACK_NOW_PLAYING_TEXT_W)),
         ]
         .spacing(2)
+        .width(Length::Fixed(PLAYBACK_NOW_PLAYING_TEXT_W))
     } else {
         column![
             text("Now Playing").size(11).color(SECONDARY_TEXT),
-            text(now_playing_title).size(15),
-            text(queue_label).size(11).color(SECONDARY_TEXT),
+            text(now_playing_title)
+                .size(15)
+                .width(Length::Fixed(PLAYBACK_NOW_PLAYING_TEXT_W)),
+            text(queue_label)
+                .size(11)
+                .color(SECONDARY_TEXT)
+                .width(Length::Fixed(PLAYBACK_NOW_PLAYING_TEXT_W)),
         ]
         .spacing(2)
+        .width(Length::Fixed(PLAYBACK_NOW_PLAYING_TEXT_W))
     };
 
     let left_block = row![
         cover_thumb(now_playing_cover, PLAYBACK_COVER),
-        now_playing_meta.width(Length::Fill),
+        now_playing_meta,
     ]
     .spacing(12)
     .align_y(Alignment::Center)
@@ -307,7 +324,6 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     .align_y(Alignment::Center)
     .width(Length::Fill);
 
-    // Put both transport and progress inside the exact same centered lane.
     let center_lane = column![
         container(transport_row)
             .width(Length::Fill)
@@ -335,7 +351,11 @@ pub(crate) fn playback_bar(state: &Sonora) -> iced::widget::Container<'_, Messag
     let bar = row![left_block, center_block, right_block]
         .spacing(18)
         .align_y(Alignment::Center)
-        .width(Length::Fill);
+        .width(Length::Fill)
+        .height(Length::Fixed(PLAYBACK_H));
 
-    container(bar).padding(12).width(Length::Fill)
+    container(bar)
+        .padding(12)
+        .width(Length::Fill)
+        .height(Length::Fixed(PLAYBACK_H))
 }
