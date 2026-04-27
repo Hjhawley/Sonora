@@ -164,7 +164,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
     let count_label = format!("{total_tracks} tracks • {total_minutes} min");
 
     let back_btn = button(action_button_text("◁ Back to albums"))
-        .on_press(Message::SetViewMode(super::super::state::ViewMode::Albums))
+        .on_press(Message::BackToAlbumsGrid)
         .style(super::style::sonora_button);
 
     let play_album_btn = button(action_button_text("Play Album"))

@@ -132,6 +132,17 @@ pub(crate) fn album_track_pressed(state: &mut Sonora, key: AlbumKey, id: TrackId
     }
 }
 
+pub(crate) fn back_to_albums_grid(state: &mut Sonora) -> Task<Message> {
+    state.selected_album = None;
+    state.selected_track = None;
+    state.selected_tracks.clear();
+    state.selection_anchor = None;
+    state.last_clicked_track = None;
+    state.inspector_open = false;
+    clear_inspector(state);
+    Task::none()
+}
+
 pub(crate) fn select_adjacent_track(
     state: &mut Sonora,
     delta: isize,

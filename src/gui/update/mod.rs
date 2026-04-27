@@ -74,6 +74,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::AlbumTilePressed(key) => selection::album_tile_pressed(state, key),
         Message::AlbumCoverPressed(key) => selection::album_cover_pressed(state, key),
         Message::AlbumTrackPressed(key, id) => selection::album_track_pressed(state, key, id),
+        Message::BackToAlbumsGrid => selection::back_to_albums_grid(state),
 
         // Cover
         Message::CoverLoaded(id, handle) => selection::cover_loaded(state, id, handle),

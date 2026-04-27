@@ -665,6 +665,7 @@ pub(crate) enum Message {
     AlbumTilePressed(AlbumKey),
     AlbumCoverPressed(AlbumKey),
     AlbumTrackPressed(AlbumKey, TrackId),
+    BackToAlbumsGrid,
 
     // Cover art
     CoverLoaded(TrackId, Option<iced::widget::image::Handle>),
