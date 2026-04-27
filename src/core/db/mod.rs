@@ -18,6 +18,7 @@ mod tracks;
 pub use paths::default_db_path;
 
 const APP_STATE_VOLUME_KEY: &str = "volume";
+const APP_STATE_VIEW_MODE_KEY: &str = "view_mode";
 
 pub struct Db {
     conn: Connection,
@@ -61,6 +62,32 @@ impl Db {
                 ON CONFLICT(key) DO UPDATE SET value = excluded.value
                 "#,
                 params![APP_STATE_VOLUME_KEY, volume.to_string()],
+            )
+            .map_err(|e| e.to_string())?;
+
+        Ok(())
+    }
+
+    pub fn load_view_mode(&self) -> Result<Option<String>, String> {
+        self.conn
+            .query_row(
+                "SELECT value FROM app_state WHERE key = ?1",
+                params![APP_STATE_VIEW_MODE_KEY],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn save_view_mode(&self, view_mode: &str) -> Result<(), String> {
+        self.conn
+            .execute(
+                r#"
+                INSERT INTO app_state(key, value)
+                VALUES (?1, ?2)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                "#,
+                params![APP_STATE_VIEW_MODE_KEY, view_mode],
             )
             .map_err(|e| e.to_string())?;
 

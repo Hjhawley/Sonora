@@ -86,6 +86,13 @@ pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message>
     state.view_mode = mode;
     state.last_album_press = None;
 
+    // Best-effort persistence: save the user's preferred center-pane mode.
+    let _ = (|| -> Result<(), String> {
+        let db_path = core::db::default_db_path()?;
+        let db = core::db::Db::open(&db_path)?;
+        db.save_view_mode(mode.as_db_value())
+    })();
+
     // View switches invalidate the current selection model.
     state.selected_track = None;
     state.selected_tracks.clear();

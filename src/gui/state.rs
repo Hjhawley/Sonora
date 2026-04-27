@@ -46,6 +46,25 @@ pub(crate) enum ViewMode {
     Tracks,
 }
 
+impl ViewMode {
+    #[inline]
+    pub fn as_db_value(self) -> &'static str {
+        match self {
+            ViewMode::Albums => "albums",
+            ViewMode::Tracks => "tracks",
+        }
+    }
+
+    #[inline]
+    pub fn from_db_value(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "albums" => Some(ViewMode::Albums),
+            "tracks" => Some(ViewMode::Tracks),
+            _ => None,
+        }
+    }
+}
+
 /// Library / Hidden / Missing is a dataset/scope choice.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LibraryScope {
@@ -331,14 +350,22 @@ impl Sonora {
     pub fn new() -> Self {
         let (playback_controller, playback_events) = start_playback();
 
-        let (saved_volume, roots) = (|| -> Result<(Option<f32>, Vec<PathBuf>), String> {
-            let db_path = core::db::default_db_path()?;
-            let db = core::db::Db::open(&db_path)?;
-            Ok((db.load_volume()?, db.load_roots()?))
-        })()
-        .unwrap_or((None, Vec::new()));
+        let (saved_volume, saved_view_mode, roots) =
+            (|| -> Result<(Option<f32>, Option<ViewMode>, Vec<PathBuf>), String> {
+                let db_path = core::db::default_db_path()?;
+                let db = core::db::Db::open(&db_path)?;
+
+                let saved_view_mode = db
+                    .load_view_mode()?
+                    .as_deref()
+                    .and_then(ViewMode::from_db_value);
+
+                Ok((db.load_volume()?, saved_view_mode, db.load_roots()?))
+            })()
+            .unwrap_or((None, None, Vec::new()));
 
         let saved_volume = saved_volume.unwrap_or(1.0).clamp(0.0, 1.0);
+        let saved_view_mode = saved_view_mode.unwrap_or(ViewMode::Tracks);
 
         let (tracks, status) = match core::load_visible_tracks_from_db() {
             Ok((tracks, failures)) => {
@@ -418,7 +445,7 @@ impl Sonora {
             playback_context: PlaybackContext::Library,
             shuffled_ids: Vec::new(),
 
-            view_mode: ViewMode::Tracks,
+            view_mode: saved_view_mode,
             library_scope: LibraryScope::Library,
             selected_album: None,
 
