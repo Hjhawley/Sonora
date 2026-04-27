@@ -455,7 +455,7 @@ impl Sonora {
 
     #[inline]
     pub fn inspector_has_keyboard_priority(&self) -> bool {
-        self.inspector_open && self.view_mode == ViewMode::Tracks
+        self.inspector_open
     }
 
     #[inline]
