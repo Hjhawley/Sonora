@@ -27,8 +27,6 @@ pub(crate) const BORDER_ACTIVE: Color = ACCENT;
 pub(crate) const ROW_BG_EVEN: Color = Color::from_rgb8(0x1B, 0x1B, 0x1B);
 pub(crate) const ROW_BG_ODD: Color = Color::from_rgb8(0x1F, 0x1F, 0x1F);
 pub(crate) const ROW_BG_SELECTED: Color = Color::from_rgb8(0x28, 0x35, 0x39);
-pub(crate) const ROW_BG_PLAYING: Color = Color::from_rgb8(0x1F, 0x3D, 0x42);
-pub(crate) const ROW_BG_SELECTED_PLAYING: Color = Color::from_rgb8(0x29, 0x50, 0x57);
 pub(crate) const ROW_BORDER: Color = Color::from_rgb8(0x2A, 0x2A, 0x2A);
 
 // Shared surface band style for things like the track table header.
@@ -45,23 +43,18 @@ pub(crate) fn table_header_band_style() -> container::Style {
 
 pub(crate) fn track_row_style(
     is_selected: bool,
-    is_now_playing: bool,
+    _is_now_playing: bool,
     zebra_even: bool,
 ) -> container::Style {
-    let bg = match (is_selected, is_now_playing) {
-        (true, true) => ROW_BG_SELECTED_PLAYING,
-        (false, true) => ROW_BG_PLAYING,
-        (true, false) => ROW_BG_SELECTED,
-        (false, false) => {
-            if zebra_even {
-                ROW_BG_EVEN
-            } else {
-                ROW_BG_ODD
-            }
-        }
+    let bg = if is_selected {
+        ROW_BG_SELECTED
+    } else if zebra_even {
+        ROW_BG_EVEN
+    } else {
+        ROW_BG_ODD
     };
 
-    let border_color = if is_selected || is_now_playing {
+    let border_color = if is_selected {
         BORDER_ACTIVE
     } else {
         ROW_BORDER
@@ -71,11 +64,7 @@ pub(crate) fn track_row_style(
     style.background = Some(Background::Color(bg));
     style.border = Border {
         color: border_color,
-        width: if is_selected || is_now_playing {
-            1.0
-        } else {
-            0.0
-        },
+        width: if is_selected { 1.0 } else { 0.0 },
         radius: 0.0.into(),
     };
     style

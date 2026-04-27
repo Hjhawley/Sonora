@@ -117,7 +117,6 @@ pub(crate) struct AlbumKey {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum AlbumPressTarget {
     Tile(AlbumKey),
-    Header(AlbumKey),
     Track(AlbumKey, TrackId),
 }
 
