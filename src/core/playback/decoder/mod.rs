@@ -107,9 +107,9 @@ fn seek_and_compute_skip_ms(
 
                 Ok(start_ms.saturating_sub(actual_ms))
             }
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(debug_assertions)]
-                eprintln!("[DECODER] seek failed, will decode-skip: {e}");
+                eprintln!("[DECODER] seek failed, will decode-skip: {_e}");
                 Ok(start_ms)
             }
         }
@@ -125,9 +125,9 @@ fn seek_and_compute_skip_ms(
             },
         ) {
             Ok(_) => Ok(0),
-            Err(e) => {
+            Err(_e) => {
                 #[cfg(debug_assertions)]
-                eprintln!("[DECODER] time seek failed, decode-skip: {e}");
+                eprintln!("[DECODER] time seek failed, decode-skip: {_e}");
                 Ok(start_ms)
             }
         }
