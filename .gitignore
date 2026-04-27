@@ -30,3 +30,8 @@ settings.local.*
 *.ogg
 *.opus
 *.aac
+
+# Images
+*.jpg
+*.JPEG
+*.png
