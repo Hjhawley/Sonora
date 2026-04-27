@@ -171,6 +171,21 @@ fn playback_ids(state: &mut Sonora) -> Vec<TrackId> {
     }
 }
 
+fn preferred_start_track_id(state: &mut Sonora) -> Option<TrackId> {
+    let ids = playback_ids(state);
+    if ids.is_empty() {
+        return None;
+    }
+
+    if let Some(selected_id) = state.selected_track {
+        if ids.contains(&selected_id) {
+            return Some(selected_id);
+        }
+    }
+
+    ids.first().copied()
+}
+
 fn next_track_id(state: &mut Sonora) -> Option<TrackId> {
     let ids = playback_ids(state);
     if ids.is_empty() {
@@ -272,7 +287,17 @@ fn track_id_by_path(state: &Sonora, path: &Path) -> Option<TrackId> {
 }
 
 fn refresh_next_queue_hint(state: &mut Sonora) {
+    let Some(current_id) = state.now_playing else {
+        // Do not prime the engine when nothing is actively loaded.
+        // Queue hints are only valid once playback has been seeded through a real play path.
+        if let Some(controller) = &state.playback {
+            controller.send(PlayerCommand::ClearQueue);
+        }
+        return;
+    };
+
     let next_path = next_track_id(state)
+        .filter(|next_id| *next_id != current_id)
         .and_then(|next_id| state.track_by_id(next_id))
         .map(|row| row.path.clone());
 
@@ -330,6 +355,15 @@ fn play_track_internal(state: &mut Sonora, id: TrackId) -> Task<Message> {
     maybe_load_now_playing_cover(state, id)
 }
 
+fn start_from_current_context(state: &mut Sonora) -> Task<Message> {
+    let Some(id) = preferred_start_track_id(state) else {
+        state.status = "No playable track found.".to_string();
+        return Task::none();
+    };
+
+    play_track_internal(state, id)
+}
+
 pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
     let Some(rx_cell) = state.playback_events.as_ref() else {
         return Task::none();
@@ -348,22 +382,6 @@ pub(crate) fn drain_events(state: &mut Sonora) -> Task<Message> {
     }
 
     Task::none()
-}
-
-pub(crate) fn play_selected(state: &mut Sonora) -> Task<Message> {
-    let Some(id) = state.selected_track else {
-        state.status = "No track selected.".into();
-        return Task::none();
-    };
-
-    if let Some(key) = state.selected_album.clone() {
-        let ids = ordered_album_track_ids(state, &key);
-        if ids.contains(&id) {
-            return play_album_from_track(state, key, id);
-        }
-    }
-
-    play_track(state, id)
 }
 
 pub(crate) fn play_track(state: &mut Sonora, id: TrackId) -> Task<Message> {
@@ -405,11 +423,13 @@ pub(crate) fn toggle_play_pause(state: &mut Sonora) -> Task<Message> {
     if state.now_playing.is_some() {
         resume(state)
     } else {
-        play_selected(state)
+        start_from_current_context(state)
     }
 }
 
 pub(crate) fn toggle_shuffle(state: &mut Sonora) -> Task<Message> {
+    let was_empty = state.now_playing.is_none();
+
     state.play_order = match state.play_order {
         PlayOrder::Normal => {
             rebuild_shuffle_order(state);
@@ -421,6 +441,10 @@ pub(crate) fn toggle_shuffle(state: &mut Sonora) -> Task<Message> {
             PlayOrder::Normal
         }
     };
+
+    if was_empty {
+        return start_from_current_context(state);
+    }
 
     refresh_next_queue_hint(state);
     Task::none()
@@ -459,7 +483,7 @@ pub(crate) fn pause(state: &mut Sonora) -> Task<Message> {
 
 pub(crate) fn resume(state: &mut Sonora) -> Task<Message> {
     if state.now_playing.is_none() {
-        return play_selected(state);
+        return start_from_current_context(state);
     }
 
     ensure_engine(state);
@@ -492,6 +516,10 @@ pub(crate) fn next(state: &mut Sonora) -> Task<Message> {
         return Task::none();
     }
 
+    if state.now_playing.is_none() {
+        return start_from_current_context(state);
+    }
+
     let Some(next_id) = next_track_id(state) else {
         state.status = "End of queue.".to_string();
         return stop(state);
@@ -503,6 +531,10 @@ pub(crate) fn next(state: &mut Sonora) -> Task<Message> {
 pub(crate) fn prev(state: &mut Sonora) -> Task<Message> {
     if state.tracks.is_empty() {
         return Task::none();
+    }
+
+    if state.now_playing.is_none() {
+        return start_from_current_context(state);
     }
 
     let Some(prev_id) = prev_track_id(state) else {
