@@ -79,31 +79,22 @@ pub(crate) fn scope_loaded(
 }
 
 pub(crate) fn set_view_mode(state: &mut Sonora, mode: ViewMode) -> Task<Message> {
-    let was_albums = state.view_mode == ViewMode::Albums;
+    if state.view_mode == mode {
+        return Task::none();
+    }
 
     state.view_mode = mode;
     state.last_album_press = None;
 
-    if mode == ViewMode::Tracks {
-        state.selected_album = None;
-    }
-
-    if mode == ViewMode::Albums && !was_albums {
-        state.selected_album = None;
-        state.selected_track = None;
-        state.selected_tracks.clear();
-        state.selection_anchor = None;
-        state.last_clicked_track = None;
-        super::inspector::clear_inspector(state);
-        return preload_album_covers(state);
-    }
-
+    // View switches invalidate the current selection model.
     state.selected_track = None;
     state.selected_tracks.clear();
     state.selection_anchor = None;
     state.last_clicked_track = None;
     state.selected_album = None;
 
+    // Force-close the inspector
+    state.inspector_open = false;
     super::inspector::clear_inspector(state);
 
     if mode == ViewMode::Albums {
