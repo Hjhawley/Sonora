@@ -72,7 +72,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         // Album-view click handling
         Message::AlbumTilePressed(key) => selection::album_tile_pressed(state, key),
-        Message::AlbumHeaderPressed(key) => selection::album_header_pressed(state, key),
+        Message::AlbumCoverPressed(key) => selection::album_cover_pressed(state, key),
         Message::AlbumTrackPressed(key, id) => selection::album_track_pressed(state, key, id),
 
         // Cover

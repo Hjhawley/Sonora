@@ -664,7 +664,7 @@ pub(crate) enum Message {
 
     // Album-view click handling
     AlbumTilePressed(AlbumKey),
-    AlbumHeaderPressed(AlbumKey),
+    AlbumCoverPressed(AlbumKey),
     AlbumTrackPressed(AlbumKey, TrackId),
 
     // Cover art

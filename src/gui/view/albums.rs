@@ -177,10 +177,17 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         .map(|h| cover_thumb(Some(h), ALBUM_DETAIL_COVER))
         .unwrap_or_else(|| cover_thumb(None, ALBUM_DETAIL_COVER));
 
+    let clickable_cover = mouse_area(
+        container(big_cover)
+            .width(Length::Fixed(ALBUM_DETAIL_COVER))
+            .height(Length::Fixed(ALBUM_DETAIL_COVER)),
+    )
+    .on_press(Message::AlbumCoverPressed(key.clone()));
+
     let toolbar = row![back_btn, play_album_btn].spacing(8);
 
     let header_content = row![
-        big_cover,
+        clickable_cover,
         column![
             text(key.album.clone()).size(28).color(TEXT),
             text(key.album_artist.clone())
@@ -194,13 +201,10 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
     .spacing(20)
     .align_y(Alignment::Center);
 
-    let header = mouse_area(
-        container(header_content)
-            .width(Length::Fill)
-            .padding(14)
-            .style(|_| table_header_band_style()),
-    )
-    .on_press(Message::AlbumHeaderPressed(key.clone()));
+    let header = container(header_content)
+        .width(Length::Fill)
+        .padding(14)
+        .style(|_| table_header_band_style());
 
     let mut list = column![].spacing(TRACK_LIST_SPACING);
 

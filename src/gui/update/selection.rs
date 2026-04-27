@@ -19,7 +19,33 @@ use crate::core::types::TrackId;
 
 const DOUBLE_CLICK_WINDOW_MS: u64 = 400;
 
-pub(crate) fn select_album(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
+pub(crate) fn open_album_detail(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
+    if state.view_mode != ViewMode::Albums {
+        state.view_mode = ViewMode::Albums;
+    }
+
+    state.selected_album = Some(key.clone());
+    state.selected_track = None;
+    state.selected_tracks.clear();
+    state.selection_anchor = None;
+    state.last_clicked_track = None;
+    state.inspector_open = false;
+    clear_inspector(state);
+
+    let ordered_ids = ordered_album_track_ids(state, &key);
+    if ordered_ids.is_empty() {
+        return Task::none();
+    }
+
+    let mut preload_tasks: Vec<Task<Message>> = Vec::new();
+    for &id in &ordered_ids {
+        preload_tasks.push(maybe_load_cover_for_track(state, id));
+    }
+
+    Task::batch(preload_tasks)
+}
+
+pub(crate) fn select_album_tracks(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     if state.view_mode != ViewMode::Albums {
         state.view_mode = ViewMode::Albums;
     }
@@ -79,27 +105,18 @@ pub(crate) fn track_pressed(state: &mut Sonora, id: TrackId) -> Task<Message> {
 pub(crate) fn album_tile_pressed(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
     let is_double = register_album_press(state, AlbumPressTarget::Tile(key.clone()));
 
-    let select_task = select_album(state, key.clone());
+    let open_task = open_album_detail(state, key.clone());
 
     if is_double {
         let play_task = playback::play_album(state, key);
-        Task::batch(vec![select_task, play_task])
+        Task::batch(vec![open_task, play_task])
     } else {
-        select_task
+        open_task
     }
 }
 
-pub(crate) fn album_header_pressed(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
-    let is_double = register_album_press(state, AlbumPressTarget::Header(key.clone()));
-
-    let select_task = select_album(state, key.clone());
-
-    if is_double {
-        let play_task = playback::play_album(state, key);
-        Task::batch(vec![select_task, play_task])
-    } else {
-        select_task
-    }
+pub(crate) fn album_cover_pressed(state: &mut Sonora, key: AlbumKey) -> Task<Message> {
+    select_album_tracks(state, key)
 }
 
 pub(crate) fn album_track_pressed(state: &mut Sonora, key: AlbumKey, id: TrackId) -> Task<Message> {

@@ -249,9 +249,9 @@ fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
         };
 
     let add_btn = if state.scanning || state.saving {
-        button(button_text("Add / Replace artwork")).style(sonora_button)
+        button(button_text("Add or replace artwork")).style(sonora_button)
     } else {
-        button(button_text("Add / Replace artwork"))
+        button(button_text("Add or replace artwork"))
             .on_press(Message::ChooseInspectorArtwork)
             .style(sonora_button)
     };
