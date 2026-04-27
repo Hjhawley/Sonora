@@ -157,12 +157,6 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
 
     let roots_panel = scrollable(roots_list.spacing(8)).height(Length::Fixed(180.0));
 
-    let scope_label = match state.library_scope {
-        LibraryScope::Library => "Library",
-        LibraryScope::Hidden => "Hidden",
-        LibraryScope::Missing => "Missing",
-    };
-
     // Sidebar hierarchy:
     // - top status/scan cluster
     // - clearly separated sections
@@ -173,14 +167,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
         // same mental model: "what state is the library in right now?"
         column![text(&state.status).size(12).color(SECONDARY_TEXT), scan_btn,].spacing(10),
         // Scope section
-        column![
-            section_title("Scope"),
-            scope_toggle,
-            text(format!("Current: {scope_label}"))
-                .size(12)
-                .color(SECONDARY_TEXT),
-        ]
-        .spacing(8),
+        column![section_title("Scope"), scope_toggle,].spacing(8),
         // Layout section
         column![section_title("Layout"), view_toggle,].spacing(8),
         // Actions section
