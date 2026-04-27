@@ -35,3 +35,6 @@ settings.local.*
 *.jpg
 *.JPEG
 *.png
+
+# TODO and outline
+*.txt
