@@ -106,7 +106,7 @@ pub(crate) fn extract_inspector_artwork(state: &mut Sonora) -> Task<Message> {
 
     let path = row.path.clone();
     let suggested_name = row
-        .title
+        .album
         .clone()
         .or_else(|| {
             row.path
