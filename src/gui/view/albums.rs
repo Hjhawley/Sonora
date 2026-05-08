@@ -161,7 +161,7 @@ fn build_album_detail_screen(state: &Sonora, key: AlbumKey) -> iced::widget::Col
         / 1000
         / 60;
 
-    let count_label = format!("{total_tracks} tracks • {total_minutes} min");
+    let count_label = format!("{total_tracks} tracks, {total_minutes} minutes");
 
     let back_btn = button(action_button_text("◁ Back to albums"))
         .on_press(Message::BackToAlbumsGrid)
