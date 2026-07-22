@@ -45,12 +45,3 @@ The compiled executable will be placed in `target/release/`.
 ```
 cargo run --release
 ```
-
-## Usage
-
-1. Launch Sonora.
-2. Add one or more folders containing MP3 files.
-3. Scan the library.
-4. Browse using Track View or Album View.
-5. Select tracks to inspect or edit their metadata.
-6. Use the playback bar to listen to your library.
