@@ -39,7 +39,7 @@ impl Db {
     /// - are beneath the removed root, and
     /// - are not beneath any remaining enabled root.
     ///
-    /// The signature remains `Result<(), String>` so existing callers do not
+    /// The signature remains 'Result<(), String>' so existing callers do not
     /// need to consume a cleanup count.
     pub fn remove_root(&self, root: &Path) -> Result<(), String> {
         let root_text = path_to_db_text(root)?;
@@ -69,7 +69,7 @@ impl Db {
     /// Compatibility helper for older callers that explicitly perform cleanup
     /// after removing a root.
     ///
-    /// `remove_root` now performs this cleanup atomically itself, so new code
+    /// 'remove_root' now performs this cleanup atomically itself, so new code
     /// should not need to call this method. Calling it afterward is harmless
     /// and will ordinarily return zero.
     pub fn delete_uncovered_tracks_under_root(

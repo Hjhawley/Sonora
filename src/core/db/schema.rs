@@ -2,10 +2,10 @@
 //!
 //! SQLite schema initialization and lightweight additive migrations.
 //!
-//! The database stores enough normalized metadata to reconstruct `TrackRow`
+//! The database stores enough normalized metadata to reconstruct 'TrackRow'
 //! values without reading every media file during normal startup.
 //!
-//! `TRACK_METADATA_CACHE_VERSION` identifies the current cached representation.
+//! 'TRACK_METADATA_CACHE_VERSION' identifies the current cached representation.
 //! Increment it whenever changes to tag reading, probing, normalization, or the
 //! cached schema require existing files to be rehydrated from disk.
 

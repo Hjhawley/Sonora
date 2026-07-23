@@ -1,10 +1,14 @@
 //! core/probe.rs
 //!
-//! Probe for read-only technical audio metadata:
-//! - Duration
-//! - Average bitrate
-//! - Sample rate
-//! - Channels
+//! Read-only probing of technical audio properties:
+//! - duration
+//! - average bitrate
+//! - sample rate
+//! - channel count
+//!
+//! MP3 files use a lightweight MPEG-header probe first. When that probe
+//! succeeds but leaves fields unavailable, Symphonia is used to fill only the
+//! missing properties. Other formats use Symphonia directly.
 
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
@@ -19,7 +23,7 @@ use symphonia::core::units::{Time, TimeBase};
 const MP3_SCAN_LIMIT: usize = 64 * 1024;
 const FRAME_READ_LIMIT: usize = 256;
 
-/// Read-only technical properties derived from the actual media stream/container.
+/// Technical properties derived from the media stream or container.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AudioProperties {
     pub duration_ms: Option<u32>,
@@ -28,38 +32,79 @@ pub struct AudioProperties {
     pub channels: Option<u8>,
 }
 
-/// Probe a file for stream/container-derived audio properties.
-/// - MP3 uses a fast custom header probe first.
-/// - Non-MP3 falls back to Symphonia.
-/// - On failure, callers should tolerate 'Err' and degrade to 'None' fields.
-pub fn probe_audio_properties(path: &Path) -> Result<AudioProperties, String> {
-    if is_mp3_path(path) {
-        if let Ok(props) = probe_mp3_properties(path) {
-            return Ok(props);
-        }
+impl AudioProperties {
+    fn needs_fallback(self) -> bool {
+        self.duration_ms.is_none()
+            || self.bitrate_kbps.is_none()
+            || self.sample_rate_hz.is_none()
+            || self.channels.is_none()
     }
-    probe_generic_audio_properties(path)
+
+    fn with_missing_filled_from(mut self, fallback: Self) -> Self {
+        self.duration_ms = self.duration_ms.or(fallback.duration_ms);
+        self.bitrate_kbps = self.bitrate_kbps.or(fallback.bitrate_kbps);
+        self.sample_rate_hz = self.sample_rate_hz.or(fallback.sample_rate_hz);
+        self.channels = self.channels.or(fallback.channels);
+
+        self
+    }
 }
 
-/// Return the estimated number of audio bytes after excluding common ID3 tags.
-/// This is useful for fallback Avg. Bitrate calculation when duration is known
-/// from some other source (TLEN) but no direct bitrate was probeable.
+/// Probe a file for stream/container-derived technical properties.
+///
+/// MP3 behavior:
+/// 1. Try the fast MPEG-header probe.
+/// 2. If it returns incomplete properties, ask Symphonia to fill gaps.
+/// 3. If Symphonia fails but the fast probe succeeded, preserve the fast result.
+/// 4. If both probes fail, return a combined error.
+pub fn probe_audio_properties(path: &Path) -> Result<AudioProperties, String> {
+    if !is_mp3_path(path) {
+        return probe_generic_audio_properties(path);
+    }
+
+    match probe_mp3_properties(path) {
+        Ok(mp3_properties) if !mp3_properties.needs_fallback() => Ok(mp3_properties),
+
+        Ok(mp3_properties) => match probe_generic_audio_properties(path) {
+            Ok(generic_properties) => {
+                Ok(mp3_properties.with_missing_filled_from(generic_properties))
+            }
+            Err(_) => Ok(mp3_properties),
+        },
+
+        Err(mp3_error) => match probe_generic_audio_properties(path) {
+            Ok(generic_properties) => Ok(generic_properties),
+            Err(generic_error) => Err(format!(
+                "MP3 probe failed: {mp3_error}; generic probe failed: {generic_error}"
+            )),
+        },
+    }
+}
+
+/// Return the estimated number of MP3 audio bytes after excluding common
+/// leading ID3v2 and trailing ID3v1 tags.
+///
+/// This supports fallback average-bitrate calculation when duration is known
+/// from another source, such as TLEN.
 pub fn mp3_audio_bytes_excluding_id3(path: &Path) -> Option<u64> {
     if !is_mp3_path(path) {
         return None;
     }
 
-    let mut f = File::open(path).ok()?;
-    let total = f.metadata().ok()?.len();
+    let mut file = File::open(path).ok()?;
+    let total_size = file.metadata().ok()?.len();
 
-    let start_skip = id3v2_total_size(&mut f).unwrap_or(0);
-    let end_skip = id3v1_size(&mut f, total).unwrap_or(0);
+    let leading_tag_size = id3v2_total_size(&mut file).unwrap_or(0);
+    let trailing_tag_size = id3v1_size(&mut file, total_size).unwrap_or(0);
 
-    total.checked_sub(start_skip + end_skip)
+    total_size.checked_sub(leading_tag_size + trailing_tag_size)
 }
 
-/// Average bitrate in kbps from audio bytes and duration.
-/// kbps = (bytes * 8) / ms
+/// Calculate average bitrate in decimal kilobits per second.
+///
+/// Because one bit per millisecond equals one decimal kilobit per second:
+///
+/// `kbps = (audio_bytes * 8) / duration_ms`
 pub fn average_bitrate_kbps_from_audio_bytes(audio_bytes: u64, duration_ms: u32) -> Option<u32> {
     if audio_bytes == 0 || duration_ms == 0 {
         return None;
@@ -68,110 +113,122 @@ pub fn average_bitrate_kbps_from_audio_bytes(audio_bytes: u64, duration_ms: u32)
     let bits = u128::from(audio_bytes) * 8;
     let kbps = bits / u128::from(duration_ms);
 
-    u32::try_from(kbps).ok().filter(|v| *v > 0)
+    u32::try_from(kbps).ok().filter(|value| *value > 0)
 }
 
 fn is_mp3_path(path: &Path) -> bool {
     path.extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.eq_ignore_ascii_case("mp3"))
-        .unwrap_or(false)
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp3"))
 }
 
 fn probe_mp3_properties(path: &Path) -> Result<AudioProperties, String> {
-    let mut f = File::open(path).map_err(|e| format!("Open failed: {e}"))?;
-    let total_size = f
-        .metadata()
-        .map_err(|e| format!("Metadata failed: {e}"))?
-        .len();
+    let mut file = File::open(path).map_err(|e| format!("Open failed: {e}"))?;
 
-    let audio_start = id3v2_total_size(&mut f).unwrap_or(0);
+    let audio_start = id3v2_total_size(&mut file).unwrap_or(0);
 
-    f.seek(SeekFrom::Start(audio_start))
+    file.seek(SeekFrom::Start(audio_start))
         .map_err(|e| format!("Seek failed: {e}"))?;
 
-    let mut scan_buf = vec![0u8; MP3_SCAN_LIMIT];
-    let scan_len = f
-        .read(&mut scan_buf)
+    let mut scan_buffer = vec![0_u8; MP3_SCAN_LIMIT];
+    let scan_length = file
+        .read(&mut scan_buffer)
         .map_err(|e| format!("Read failed: {e}"))?;
-    scan_buf.truncate(scan_len);
+    scan_buffer.truncate(scan_length);
 
-    let frame_rel =
-        find_first_mpeg_frame(&scan_buf).ok_or_else(|| "No MPEG frame found.".to_string())?;
-    let frame_abs = audio_start + frame_rel as u64;
+    let frame_relative_offset =
+        find_first_mpeg_frame(&scan_buffer).ok_or_else(|| "No MPEG frame found.".to_string())?;
 
-    f.seek(SeekFrom::Start(frame_abs))
+    let frame_absolute_offset = audio_start + frame_relative_offset as u64;
+
+    file.seek(SeekFrom::Start(frame_absolute_offset))
         .map_err(|e| format!("Seek to frame failed: {e}"))?;
 
-    let mut frame_buf = vec![0u8; FRAME_READ_LIMIT];
-    let frame_len = f
-        .read(&mut frame_buf)
+    let mut frame_buffer = vec![0_u8; FRAME_READ_LIMIT];
+    let frame_length = file
+        .read(&mut frame_buffer)
         .map_err(|e| format!("Frame read failed: {e}"))?;
-    frame_buf.truncate(frame_len);
+    frame_buffer.truncate(frame_length);
 
-    if frame_buf.len() < 4 {
-        return Err("Frame too short.".into());
+    if frame_buffer.len() < 4 {
+        return Err("Frame too short.".to_string());
     }
 
-    let header = Mp3FrameHeader::parse([frame_buf[0], frame_buf[1], frame_buf[2], frame_buf[3]])
-        .ok_or_else(|| "Invalid MPEG frame header.".to_string())?;
+    let header = Mp3FrameHeader::parse([
+        frame_buffer[0],
+        frame_buffer[1],
+        frame_buffer[2],
+        frame_buffer[3],
+    ])
+    .ok_or_else(|| "Invalid MPEG frame header.".to_string())?;
 
-    let mut props = AudioProperties {
+    let mut properties = AudioProperties {
         duration_ms: None,
         bitrate_kbps: Some(header.bitrate_kbps),
         sample_rate_hz: Some(header.sample_rate_hz),
         channels: Some(header.channels()),
     };
 
-    if let Some(xing) = parse_xing_or_info(&frame_buf, &header) {
+    if let Some(xing) = parse_xing_or_info(&frame_buffer, &header) {
         let duration_ms = duration_ms_from_frame_count(
             xing.frames,
             header.samples_per_frame(),
             header.sample_rate_hz,
         );
-        let bitrate_kbps = xing.bytes.and_then(|bytes| {
-            duration_ms.and_then(|ms| average_bitrate_kbps_from_audio_bytes(bytes.into(), ms))
+
+        let average_bitrate = xing.bytes.and_then(|bytes| {
+            duration_ms.and_then(|duration| {
+                average_bitrate_kbps_from_audio_bytes(u64::from(bytes), duration)
+            })
         });
 
-        props.duration_ms = duration_ms;
-        props.bitrate_kbps = bitrate_kbps.or(props.bitrate_kbps);
-        return Ok(props);
+        properties.duration_ms = duration_ms;
+        properties.bitrate_kbps = average_bitrate.or(properties.bitrate_kbps);
+
+        return Ok(properties);
     }
 
-    if let Some(vbri) = parse_vbri(&frame_buf, &header) {
+    if let Some(vbri) = parse_vbri(&frame_buffer, &header) {
         let duration_ms = duration_ms_from_frame_count(
             Some(vbri.frames),
             header.samples_per_frame(),
             header.sample_rate_hz,
         );
-        let bitrate_kbps =
-            duration_ms.and_then(|ms| average_bitrate_kbps_from_audio_bytes(vbri.bytes.into(), ms));
 
-        props.duration_ms = duration_ms;
-        props.bitrate_kbps = bitrate_kbps.or(props.bitrate_kbps);
-        return Ok(props);
+        let average_bitrate = duration_ms.and_then(|duration| {
+            average_bitrate_kbps_from_audio_bytes(u64::from(vbri.bytes), duration)
+        });
+
+        properties.duration_ms = duration_ms;
+        properties.bitrate_kbps = average_bitrate.or(properties.bitrate_kbps);
+
+        return Ok(properties);
     }
 
-    // No Xing/VBRI: keep exact first-frame bitrate for MP3.
-    // Duration is left None here and may be filled by TLEN or other fallback logic.
-    let _ = total_size; // reserved for future heuristics
-    Ok(props)
+    Ok(properties)
 }
 
 fn probe_generic_audio_properties(path: &Path) -> Result<AudioProperties, String> {
     let file = File::open(path).map_err(|e| format!("Open failed: {e}"))?;
-    let mss = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
+
+    let media_source = MediaSourceStream::new(Box::new(file), MediaSourceStreamOptions::default());
 
     let mut hint = Hint::new();
-    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        hint.with_extension(ext);
+
+    if let Some(extension) = path.extension().and_then(|extension| extension.to_str()) {
+        hint.with_extension(extension);
     }
 
-    let mut format_opts = FormatOptions::default();
-    format_opts.enable_gapless = true;
+    let mut format_options = FormatOptions::default();
+    format_options.enable_gapless = true;
 
     let probed = symphonia::default::get_probe()
-        .format(&hint, mss, &format_opts, &MetadataOptions::default())
+        .format(
+            &hint,
+            media_source,
+            &format_options,
+            &MetadataOptions::default(),
+        )
         .map_err(|e| format!("Format probe failed: {e}"))?;
 
     let format = probed.format;
@@ -180,73 +237,84 @@ fn probe_generic_audio_properties(path: &Path) -> Result<AudioProperties, String
         .default_track()
         .ok_or_else(|| "No supported audio track found.".to_string())?;
 
-    let params = &track.codec_params;
+    let parameters = &track.codec_params;
 
-    let duration_ms = duration_from_params(params.time_base, params.n_frames);
+    let duration_ms = duration_from_params(parameters.time_base, parameters.n_frames);
 
-    let sample_rate_hz = params.sample_rate;
-
-    let channels = params
+    let channels = parameters
         .channels
-        .map(|chs| chs.count())
+        .map(|channels| channels.count())
         .and_then(|count| u8::try_from(count).ok())
         .filter(|count| *count > 0);
 
     Ok(AudioProperties {
         duration_ms,
         bitrate_kbps: None,
-        sample_rate_hz,
+        sample_rate_hz: parameters.sample_rate,
         channels,
     })
 }
 
-fn id3v2_total_size(f: &mut File) -> Option<u64> {
-    f.seek(SeekFrom::Start(0)).ok()?;
+fn id3v2_total_size(file: &mut File) -> Option<u64> {
+    file.seek(SeekFrom::Start(0)).ok()?;
 
-    let mut head = [0u8; 10];
-    f.read_exact(&mut head).ok()?;
+    let mut header = [0_u8; 10];
+    file.read_exact(&mut header).ok()?;
 
-    if &head[0..3] != b"ID3" {
+    if &header[0..3] != b"ID3" {
         return Some(0);
     }
 
-    // Syncsafe size bytes must have top bit clear.
-    if head[6..10].iter().any(|b| b & 0x80 != 0) {
+    if header[6..10].iter().any(|byte| byte & 0x80 != 0) {
         return None;
     }
 
-    let tag_size = syncsafe_u32([head[6], head[7], head[8], head[9]]) as u64;
-    let footer_present = (head[5] & 0x10) != 0;
+    let tag_size = u64::from(syncsafe_u32([header[6], header[7], header[8], header[9]]));
+
+    let footer_present = header[3] == 4 && (header[5] & 0x10) != 0;
 
     Some(10 + tag_size + if footer_present { 10 } else { 0 })
 }
 
-fn id3v1_size(f: &mut File, total_size: u64) -> Option<u64> {
+fn id3v1_size(file: &mut File, total_size: u64) -> Option<u64> {
     if total_size < 128 {
         return Some(0);
     }
 
-    f.seek(SeekFrom::End(-128)).ok()?;
+    file.seek(SeekFrom::End(-128)).ok()?;
 
-    let mut tag = [0u8; 3];
-    f.read_exact(&mut tag).ok()?;
+    let mut marker = [0_u8; 3];
+    file.read_exact(&mut marker).ok()?;
 
-    if &tag == b"TAG" { Some(128) } else { Some(0) }
+    if &marker == b"TAG" {
+        Some(128)
+    } else {
+        Some(0)
+    }
 }
 
-fn syncsafe_u32(b: [u8; 4]) -> u32 {
-    ((b[0] as u32) << 21) | ((b[1] as u32) << 14) | ((b[2] as u32) << 7) | (b[3] as u32)
+fn syncsafe_u32(bytes: [u8; 4]) -> u32 {
+    (u32::from(bytes[0]) << 21)
+        | (u32::from(bytes[1]) << 14)
+        | (u32::from(bytes[2]) << 7)
+        | u32::from(bytes[3])
 }
 
-fn find_first_mpeg_frame(buf: &[u8]) -> Option<usize> {
-    if buf.len() < 4 {
+fn find_first_mpeg_frame(buffer: &[u8]) -> Option<usize> {
+    if buffer.len() < 4 {
         return None;
     }
 
-    for i in 0..=(buf.len() - 4) {
-        let header = [buf[i], buf[i + 1], buf[i + 2], buf[i + 3]];
+    for offset in 0..=(buffer.len() - 4) {
+        let header = [
+            buffer[offset],
+            buffer[offset + 1],
+            buffer[offset + 2],
+            buffer[offset + 3],
+        ];
+
         if Mp3FrameHeader::parse(header).is_some() {
-            return Some(i);
+            return Some(offset);
         }
     }
 
@@ -270,10 +338,11 @@ struct Mp3FrameHeader {
 }
 
 impl Mp3FrameHeader {
-    fn parse(h: [u8; 4]) -> Option<Self> {
-        let bits = u32::from_be_bytes(h);
+    fn parse(header: [u8; 4]) -> Option<Self> {
+        let bits = u32::from_be_bytes(header);
 
         let sync = (bits >> 21) & 0x7ff;
+
         if sync != 0x7ff {
             return None;
         }
@@ -292,7 +361,6 @@ impl Mp3FrameHeader {
             _ => return None,
         };
 
-        // We only support Layer III here.
         if layer_bits != 0b01 {
             return None;
         }
@@ -306,6 +374,7 @@ impl Mp3FrameHeader {
         }
 
         let bitrate_kbps = bitrate_kbps_for_layer3(version, bitrate_index)?;
+
         let sample_rate_hz = sample_rate_hz(version, sample_rate_index)?;
 
         Some(Self {
@@ -346,35 +415,35 @@ impl Mp3FrameHeader {
     }
 
     fn vbri_offset(self) -> usize {
-        // VBRI is stored 32 bytes after the MPEG audio header.
         4 + 32
     }
 }
 
-fn bitrate_kbps_for_layer3(version: MpegVersion, idx: u8) -> Option<u32> {
-    let table_v1: [u32; 16] = [
+fn bitrate_kbps_for_layer3(version: MpegVersion, index: u8) -> Option<u32> {
+    const V1: [u32; 16] = [
         0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0,
     ];
-    let table_v2: [u32; 16] = [
+
+    const V2: [u32; 16] = [
         0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, 0,
     ];
 
-    let v = match version {
-        MpegVersion::V1 => table_v1[idx as usize],
-        MpegVersion::V2 | MpegVersion::V25 => table_v2[idx as usize],
+    let bitrate = match version {
+        MpegVersion::V1 => V1[index as usize],
+        MpegVersion::V2 | MpegVersion::V25 => V2[index as usize],
     };
 
-    if v == 0 { None } else { Some(v) }
+    (bitrate > 0).then_some(bitrate)
 }
 
-fn sample_rate_hz(version: MpegVersion, idx: u8) -> Option<u32> {
-    let base = match version {
+fn sample_rate_hz(version: MpegVersion, index: u8) -> Option<u32> {
+    let rates = match version {
         MpegVersion::V1 => [44_100, 48_000, 32_000],
         MpegVersion::V2 => [22_050, 24_000, 16_000],
         MpegVersion::V25 => [11_025, 12_000, 8_000],
     };
 
-    base.get(idx as usize).copied()
+    rates.get(index as usize).copied()
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -384,30 +453,33 @@ struct XingInfo {
 }
 
 fn parse_xing_or_info(frame: &[u8], header: &Mp3FrameHeader) -> Option<XingInfo> {
-    let off = header.xing_offset();
-    if frame.len() < off + 8 {
+    let offset = header.xing_offset();
+
+    if frame.len() < offset + 8 {
         return None;
     }
 
-    let sig = &frame[off..off + 4];
-    if sig != b"Xing" && sig != b"Info" {
+    let signature = &frame[offset..offset + 4];
+
+    if signature != b"Xing" && signature != b"Info" {
         return None;
     }
 
-    let flags = u32::from_be_bytes(frame[off + 4..off + 8].try_into().ok()?);
-    let mut cursor = off + 8;
+    let flags = u32::from_be_bytes(frame[offset + 4..offset + 8].try_into().ok()?);
+
+    let mut cursor = offset + 8;
 
     let frames = if flags & 0x1 != 0 {
-        let v = u32::from_be_bytes(frame.get(cursor..cursor + 4)?.try_into().ok()?);
+        let value = u32::from_be_bytes(frame.get(cursor..cursor + 4)?.try_into().ok()?);
         cursor += 4;
-        Some(v)
+        Some(value)
     } else {
         None
     };
 
     let bytes = if flags & 0x2 != 0 {
-        let v = u32::from_be_bytes(frame.get(cursor..cursor + 4)?.try_into().ok()?);
-        Some(v)
+        let value = u32::from_be_bytes(frame.get(cursor..cursor + 4)?.try_into().ok()?);
+        Some(value)
     } else {
         None
     };
@@ -422,17 +494,18 @@ struct VbriInfo {
 }
 
 fn parse_vbri(frame: &[u8], header: &Mp3FrameHeader) -> Option<VbriInfo> {
-    let off = header.vbri_offset();
-    if frame.len() < off + 18 {
+    let offset = header.vbri_offset();
+
+    if frame.len() < offset + 18 {
         return None;
     }
 
-    if &frame[off..off + 4] != b"VBRI" {
+    if &frame[offset..offset + 4] != b"VBRI" {
         return None;
     }
 
-    let bytes = u32::from_be_bytes(frame.get(off + 10..off + 14)?.try_into().ok()?);
-    let frames = u32::from_be_bytes(frame.get(off + 14..off + 18)?.try_into().ok()?);
+    let bytes = u32::from_be_bytes(frame.get(offset + 10..offset + 14)?.try_into().ok()?);
+    let frames = u32::from_be_bytes(frame.get(offset + 14..offset + 18)?.try_into().ok()?);
 
     Some(VbriInfo { bytes, frames })
 }
@@ -443,29 +516,30 @@ fn duration_ms_from_frame_count(
     sample_rate_hz: u32,
 ) -> Option<u32> {
     let frames = u128::from(frames?);
-    let spf = u128::from(samples_per_frame);
-    let sr = u128::from(sample_rate_hz);
+    let samples_per_frame = u128::from(samples_per_frame);
+    let sample_rate = u128::from(sample_rate_hz);
 
-    if sr == 0 {
+    if sample_rate == 0 {
         return None;
     }
 
-    let total_samples = frames * spf;
-    let ms = (total_samples * 1000) / sr;
+    let total_samples = frames * samples_per_frame;
+    let milliseconds = (total_samples * 1000) / sample_rate;
 
-    u32::try_from(ms).ok().filter(|v| *v > 0)
+    u32::try_from(milliseconds).ok().filter(|value| *value > 0)
 }
 
-fn duration_from_params(time_base: Option<TimeBase>, n_frames: Option<u64>) -> Option<u32> {
-    let tb = time_base?;
-    let frames = n_frames?;
-    let t = tb.calc_time(frames);
-    let ms = time_to_ms(t);
+fn duration_from_params(time_base: Option<TimeBase>, frame_count: Option<u64>) -> Option<u32> {
+    let time_base = time_base?;
+    let frame_count = frame_count?;
 
-    u32::try_from(ms).ok().filter(|ms| *ms > 0)
+    let milliseconds = time_to_ms(time_base.calc_time(frame_count));
+
+    u32::try_from(milliseconds).ok().filter(|value| *value > 0)
 }
 
-fn time_to_ms(t: Time) -> u64 {
-    let ms = (t.seconds as f64 * 1000.0) + (t.frac * 1000.0);
-    ms.round() as u64
+fn time_to_ms(time: Time) -> u64 {
+    let milliseconds = (time.seconds as f64 * 1000.0) + (time.frac * 1000.0);
+
+    milliseconds.round() as u64
 }

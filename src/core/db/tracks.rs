@@ -158,14 +158,6 @@ impl Db {
         Ok(())
     }
 
-    /// Backward-compatible alias retained for existing scan/save callers.
-    ///
-    /// The operation is technically an update because reconciliation creates
-    /// each database row before hydration occurs.
-    pub fn upsert_track_rows_metadata(&mut self, rows: &[TrackRow]) -> Result<(), String> {
-        self.update_track_rows_metadata(rows)
-    }
-
     pub fn load_visible_tracks(&self) -> Result<Vec<TrackRow>, String> {
         self.load_tracks_where("present = 1 AND hidden = 0")
     }

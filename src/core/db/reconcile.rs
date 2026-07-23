@@ -25,7 +25,7 @@ impl Db {
     ///
     /// Metadata must be rehydrated when a file is:
     /// - newly discovered
-    /// - changed according to its `(mtime, size)` pair
+    /// - changed according to its '(mtime, size)' pair
     /// - cached with an older metadata representation
     ///
     /// A failed hydration does not stamp the current cache version, so the

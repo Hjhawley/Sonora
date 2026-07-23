@@ -3,7 +3,7 @@
 //! SQLite persistence boundary for Sonora.
 //!
 //! This module owns:
-//! - the Connection-backed `Db` type
+//! - the Connection-backed 'Db' type
 //! - database opening and schema initialization
 //! - submodule wiring for roots, reconciliation, and track persistence
 //! - small persisted application-state values

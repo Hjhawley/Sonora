@@ -1,16 +1,24 @@
 //! core/library.rs
 //!
-//! Filesystem discovery (read-only).
-//! - It only walks folders and returns candidate file paths + lightweight file facts.
-//! - It DOES NOT read tags.
-//! - It DOES NOT decode audio.
-//! - It DOES NOT know about the GUI.
+//! Read-only filesystem discovery.
+//!
+//! This module:
+//! - walks configured directory trees
+//! - identifies supported audio files
+//! - collects lightweight filesystem facts
+//!
+//! Discovery must either complete successfully or return an error. Permission
+//! failures are not silently skipped because reconciliation assumes that a
+//! successful discovery result represents the complete scanned filesystem
+//! state.
 
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Lightweight filesystem facts discovered during scan.
-/// These are cheap to collect and useful for DB-based incremental scans.
+/// Lightweight filesystem facts collected during discovery.
+///
+/// 'mtime_unix' stores nanoseconds since the Unix epoch. The field name is
+/// retained for compatibility with the existing reconciliation boundary.
 #[derive(Debug, Clone)]
 pub struct DiscoveredFile {
     pub path: PathBuf,
@@ -18,129 +26,123 @@ pub struct DiscoveredFile {
     pub size: Option<u64>,
 }
 
-/// Recursively scan a directory tree and return all supported audio files
-/// with lightweight filesystem facts.
-/// - Root must be a directory (else Err).
-/// - Non-fatal walk errors are skipped (PermissionDenied, NotFound).
-/// - Symlinked directories are NOT traversed (prevents cycles).
-/// - Symlinked files ARE allowed if they resolve to a file.
-/// - Output is sorted by full path.
-
-/// Path identity is currently lexical/path-based. A symlinked file and its
-/// real path may therefore appear as separate library entries.
+/// Recursively scan a directory tree for supported audio files.
+///
+/// Behavior:
+/// - the root must exist and resolve to a directory
+/// - permission and traversal failures abort the scan
+/// - entries that disappear during traversal are skipped
+/// - symlinked directories are not traversed
+/// - symlinked files are included when they resolve to supported files
+/// - path identity is lexical rather than canonical
+/// - output is sorted by full path
+///
+/// Because identity is lexical, a file reached through both its real path and
+/// a symlink may appear as two distinct library entries.
 pub fn scan_audio_files(root: &Path) -> Result<Vec<DiscoveredFile>, String> {
-    if !root.is_dir() {
+    let root_metadata = std::fs::metadata(root).map_err(|e| format!("{}: {e}", root.display()))?;
+
+    if !root_metadata.is_dir() {
         return Err(format!("Not a directory: {}", root.display()));
     }
 
-    let mut out: Vec<DiscoveredFile> = Vec::new();
-    let mut stack: Vec<PathBuf> = vec![root.to_path_buf()];
+    let mut discovered = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
 
-    while let Some(dir) = stack.pop() {
-        let entries: std::fs::ReadDir = match std::fs::read_dir(&dir) {
-            Ok(it) => it,
-            Err(e) => {
-                if is_nonfatal_walk_error(&e) {
-                    continue;
-                }
-                return Err(format!("{}: {e}", dir.display()));
-            }
-        };
+    while let Some(directory) = stack.pop() {
+        // A directory failure makes the discovery result incomplete, so do
+        // not continue into reconciliation with a partial result.
+        let entries =
+            std::fs::read_dir(&directory).map_err(|e| format!("{}: {e}", directory.display()))?;
 
-        for entry_res in entries {
-            let entry: std::fs::DirEntry = match entry_res {
-                Ok(e) => e,
-                Err(e) => {
-                    if is_nonfatal_walk_error(&e) {
-                        continue;
-                    }
-                    return Err(format!("{}: {e}", dir.display()));
+        for entry_result in entries {
+            let entry = match entry_result {
+                Ok(entry) => entry,
+                Err(error) if is_disappeared_entry(&error) => continue,
+                Err(error) => {
+                    return Err(format!("{}: {error}", directory.display()));
                 }
             };
 
-            let path: PathBuf = entry.path();
+            let path = entry.path();
 
-            // Prefer entry.file_type() because it does not follow symlinks.
-            let ft: std::fs::FileType = match entry.file_type() {
-                Ok(ft) => ft,
-                Err(e) => {
-                    if is_nonfatal_walk_error(&e) {
-                        continue;
-                    }
-                    return Err(format!("{}: {e}", path.display()));
+            // 'file_type' does not follow symlinks.
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(error) if is_disappeared_entry(&error) => continue,
+                Err(error) => {
+                    return Err(format!("{}: {error}", path.display()));
                 }
             };
 
-            if ft.is_dir() {
+            if file_type.is_dir() {
                 stack.push(path);
                 continue;
             }
 
-            // If it's a symlink, follow it ONLY to decide if it's a file we should include.
-            if ft.is_symlink() {
-                match std::fs::metadata(&path) {
-                    Ok(md) => {
-                        if md.is_file() && is_supported_audio_file(&path) {
-                            out.push(discovered_from_metadata(path, &md));
-                        }
+            if file_type.is_symlink() {
+                let metadata = match std::fs::metadata(&path) {
+                    Ok(metadata) => metadata,
+                    Err(error) if is_disappeared_entry(&error) => continue,
+                    Err(error) => {
+                        return Err(format!("{}: {error}", path.display()));
                     }
-                    Err(e) => {
-                        if is_nonfatal_walk_error(&e) {
-                            continue;
-                        }
-                        return Err(format!("{}: {e}", path.display()));
-                    }
+                };
+
+                if metadata.is_file() && is_supported_audio_file(&path) {
+                    discovered.push(discovered_from_metadata(path, &metadata));
                 }
+
+                // Symlinked directories are intentionally not traversed.
                 continue;
             }
 
-            if ft.is_file() && is_supported_audio_file(&path) {
-                match entry.metadata() {
-                    Ok(md) => out.push(discovered_from_metadata(path, &md)),
-                    Err(e) => {
-                        if is_nonfatal_walk_error(&e) {
-                            continue;
-                        }
-                        return Err(format!("{}: {e}", path.display()));
+            if file_type.is_file() && is_supported_audio_file(&path) {
+                let metadata = match entry.metadata() {
+                    Ok(metadata) => metadata,
+                    Err(error) if is_disappeared_entry(&error) => continue,
+                    Err(error) => {
+                        return Err(format!("{}: {error}", path.display()));
                     }
-                }
+                };
+
+                discovered.push(discovered_from_metadata(path, &metadata));
             }
         }
     }
 
-    out.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(out)
+    discovered.sort_by(|a, b| a.path.cmp(&b.path));
+
+    Ok(discovered)
 }
 
-fn discovered_from_metadata(path: PathBuf, md: &std::fs::Metadata) -> DiscoveredFile {
-    let mtime_unix = md
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
-        .map(|d| d.as_secs() as i64);
-
-    let size = Some(md.len());
+fn discovered_from_metadata(path: PathBuf, metadata: &std::fs::Metadata) -> DiscoveredFile {
+    let mtime_unix = metadata.modified().ok().and_then(system_time_to_unix_nanos);
 
     DiscoveredFile {
         path,
         mtime_unix,
-        size,
+        size: Some(metadata.len()),
     }
 }
 
-/// Treat these as "normal" during scans (skip and keep going).
-fn is_nonfatal_walk_error(e: &std::io::Error) -> bool {
-    matches!(
-        e.kind(),
-        std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::NotFound
-    )
+fn system_time_to_unix_nanos(time: SystemTime) -> Option<i64> {
+    let elapsed = time.duration_since(UNIX_EPOCH).ok()?;
+    i64::try_from(elapsed.as_nanos()).ok()
 }
 
-/// True if the file extension matches a supported audio format.
-/// Currently only MP3 is supported. Plan to support FLAC and m4a later.
+/// An entry can legitimately disappear between 'read_dir' and inspection.
+/// Skipping that entry still represents its final observed state accurately.
+fn is_disappeared_entry(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::NotFound
+}
+
+/// Return whether a path has a currently supported audio extension.
+///
+/// Sonora currently supports MP3. FLAC and M4A support can be added here when
+/// their complete read/write behavior is implemented elsewhere.
 fn is_supported_audio_file(path: &Path) -> bool {
     path.extension()
-        .and_then(|s| s.to_str())
-        .map(|ext| ext.eq_ignore_ascii_case("mp3"))
-        .unwrap_or(false)
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("mp3"))
 }
