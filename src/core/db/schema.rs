@@ -2,17 +2,18 @@
 //!
 //! SQLite schema initialization and lightweight additive migrations.
 //!
-//! The database stores enough normalized metadata to reconstruct `TrackRow`
+//! The database stores enough normalized metadata to reconstruct 'TrackRow'
 //! values without reading every media file during normal startup.
 //!
-//! `TRACK_METADATA_CACHE_VERSION` identifies the current cached representation.
+//! 'TRACK_METADATA_CACHE_VERSION' identifies the current cached representation.
 //! Increment it whenever changes to tag reading, probing, normalization, or the
 //! cached schema require existing files to be rehydrated from disk.
 
 use super::Db;
 
-/// Version 2 separates GRP1/Grouping from TIT1/Content Group.
-pub(super) const TRACK_METADATA_CACHE_VERSION: i64 = 2;
+/// Version 3 retains the original textual representation of track and disc
+/// counters so leading zeroes survive cache loads and metadata round-trips.
+pub(super) const TRACK_METADATA_CACHE_VERSION: i64 = 3;
 
 impl Db {
     pub(super) fn init_schema(&self) -> Result<(), String> {
@@ -59,6 +60,11 @@ impl Db {
         self.ensure_column("tracks", "disc_no", "INTEGER")?;
         self.ensure_column("tracks", "disc_total", "INTEGER")?;
 
+        self.ensure_column("tracks", "track_no_text", "TEXT")?;
+        self.ensure_column("tracks", "track_total_text", "TEXT")?;
+        self.ensure_column("tracks", "disc_no_text", "TEXT")?;
+        self.ensure_column("tracks", "disc_total_text", "TEXT")?;
+
         self.ensure_column("tracks", "release_date", "TEXT")?;
         self.ensure_column("tracks", "year", "INTEGER")?;
         self.ensure_column("tracks", "genre", "TEXT")?;
@@ -99,15 +105,12 @@ impl Db {
         self.ensure_column("tracks", "play_count", "INTEGER")?;
         self.ensure_column("tracks", "compilation", "INTEGER")?;
 
-        // Version of the cached metadata representation last successfully
-        // written for this row. Older versions are rehydrated during scanning.
         self.ensure_column(
             "tracks",
             "metadata_cache_version",
             "INTEGER NOT NULL DEFAULT 0",
         )?;
 
-        // Indexes must be created after migrations add their columns.
         self.conn
             .execute_batch(
                 r#"

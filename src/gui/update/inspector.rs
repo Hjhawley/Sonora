@@ -94,10 +94,6 @@ pub(crate) fn clear_inspector(state: &mut Sonora) {
     state.refresh_inspector_dirty();
 }
 
-/// Load inspector fields from the current selection.
-/// - Works for single-track and multi-track selection.
-/// - Writes '<mixed>' into fields that disagree across selected tracks.
-/// - Clears the prior edit set because the draft now represents a fresh load.
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     reset_inspector_artwork_state(state);
 
@@ -132,6 +128,12 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
 
     fn opt_u32(value: Option<u32>) -> String {
         value.map(|number| number.to_string()).unwrap_or_default()
+    }
+
+    fn counter_text(raw: &Option<String>, numeric: Option<u32>) -> String {
+        raw.clone()
+            .or_else(|| numeric.map(|number| number.to_string()))
+            .unwrap_or_default()
     }
 
     fn apply_field(
@@ -184,22 +186,42 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
 
     let track_numbers: Vec<String> = indices
         .iter()
-        .map(|&index| opt_u32(state.tracks[index].track_no))
+        .map(|&index| {
+            counter_text(
+                &state.tracks[index].track_no_text,
+                state.tracks[index].track_no,
+            )
+        })
         .collect();
 
     let track_totals: Vec<String> = indices
         .iter()
-        .map(|&index| opt_u32(state.tracks[index].track_total))
+        .map(|&index| {
+            counter_text(
+                &state.tracks[index].track_total_text,
+                state.tracks[index].track_total,
+            )
+        })
         .collect();
 
     let disc_numbers: Vec<String> = indices
         .iter()
-        .map(|&index| opt_u32(state.tracks[index].disc_no))
+        .map(|&index| {
+            counter_text(
+                &state.tracks[index].disc_no_text,
+                state.tracks[index].disc_no,
+            )
+        })
         .collect();
 
     let disc_totals: Vec<String> = indices
         .iter()
-        .map(|&index| opt_u32(state.tracks[index].disc_total))
+        .map(|&index| {
+            counter_text(
+                &state.tracks[index].disc_total_text,
+                state.tracks[index].disc_total,
+            )
+        })
         .collect();
 
     let release_dates: Vec<String> = indices

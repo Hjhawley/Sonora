@@ -22,10 +22,10 @@ impl Db {
             return Ok(());
         }
 
-        let tx = self.conn.transaction().map_err(|error| error.to_string())?;
+        let transaction = self.conn.transaction().map_err(|error| error.to_string())?;
 
         {
-            let mut update = tx
+            let mut update = transaction
                 .prepare(
                     r#"
                     UPDATE tracks
@@ -35,43 +35,54 @@ impl Db {
                         album = ?4,
                         album_artist = ?5,
                         composer = ?6,
+
                         track_no = ?7,
                         track_total = ?8,
                         disc_no = ?9,
                         disc_total = ?10,
-                        release_date = ?11,
-                        year = ?12,
-                        genre = ?13,
-                        grouping = ?14,
-                        content_group = ?15,
-                        comment_text = ?16,
-                        lyrics = ?17,
-                        lyricist = ?18,
-                        conductor = ?19,
-                        remixer = ?20,
-                        publisher = ?21,
-                        subtitle = ?22,
-                        bpm = ?23,
-                        key_text = ?24,
-                        mood = ?25,
-                        language = ?26,
-                        isrc = ?27,
-                        encoder_settings = ?28,
-                        encoded_by = ?29,
-                        copyright = ?30,
-                        artwork_count = ?31,
-                        title_sort = ?32,
-                        artist_sort = ?33,
-                        album_sort = ?34,
-                        album_artist_sort = ?35,
-                        duration_ms = ?36,
-                        bitrate_kbps = ?37,
-                        sample_rate_hz = ?38,
-                        channels = ?39,
-                        rating = ?40,
-                        play_count = ?41,
-                        compilation = ?42,
-                        metadata_cache_version = ?43
+
+                        track_no_text = ?11,
+                        track_total_text = ?12,
+                        disc_no_text = ?13,
+                        disc_total_text = ?14,
+
+                        release_date = ?15,
+                        year = ?16,
+                        genre = ?17,
+
+                        grouping = ?18,
+                        content_group = ?19,
+                        comment_text = ?20,
+                        lyrics = ?21,
+                        lyricist = ?22,
+                        conductor = ?23,
+                        remixer = ?24,
+                        publisher = ?25,
+                        subtitle = ?26,
+                        bpm = ?27,
+                        key_text = ?28,
+                        mood = ?29,
+                        language = ?30,
+                        isrc = ?31,
+                        encoder_settings = ?32,
+                        encoded_by = ?33,
+                        copyright = ?34,
+
+                        artwork_count = ?35,
+                        title_sort = ?36,
+                        artist_sort = ?37,
+                        album_sort = ?38,
+                        album_artist_sort = ?39,
+
+                        duration_ms = ?40,
+                        bitrate_kbps = ?41,
+                        sample_rate_hz = ?42,
+                        channels = ?43,
+
+                        rating = ?44,
+                        play_count = ?45,
+                        compilation = ?46,
+                        metadata_cache_version = ?47
                     WHERE id = ?1
                     "#,
                 )
@@ -112,6 +123,10 @@ impl Db {
                         row.track_total.map(i64::from),
                         row.disc_no.map(i64::from),
                         row.disc_total.map(i64::from),
+                        row.track_no_text.as_deref(),
+                        row.track_total_text.as_deref(),
+                        row.disc_no_text.as_deref(),
+                        row.disc_total_text.as_deref(),
                         row.release_date.as_deref(),
                         row.year,
                         row.genre.as_deref(),
@@ -158,7 +173,7 @@ impl Db {
             }
         }
 
-        tx.commit().map_err(|error| error.to_string())?;
+        transaction.commit().map_err(|error| error.to_string())?;
 
         Ok(())
     }
@@ -186,13 +201,21 @@ impl Db {
                 album,
                 album_artist,
                 composer,
+
                 track_no,
                 track_total,
                 disc_no,
                 disc_total,
+
+                track_no_text,
+                track_total_text,
+                disc_no_text,
+                disc_total_text,
+
                 release_date,
                 year,
                 genre,
+
                 grouping,
                 content_group,
                 comment_text,
@@ -210,15 +233,18 @@ impl Db {
                 encoder_settings,
                 encoded_by,
                 copyright,
+
                 artwork_count,
                 title_sort,
                 artist_sort,
                 album_sort,
                 album_artist_sort,
+
                 duration_ms,
                 bitrate_kbps,
                 sample_rate_hz,
                 channels,
+
                 rating,
                 play_count,
                 compilation
@@ -262,41 +288,47 @@ impl Db {
             disc_no: optional_u32(row, 9)?,
             disc_total: optional_u32(row, 10)?,
 
-            release_date: row.get(11)?,
-            year: row.get(12)?,
-            genre: row.get(13)?,
+            track_no_text: row.get(11)?,
+            track_total_text: row.get(12)?,
+            disc_no_text: row.get(13)?,
+            disc_total_text: row.get(14)?,
 
-            grouping: row.get(14)?,
-            content_group: row.get(15)?,
-            comment: row.get(16)?,
-            lyrics: row.get(17)?,
-            lyricist: row.get(18)?,
-            conductor: row.get(19)?,
-            remixer: row.get(20)?,
-            publisher: row.get(21)?,
-            subtitle: row.get(22)?,
-            bpm: optional_u32(row, 23)?,
-            key: row.get(24)?,
-            mood: row.get(25)?,
-            language: row.get(26)?,
-            isrc: row.get(27)?,
-            encoder_settings: row.get(28)?,
-            encoded_by: row.get(29)?,
-            copyright: row.get(30)?,
+            release_date: row.get(15)?,
+            year: row.get(16)?,
+            genre: row.get(17)?,
 
-            artwork_count: required_u32(row, 31)?,
-            title_sort: row.get(32)?,
-            artist_sort: row.get(33)?,
-            album_sort: row.get(34)?,
-            album_artist_sort: row.get(35)?,
+            grouping: row.get(18)?,
+            content_group: row.get(19)?,
+            comment: row.get(20)?,
+            lyrics: row.get(21)?,
+            lyricist: row.get(22)?,
+            conductor: row.get(23)?,
+            remixer: row.get(24)?,
+            publisher: row.get(25)?,
+            subtitle: row.get(26)?,
+            bpm: optional_u32(row, 27)?,
+            key: row.get(28)?,
+            mood: row.get(29)?,
+            language: row.get(30)?,
+            isrc: row.get(31)?,
+            encoder_settings: row.get(32)?,
+            encoded_by: row.get(33)?,
+            copyright: row.get(34)?,
 
-            duration_ms: optional_u32(row, 36)?,
-            bitrate_kbps: optional_u32(row, 37)?,
-            sample_rate_hz: optional_u32(row, 38)?,
-            channels: optional_u8(row, 39)?,
-            rating: optional_u8(row, 40)?,
-            play_count: optional_u64(row, 41)?,
-            compilation: row.get::<_, Option<i64>>(42)?.map(|value| value != 0),
+            artwork_count: required_u32(row, 35)?,
+            title_sort: row.get(36)?,
+            artist_sort: row.get(37)?,
+            album_sort: row.get(38)?,
+            album_artist_sort: row.get(39)?,
+
+            duration_ms: optional_u32(row, 40)?,
+            bitrate_kbps: optional_u32(row, 41)?,
+            sample_rate_hz: optional_u32(row, 42)?,
+            channels: optional_u8(row, 43)?,
+
+            rating: optional_u8(row, 44)?,
+            play_count: optional_u64(row, 45)?,
+            compilation: row.get::<_, Option<i64>>(46)?.map(|value| value != 0),
         })
     }
 

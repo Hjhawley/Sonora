@@ -6,6 +6,7 @@
 //! - Save targets are identified by TrackId.
 //! - Only fields explicitly edited by the user are applied.
 //! - Untouched mixed and display-only values are preserved.
+//! - Track and disc counter formatting is retained exactly.
 //! - Artwork-only saves do not rewrite textual metadata.
 //! - Every file in a batch is attempted, even if another file fails.
 //! - Successful file changes are re-read and retained after partial failure.
@@ -28,6 +29,12 @@ use super::inspector::load_inspector_from_selection;
 use super::util::spawn_blocking;
 use crate::core::types::{TrackId, TrackRow};
 
+#[derive(Debug, Clone)]
+struct CounterValue {
+    text: String,
+    numeric: u32,
+}
+
 #[derive(Debug, Default, Clone)]
 struct InspectorPatch {
     title: Option<Option<String>>,
@@ -36,10 +43,10 @@ struct InspectorPatch {
     album_artist: Option<Option<String>>,
     composer: Option<Option<String>>,
 
-    track_no: Option<Option<u32>>,
-    track_total: Option<Option<u32>>,
-    disc_no: Option<Option<u32>>,
-    disc_total: Option<Option<u32>>,
+    track_no: Option<Option<CounterValue>>,
+    track_total: Option<Option<CounterValue>>,
+    disc_no: Option<Option<CounterValue>>,
+    disc_total: Option<Option<CounterValue>>,
 
     release_date: Option<Option<String>>,
     genre: Option<Option<String>>,
@@ -72,21 +79,21 @@ impl InspectorPatch {
         apply_text_change(&self.album_artist, &mut row.album_artist);
         apply_text_change(&self.composer, &mut row.composer);
 
-        if let Some(value) = self.track_no {
-            row.track_no = value;
-        }
+        apply_counter_change(&self.track_no, &mut row.track_no_text, &mut row.track_no);
 
-        if let Some(value) = self.track_total {
-            row.track_total = value;
-        }
+        apply_counter_change(
+            &self.track_total,
+            &mut row.track_total_text,
+            &mut row.track_total,
+        );
 
-        if let Some(value) = self.disc_no {
-            row.disc_no = value;
-        }
+        apply_counter_change(&self.disc_no, &mut row.disc_no_text, &mut row.disc_no);
 
-        if let Some(value) = self.disc_total {
-            row.disc_total = value;
-        }
+        apply_counter_change(
+            &self.disc_total,
+            &mut row.disc_total_text,
+            &mut row.disc_total,
+        );
 
         if let Some(value) = &self.release_date {
             row.release_date = value.clone();
@@ -124,10 +131,6 @@ impl InspectorPatch {
 struct SaveTarget {
     id: TrackId,
     path: PathBuf,
-
-    /// Used only when the file's current tag cannot be read before writing.
-    /// A readable current tag always takes priority so unrelated external edits
-    /// are preserved.
     cached_row: TrackRow,
 }
 
@@ -206,9 +209,12 @@ pub(crate) fn save_inspector_to_file(state: &mut Sonora) -> Task<Message> {
     let mut targets: Vec<SaveTarget> = Vec::with_capacity(ids.len());
 
     for id in ids {
-        let Some(row) = state.track_by_id(id).cloned() else {
-            state.status = format!("Track {id} is no longer available. Reload the library.");
-            return Task::none();
+        let row = match state.track_by_id(id).cloned() {
+            Some(row) => row,
+            None => {
+                state.status = format!("Track {id} is no longer available. Reload the library.");
+                return Task::none();
+            }
         };
 
         targets.push(SaveTarget {
@@ -238,24 +244,26 @@ pub(crate) fn save_completed(state: &mut Sonora, report: SaveReport) -> Task<Mes
     state.saving = false;
 
     for file in &report.files {
-        let Some(refreshed_row) = &file.refreshed_row else {
-            continue;
-        };
-
-        if let Some(slot) = state.track_by_id_mut(file.id) {
-            *slot = refreshed_row.clone();
+        match file.refreshed_row.as_ref() {
+            Some(refreshed_row) => {
+                if let Some(slot) = state.track_by_id_mut(file.id) {
+                    *slot = refreshed_row.clone();
+                }
+            }
+            None => {}
         }
     }
 
     apply_saved_artwork_to_cache(state, &report);
-
     state.rebuild_library_caches();
 
-    let complete_count = report
-        .files
-        .iter()
-        .filter(|file| file_completed_without_error(file))
-        .count();
+    let mut complete_count: usize = 0;
+
+    for file in &report.files {
+        if file_completed_without_error(file) {
+            complete_count += 1;
+        }
+    }
 
     let all_files_complete =
         report.files.len() == report.requested && complete_count == report.requested;
@@ -263,42 +271,53 @@ pub(crate) fn save_completed(state: &mut Sonora, report: SaveReport) -> Task<Mes
     if all_files_complete {
         load_inspector_from_selection(state);
 
-        state.status = if report.requested == 1 {
-            "Changes saved to file.".to_string()
-        } else {
-            format!("Changes saved to {} files.", report.requested)
-        };
+        let mut status = String::new();
 
-        if let Some(db_error) = &report.db_error {
-            state.status.push_str(&format!(
-                " The files were updated, but Sonora could not fully update its library cache: \
-                 {db_error}. Run Scan before restarting."
-            ));
+        if report.requested == 1 {
+            status.push_str("Changes saved to file.");
+        } else {
+            status.push_str(&format!("Changes saved to {} files.", report.requested));
         }
+
+        match report.db_error.as_ref() {
+            Some(db_error) => {
+                status.push_str(&format!(
+                    " The files were updated, but Sonora could not fully update its library \
+                     cache: {db_error}. Run Scan before restarting."
+                ));
+            }
+            None => {}
+        }
+
+        state.status = status;
     } else {
         state.refresh_inspector_dirty();
 
-        let first_error = report
-            .files
-            .iter()
-            .find_map(|file| {
-                file.errors
-                    .first()
-                    .map(|error| format!("{}: {error}", file.path.display()))
-            })
-            .unwrap_or_else(|| "An unknown save error occurred.".to_string());
+        let mut first_error = "An unknown save error occurred.".to_string();
 
-        state.status = format!(
+        'error_search: for file in &report.files {
+            for error in &file.errors {
+                first_error = format!("{}: {error}", file.path.display());
+                break 'error_search;
+            }
+        }
+
+        let mut status = format!(
             "Save partially completed: {complete_count} of {} files finished without errors. \
              Successful changes were kept. First error: {first_error}",
             report.requested
         );
 
-        if let Some(db_error) = &report.db_error {
-            state.status.push_str(&format!(
-                " Library-cache update also failed: {db_error}. Run Scan before restarting."
-            ));
+        match report.db_error.as_ref() {
+            Some(db_error) => {
+                status.push_str(&format!(
+                    " Library-cache update also failed: {db_error}. Run Scan before restarting."
+                ));
+            }
+            None => {}
         }
+
+        state.status = status;
     }
 
     Task::none()
@@ -545,25 +564,25 @@ fn build_inspector_patch(state: &Sonora) -> Result<InspectorPatch, String> {
             "Composer",
         )?,
 
-        track_no: u32_change(
+        track_no: counter_change(
             state,
             InspectorField::TrackNo,
             &state.inspector.track_no,
             "Track #",
         )?,
-        track_total: u32_change(
+        track_total: counter_change(
             state,
             InspectorField::TrackTotal,
             &state.inspector.track_total,
             "Track total",
         )?,
-        disc_no: u32_change(
+        disc_no: counter_change(
             state,
             InspectorField::DiscNo,
             &state.inspector.disc_no,
             "Disc #",
         )?,
-        disc_total: u32_change(
+        disc_total: counter_change(
             state,
             InspectorField::DiscTotal,
             &state.inspector.disc_total,
@@ -689,6 +708,42 @@ fn text_change(
     }
 }
 
+fn counter_change(
+    state: &Sonora,
+    field: InspectorField,
+    input: &str,
+    label: &str,
+) -> Result<Option<Option<CounterValue>>, String> {
+    if !state.inspector_touched_fields.contains(&field) {
+        return Ok(None);
+    }
+
+    let trimmed = input.trim();
+
+    if is_mixed_display_value(trimmed) {
+        return Err(format!(
+            "Not saved: {label} still contains the mixed-value placeholder."
+        ));
+    }
+
+    if trimmed.is_empty() {
+        return Ok(Some(None));
+    }
+
+    if !trimmed.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(format!("Not saved: invalid {label}."));
+    }
+
+    let numeric = trimmed
+        .parse::<u32>()
+        .map_err(|_| format!("Not saved: invalid {label}."))?;
+
+    Ok(Some(Some(CounterValue {
+        text: trimmed.to_string(),
+        numeric,
+    })))
+}
+
 fn u32_change(
     state: &Sonora,
     field: InspectorField,
@@ -744,5 +799,27 @@ fn release_date_change(state: &Sonora) -> Result<Option<Option<String>>, String>
 fn apply_text_change(change: &Option<Option<String>>, destination: &mut Option<String>) {
     if let Some(value) = change {
         *destination = value.clone();
+    }
+}
+
+fn apply_counter_change(
+    change: &Option<Option<CounterValue>>,
+    text_destination: &mut Option<String>,
+    numeric_destination: &mut Option<u32>,
+) {
+    let Some(change) = change else {
+        return;
+    };
+
+    match change {
+        Some(value) => {
+            *text_destination = Some(value.text.clone());
+            *numeric_destination = Some(value.numeric);
+        }
+
+        None => {
+            *text_destination = None;
+            *numeric_destination = None;
+        }
     }
 }

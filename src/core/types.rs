@@ -31,11 +31,19 @@ pub struct TrackRow {
     pub album_artist: Option<String>,
     pub composer: Option<String>,
 
-    // Editable track and disc counters.
+    // Parsed track and disc counters used for sorting and comparison.
     pub track_no: Option<u32>,
     pub track_total: Option<u32>,
     pub disc_no: Option<u32>,
     pub disc_total: Option<u32>,
+
+    // Original track and disc counter text used for exact tag round-tripping.
+    // These preserve representations such as "01", "001", or "09" while the
+    // parsed numeric fields above remain available for numeric operations.
+    pub track_no_text: Option<String>,
+    pub track_total_text: Option<String>,
+    pub disc_no_text: Option<String>,
+    pub disc_total_text: Option<String>,
 
     // Editable release metadata.
     pub release_date: Option<String>,
@@ -100,6 +108,11 @@ impl TrackRow {
             track_total: None,
             disc_no: None,
             disc_total: None,
+
+            track_no_text: None,
+            track_total_text: None,
+            disc_no_text: None,
+            disc_total_text: None,
 
             release_date: None,
             year: None,

@@ -17,7 +17,6 @@ use super::super::probe::{
 use super::super::types::TrackRow;
 use super::util::{
     extract_year_from_release_date, normalize_release_date, parse_be_u64, parse_boolish,
-    parse_slash_pair_u32,
 };
 
 const GROUPING_FRAME_ID: &str = "GRP1";
@@ -48,13 +47,17 @@ fn build_probe_only_row(path: PathBuf, audio: AudioProperties) -> TrackRow {
 }
 
 fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> TrackRow {
-    let (track_no_from_text, track_total) =
-        parse_slash_pair_u32(text_frame(tag, "TRCK").as_deref());
+    let track_frame = text_frame(tag, "TRCK");
+    let disc_frame = text_frame(tag, "TPOS");
 
-    let (disc_no_from_text, disc_total) = parse_slash_pair_u32(text_frame(tag, "TPOS").as_deref());
+    let (track_no_text, track_total_text) = split_counter_pair(track_frame.as_deref());
+    let (disc_no_text, disc_total_text) = split_counter_pair(disc_frame.as_deref());
 
-    let track_no = tag.track().or(track_no_from_text);
-    let disc_no = tag.disc().or(disc_no_from_text);
+    let track_no = parse_counter_number(track_no_text.as_deref()).or_else(|| tag.track());
+    let track_total = parse_counter_number(track_total_text.as_deref());
+
+    let disc_no = parse_counter_number(disc_no_text.as_deref()).or_else(|| tag.disc());
+    let disc_total = parse_counter_number(disc_total_text.as_deref());
 
     let release_date = text_frame(tag, "TDRC")
         .or_else(|| text_frame(tag, "TYER"))
@@ -86,38 +89,52 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
     let bitrate_kbps = audio.bitrate_kbps.or_else(|| {
         let duration_ms = duration_ms?;
         let audio_bytes = mp3_audio_bytes_excluding_id3(&path)?;
+
         average_bitrate_kbps_from_audio_bytes(audio_bytes, duration_ms)
     });
 
     TrackRow {
         id: None,
         path,
+
         title: tag
             .title()
             .map(str::to_owned)
             .or_else(|| text_frame(tag, "TIT2")),
+
         artist: tag
             .artist()
             .map(str::to_owned)
             .or_else(|| text_frame(tag, "TPE1")),
+
         album: tag
             .album()
             .map(str::to_owned)
             .or_else(|| text_frame(tag, "TALB")),
+
         album_artist: text_frame(tag, "TPE2"),
         composer: text_frame(tag, "TCOM"),
+
         track_no,
         track_total,
         disc_no,
         disc_total,
+
+        track_no_text,
+        track_total_text,
+        disc_no_text,
+        disc_total_text,
+
         release_date,
         year,
         genre: text_frame(tag, "TCON"),
+
         grouping: text_frame(tag, GROUPING_FRAME_ID),
         content_group: text_frame(tag, CONTENT_GROUP_FRAME_ID),
         comment,
         lyrics,
         lyricist: text_frame(tag, "TEXT"),
+
         conductor: text_frame(tag, "TPE3"),
         remixer: text_frame(tag, "TPE4"),
         publisher: text_frame(tag, "TPUB"),
@@ -130,15 +147,19 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
         encoder_settings: text_frame(tag, "TSSE"),
         encoded_by: text_frame(tag, "TENC"),
         copyright: text_frame(tag, "TCOP"),
+
         artwork_count,
+
         title_sort: text_frame(tag, "TSOT"),
         artist_sort: text_frame(tag, "TSOP"),
         album_sort: text_frame(tag, "TSOA"),
         album_artist_sort: text_frame(tag, "TSO2"),
+
         duration_ms,
         bitrate_kbps,
         sample_rate_hz: audio.sample_rate_hz,
         channels: audio.channels,
+
         rating,
         play_count,
         compilation,
@@ -150,6 +171,41 @@ fn apply_audio_properties(row: &mut TrackRow, audio: AudioProperties) {
     row.bitrate_kbps = audio.bitrate_kbps;
     row.sample_rate_hz = audio.sample_rate_hz;
     row.channels = audio.channels;
+}
+
+/// Split a 'TRCK' or 'TPOS' value while preserving each component's original
+/// digit formatting.
+///
+/// Examples:
+///
+/// - '"01"' -> '("01", None)'
+/// - '"01/09"' -> '("01", "09")'
+/// - '"1/09"' -> '("1", "09")'
+fn split_counter_pair(value: Option<&str>) -> (Option<String>, Option<String>) {
+    let Some(value) = value else {
+        return (None, None);
+    };
+
+    let mut parts = value.splitn(2, '/');
+
+    let number = normalize_counter_component(parts.next());
+    let total = normalize_counter_component(parts.next());
+
+    (number, total)
+}
+
+fn normalize_counter_component(value: Option<&str>) -> Option<String> {
+    let value = value?.trim();
+
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn parse_counter_number(value: Option<&str>) -> Option<u32> {
+    value?.parse::<u32>().ok()
 }
 
 /// Return a best-effort string value from an ID3 frame.
@@ -195,6 +251,7 @@ fn user_text_value(tag: &Tag, description: &str) -> Option<String> {
         if frame.id() != "TXXX" {
             continue;
         }
+
         if let Content::ExtendedText(extended_text) = frame.content() {
             if extended_text.description.eq_ignore_ascii_case(description) {
                 return Some(extended_text.value.clone());
@@ -222,6 +279,7 @@ fn pcnt_count(tag: &Tag) -> Option<u64> {
         if frame.id() != "PCNT" {
             continue;
         }
+
         let unknown = frame.content().to_unknown().ok()?;
         return parse_be_u64(unknown.as_ref().data.as_slice());
     }

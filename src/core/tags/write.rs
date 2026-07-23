@@ -32,19 +32,40 @@ fn set_or_remove_text_frame(tag: &mut Tag, id: &str, value: &Option<String>) {
     }
 }
 
-/// Write 'TRCK' or 'TPOS' as 'n' or 'n/total', or remove it when absent.
-fn set_slash_pair(tag: &mut Tag, id: &str, number: Option<u32>, total: Option<u32>) {
-    match number {
-        None => remove_all(tag, id),
+/// Write 'TRCK' or 'TPOS' while retaining the user's original digit
+/// representation.
+///
+/// Text components take priority because they preserve formatting such as
+/// leading zeroes. Parsed numeric values are used only as a fallback for rows
+/// created by code that does not provide textual components.
+fn set_counter_pair(
+    tag: &mut Tag,
+    id: &str,
+    number_text: &Option<String>,
+    total_text: &Option<String>,
+    number: Option<u32>,
+    total: Option<u32>,
+) {
+    let number = counter_component(number_text, number);
+    let total = counter_component(total_text, total);
 
-        Some(number) => {
-            remove_all(tag, id);
+    let Some(number) = number else {
+        remove_all(tag, id);
+        return;
+    };
 
-            match total {
-                Some(total) => tag.set_text(id, format!("{number}/{total}")),
-                None => tag.set_text(id, number.to_string()),
-            }
-        }
+    remove_all(tag, id);
+
+    match total {
+        Some(total) => tag.set_text(id, format!("{number}/{total}")),
+        None => tag.set_text(id, number),
+    }
+}
+
+fn counter_component(text: &Option<String>, numeric: Option<u32>) -> Option<String> {
+    match text.as_deref().map(str::trim) {
+        Some(value) if !value.is_empty() => Some(value.to_string()),
+        _ => numeric.map(|value| value.to_string()),
     }
 }
 
@@ -140,8 +161,23 @@ pub fn write_track_row(row: &TrackRow, _write_extended: bool) -> Result<(), Stri
     set_or_remove_text_frame(&mut tag, "TCOM", &row.composer);
     set_or_remove_text_frame(&mut tag, "TCON", &row.genre);
 
-    set_slash_pair(&mut tag, "TRCK", row.track_no, row.track_total);
-    set_slash_pair(&mut tag, "TPOS", row.disc_no, row.disc_total);
+    set_counter_pair(
+        &mut tag,
+        "TRCK",
+        &row.track_no_text,
+        &row.track_total_text,
+        row.track_no,
+        row.track_total,
+    );
+
+    set_counter_pair(
+        &mut tag,
+        "TPOS",
+        &row.disc_no_text,
+        &row.disc_total_text,
+        row.disc_no,
+        row.disc_total,
+    );
 
     write_release_date(&mut tag, row);
 
@@ -167,7 +203,6 @@ pub fn write_track_row(row: &TrackRow, _write_extended: bool) -> Result<(), Stri
     set_or_remove_text_frame(&mut tag, "TENC", &row.encoded_by);
     set_or_remove_text_frame(&mut tag, "TCOP", &row.copyright);
 
-    // Prefer ID3v2.4 and fall back to ID3v2.3.
     if let Err(v24_error) = tag.write_to_path(path, Version::Id3v24) {
         tag.write_to_path(path, Version::Id3v23)
             .map_err(|v23_error| {
