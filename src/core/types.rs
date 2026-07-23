@@ -44,6 +44,7 @@ pub struct TrackRow {
 
     // Additional editable metadata.
     pub grouping: Option<String>,
+    pub content_group: Option<String>,
     pub comment: Option<String>,
     pub lyrics: Option<String>,
     pub lyricist: Option<String>,
@@ -105,6 +106,7 @@ impl TrackRow {
             genre: None,
 
             grouping: None,
+            content_group: None,
             comment: None,
             lyrics: None,
             lyricist: None,

@@ -6,8 +6,9 @@
 //! - Mixed-state is tracked structurally in 'state.inspector_mixed'.
 //! - The draft may display '<mixed>', but that is only a UI placeholder.
 
-use iced::Task;
 use std::collections::BTreeMap;
+
+use iced::Task;
 
 use super::super::state::{InspectorDraft, InspectorField, Message, Sonora};
 use super::super::util::filename_stem;
@@ -52,6 +53,7 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
         InspectorField::Genre => state.inspector.genre = value,
 
         InspectorField::Grouping => state.inspector.grouping = value,
+        InspectorField::ContentGroup => state.inspector.content_group = value,
         InspectorField::Comment => state.inspector.comment = value,
         InspectorField::Lyrics => state.inspector.lyrics = value,
         InspectorField::Lyricist => state.inspector.lyricist = value,
@@ -84,18 +86,20 @@ pub(crate) fn clear_inspector(state: &mut Sonora) {
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     reset_inspector_artwork_state(state);
 
-    let mut ids: Vec<TrackId> = if !state.selected_tracks.is_empty() {
-        state.selected_tracks.iter().copied().collect()
+    let mut ids: Vec<TrackId> = Vec::new();
+
+    if !state.selected_tracks.is_empty() {
+        ids.extend(state.selected_tracks.iter().copied());
     } else if let Some(id) = state.selected_track {
-        vec![id]
+        ids.push(id);
     } else {
         state.inspector_open = false;
         clear_inspector(state);
         return;
-    };
+    }
 
     let idxs: Vec<usize> = ids
-        .drain(..)
+        .into_iter()
         .filter_map(|id| state.index_of_id(id))
         .collect();
 
@@ -107,12 +111,12 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
 
     state.inspector_open = true;
 
-    fn opt_str(v: &Option<String>) -> String {
-        v.clone().unwrap_or_default()
+    fn opt_str(value: &Option<String>) -> String {
+        value.clone().unwrap_or_default()
     }
 
-    fn opt_u32(v: Option<u32>) -> String {
-        v.map(|n| n.to_string()).unwrap_or_default()
+    fn opt_u32(value: Option<u32>) -> String {
+        value.map(|number| number.to_string()).unwrap_or_default()
     }
 
     fn apply_field(
@@ -122,7 +126,7 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         values: Vec<String>,
     ) {
         let first = values.first().cloned().unwrap_or_default();
-        let mixed = values.iter().any(|v| *v != first);
+        let mixed = values.iter().any(|value| *value != first);
 
         if mixed {
             InspectorDraft::set_mixed(draft_slot);
@@ -135,289 +139,347 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
 
     let titles: Vec<String> = idxs
         .iter()
-        .map(|&i| {
-            state.tracks[i]
+        .map(|&index| {
+            state.tracks[index]
                 .title
                 .clone()
-                .unwrap_or_else(|| filename_stem(&state.tracks[i].path))
+                .unwrap_or_else(|| filename_stem(&state.tracks[index].path))
         })
         .collect();
 
     let artists: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].artist))
+        .map(|&index| opt_str(&state.tracks[index].artist))
         .collect();
+
     let albums: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].album))
+        .map(|&index| opt_str(&state.tracks[index].album))
         .collect();
+
     let album_artists: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].album_artist))
+        .map(|&index| opt_str(&state.tracks[index].album_artist))
         .collect();
+
     let composers: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].composer))
+        .map(|&index| opt_str(&state.tracks[index].composer))
         .collect();
 
     let track_no: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_u32(state.tracks[i].track_no))
+        .map(|&index| opt_u32(state.tracks[index].track_no))
         .collect();
+
     let track_total: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_u32(state.tracks[i].track_total))
+        .map(|&index| opt_u32(state.tracks[index].track_total))
         .collect();
+
     let disc_no: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_u32(state.tracks[i].disc_no))
+        .map(|&index| opt_u32(state.tracks[index].disc_no))
         .collect();
+
     let disc_total: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_u32(state.tracks[i].disc_total))
+        .map(|&index| opt_u32(state.tracks[index].disc_total))
         .collect();
 
     let release_dates: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].release_date))
-        .collect();
-    let genres: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].genre))
+        .map(|&index| opt_str(&state.tracks[index].release_date))
         .collect();
 
-    let grouping: Vec<String> = idxs
+    let genres: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].grouping))
+        .map(|&index| opt_str(&state.tracks[index].genre))
         .collect();
-    let comment: Vec<String> = idxs
+
+    let groupings: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].comment))
+        .map(|&index| opt_str(&state.tracks[index].grouping))
         .collect();
+
+    let content_groups: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].content_group))
+        .collect();
+
+    let comments: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].comment))
+        .collect();
+
     let lyrics: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].lyrics))
+        .map(|&index| opt_str(&state.tracks[index].lyrics))
         .collect();
-    let lyricist: Vec<String> = idxs
+
+    let lyricists: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].lyricist))
+        .map(|&index| opt_str(&state.tracks[index].lyricist))
         .collect();
 
     let conductors: Vec<String> = idxs
         .iter()
-        .map(|&i| opt_str(&state.tracks[i].conductor))
-        .collect();
-    let remixers: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].remixer))
-        .collect();
-    let publishers: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].publisher))
-        .collect();
-    let subtitles: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].subtitle))
-        .collect();
-    let bpms: Vec<String> = idxs.iter().map(|&i| opt_u32(state.tracks[i].bpm)).collect();
-    let keys: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].key))
-        .collect();
-    let moods: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].mood))
-        .collect();
-    let languages: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].language))
-        .collect();
-    let isrcs: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].isrc))
-        .collect();
-    let encoder_settings: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].encoder_settings))
-        .collect();
-    let encoded_by: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].encoded_by))
-        .collect();
-    let copyrights: Vec<String> = idxs
-        .iter()
-        .map(|&i| opt_str(&state.tracks[i].copyright))
+        .map(|&index| opt_str(&state.tracks[index].conductor))
         .collect();
 
-    let mut map_mixed: BTreeMap<InspectorField, bool> = BTreeMap::new();
+    let remixers: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].remixer))
+        .collect();
+
+    let publishers: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].publisher))
+        .collect();
+
+    let subtitles: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].subtitle))
+        .collect();
+
+    let bpms: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_u32(state.tracks[index].bpm))
+        .collect();
+
+    let keys: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].key))
+        .collect();
+
+    let moods: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].mood))
+        .collect();
+
+    let languages: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].language))
+        .collect();
+
+    let isrcs: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].isrc))
+        .collect();
+
+    let encoder_settings: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].encoder_settings))
+        .collect();
+
+    let encoded_by: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].encoded_by))
+        .collect();
+
+    let copyrights: Vec<String> = idxs
+        .iter()
+        .map(|&index| opt_str(&state.tracks[index].copyright))
+        .collect();
+
+    let mut mixed_map: BTreeMap<InspectorField, bool> = BTreeMap::new();
 
     apply_field(
         &mut state.inspector.title,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Title,
         titles,
     );
+
     apply_field(
         &mut state.inspector.artist,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Artist,
         artists,
     );
+
     apply_field(
         &mut state.inspector.album,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Album,
         albums,
     );
+
     apply_field(
         &mut state.inspector.album_artist,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::AlbumArtist,
         album_artists,
     );
+
     apply_field(
         &mut state.inspector.composer,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Composer,
         composers,
     );
 
     apply_field(
         &mut state.inspector.track_no,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::TrackNo,
         track_no,
     );
+
     apply_field(
         &mut state.inspector.track_total,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::TrackTotal,
         track_total,
     );
+
     apply_field(
         &mut state.inspector.disc_no,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::DiscNo,
         disc_no,
     );
+
     apply_field(
         &mut state.inspector.disc_total,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::DiscTotal,
         disc_total,
     );
 
     apply_field(
         &mut state.inspector.release_date,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::ReleaseDate,
         release_dates,
     );
+
     apply_field(
         &mut state.inspector.genre,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Genre,
         genres,
     );
 
     apply_field(
         &mut state.inspector.grouping,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Grouping,
-        grouping,
+        groupings,
     );
+
+    apply_field(
+        &mut state.inspector.content_group,
+        &mut mixed_map,
+        InspectorField::ContentGroup,
+        content_groups,
+    );
+
     apply_field(
         &mut state.inspector.comment,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Comment,
-        comment,
+        comments,
     );
+
     apply_field(
         &mut state.inspector.lyrics,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Lyrics,
         lyrics,
     );
+
     apply_field(
         &mut state.inspector.lyricist,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Lyricist,
-        lyricist,
+        lyricists,
     );
 
     apply_field(
         &mut state.inspector.conductor,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Conductor,
         conductors,
     );
+
     apply_field(
         &mut state.inspector.remixer,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Remixer,
         remixers,
     );
+
     apply_field(
         &mut state.inspector.publisher,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Publisher,
         publishers,
     );
+
     apply_field(
         &mut state.inspector.encoder_settings,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::EncoderSettings,
         encoder_settings,
     );
+
     apply_field(
         &mut state.inspector.encoded_by,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::EncodedBy,
         encoded_by,
     );
+
     apply_field(
         &mut state.inspector.subtitle,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Subtitle,
         subtitles,
     );
+
     apply_field(
         &mut state.inspector.bpm,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Bpm,
         bpms,
     );
+
     apply_field(
         &mut state.inspector.key,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Key,
         keys,
     );
+
     apply_field(
         &mut state.inspector.mood,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Mood,
         moods,
     );
+
     apply_field(
         &mut state.inspector.language,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Language,
         languages,
     );
+
     apply_field(
         &mut state.inspector.isrc,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Isrc,
         isrcs,
     );
+
     apply_field(
         &mut state.inspector.copyright,
-        &mut map_mixed,
+        &mut mixed_map,
         InspectorField::Copyright,
         copyrights,
     );
 
-    state.inspector_mixed = map_mixed;
+    state.inspector_mixed = mixed_map;
     state.inspector_dirty = false;
 }

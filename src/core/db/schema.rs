@@ -2,16 +2,17 @@
 //!
 //! SQLite schema initialization and lightweight additive migrations.
 //!
-//! The database stores enough normalized metadata to reconstruct 'TrackRow'
+//! The database stores enough normalized metadata to reconstruct `TrackRow`
 //! values without reading every media file during normal startup.
 //!
-//! 'TRACK_METADATA_CACHE_VERSION' identifies the current cached representation.
+//! `TRACK_METADATA_CACHE_VERSION` identifies the current cached representation.
 //! Increment it whenever changes to tag reading, probing, normalization, or the
 //! cached schema require existing files to be rehydrated from disk.
 
 use super::Db;
 
-pub(super) const TRACK_METADATA_CACHE_VERSION: i64 = 1;
+/// Version 2 separates GRP1/Grouping from TIT1/Content Group.
+pub(super) const TRACK_METADATA_CACHE_VERSION: i64 = 2;
 
 impl Db {
     pub(super) fn init_schema(&self) -> Result<(), String> {
@@ -38,7 +39,7 @@ impl Db {
                 );
                 "#,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
 
         // Filesystem and Sonora visibility state.
         self.ensure_column("tracks", "present", "INTEGER NOT NULL DEFAULT 1")?;
@@ -63,6 +64,7 @@ impl Db {
         self.ensure_column("tracks", "genre", "TEXT")?;
 
         self.ensure_column("tracks", "grouping", "TEXT")?;
+        self.ensure_column("tracks", "content_group", "TEXT")?;
         self.ensure_column("tracks", "comment_text", "TEXT")?;
         self.ensure_column("tracks", "lyrics", "TEXT")?;
         self.ensure_column("tracks", "lyricist", "TEXT")?;
@@ -98,8 +100,7 @@ impl Db {
         self.ensure_column("tracks", "compilation", "INTEGER")?;
 
         // Version of the cached metadata representation last successfully
-        // written for this row. Existing rows begin at zero and are refreshed
-        // during the next scan.
+        // written for this row. Older versions are rehydrated during scanning.
         self.ensure_column(
             "tracks",
             "metadata_cache_version",
@@ -120,19 +121,23 @@ impl Db {
                 ON tracks(hidden, path);
                 "#,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
 
         Ok(())
     }
 
     fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<(), String> {
         let pragma = format!("PRAGMA table_info({table})");
-        let mut stmt = self.conn.prepare(&pragma).map_err(|e| e.to_string())?;
 
-        let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
+        let mut statement = self
+            .conn
+            .prepare(&pragma)
+            .map_err(|error| error.to_string())?;
 
-        while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            let existing_name: String = row.get(1).map_err(|e| e.to_string())?;
+        let mut rows = statement.query([]).map_err(|error| error.to_string())?;
+
+        while let Some(row) = rows.next().map_err(|error| error.to_string())? {
+            let existing_name: String = row.get(1).map_err(|error| error.to_string())?;
 
             if existing_name == column {
                 return Ok(());
@@ -141,7 +146,9 @@ impl Db {
 
         let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
 
-        self.conn.execute(&sql, []).map_err(|e| e.to_string())?;
+        self.conn
+            .execute(&sql, [])
+            .map_err(|error| error.to_string())?;
 
         Ok(())
     }

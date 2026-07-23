@@ -1,9 +1,9 @@
 //! core/tags/read.rs
 //!
-//! Read ID3 tags from an MP3 and convert them into a 'TrackRow'.
-//! - Tag reading does NOT assign identity.
-//! - 'TrackRow.id' is set by the scanning / DB layer.
-//! - This module therefore always returns 'id: None'.
+//! Reads ID3 metadata from an MP3 and converts it into a 'TrackRow'.
+//!
+//! Tag reading does not assign database identity. 'TrackRow.id' remains 'None'
+//! until the scanning or DB layer associates the row with a cached track.
 
 use std::path::PathBuf;
 
@@ -19,6 +19,9 @@ use super::util::{
     extract_year_from_release_date, normalize_release_date, parse_be_u64, parse_boolish,
     parse_slash_pair_u32,
 };
+
+const GROUPING_FRAME_ID: &str = "GRP1";
+const CONTENT_GROUP_FRAME_ID: &str = "TIT1";
 
 pub fn read_track_row(path: PathBuf) -> (TrackRow, bool) {
     let audio = probe_audio_properties(&path).unwrap_or_default();
@@ -47,6 +50,7 @@ fn build_probe_only_row(path: PathBuf, audio: AudioProperties) -> TrackRow {
 fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> TrackRow {
     let (track_no_from_text, track_total) =
         parse_slash_pair_u32(text_frame(tag, "TRCK").as_deref());
+
     let (disc_no_from_text, disc_total) = parse_slash_pair_u32(text_frame(tag, "TPOS").as_deref());
 
     let track_no = tag.track().or(track_no_from_text);
@@ -54,27 +58,29 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
 
     let release_date = text_frame(tag, "TDRC")
         .or_else(|| text_frame(tag, "TYER"))
-        .and_then(|s| normalize_release_date(&s));
+        .and_then(|value| normalize_release_date(&value));
 
     let year = extract_year_from_release_date(release_date.as_deref());
 
     let artwork_count = tag
         .frames()
-        .filter(|f| f.id() == "APIC" || f.id() == "PIC")
+        .filter(|frame| frame.id() == "APIC" || frame.id() == "PIC")
         .count() as u32;
 
     let comment = first_comment(tag);
     let lyrics = first_lyrics(tag);
 
     let compilation = text_frame(tag, "TCMP")
-        .and_then(|s| parse_boolish(&s))
-        .or_else(|| user_text_value(tag, "COMPILATION").and_then(|s| parse_boolish(&s)));
+        .and_then(|value| parse_boolish(&value))
+        .or_else(|| user_text_value(tag, "COMPILATION").and_then(|value| parse_boolish(&value)));
 
     let (rating, popm_count) = popm_rating_and_count(tag);
     let pcnt_count = pcnt_count(tag);
     let play_count = popm_count.or(pcnt_count);
 
-    let tlen_duration_ms = text_frame(tag, "TLEN").and_then(|s| s.trim().parse::<u32>().ok());
+    let tlen_duration_ms =
+        text_frame(tag, "TLEN").and_then(|value| value.trim().parse::<u32>().ok());
+
     let duration_ms = audio.duration_ms.or(tlen_duration_ms);
 
     let bitrate_kbps = audio.bitrate_kbps.or_else(|| {
@@ -86,7 +92,6 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
     TrackRow {
         id: None,
         path,
-
         title: tag
             .title()
             .map(str::to_owned)
@@ -101,27 +106,23 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
             .or_else(|| text_frame(tag, "TALB")),
         album_artist: text_frame(tag, "TPE2"),
         composer: text_frame(tag, "TCOM"),
-
         track_no,
         track_total,
         disc_no,
         disc_total,
-
         release_date,
         year,
-
         genre: text_frame(tag, "TCON"),
-
-        grouping: text_frame(tag, "TIT1"),
+        grouping: text_frame(tag, GROUPING_FRAME_ID),
+        content_group: text_frame(tag, CONTENT_GROUP_FRAME_ID),
         comment,
         lyrics,
         lyricist: text_frame(tag, "TEXT"),
-
         conductor: text_frame(tag, "TPE3"),
         remixer: text_frame(tag, "TPE4"),
         publisher: text_frame(tag, "TPUB"),
         subtitle: text_frame(tag, "TIT3"),
-        bpm: text_frame(tag, "TBPM").and_then(|s| s.trim().parse::<u32>().ok()),
+        bpm: text_frame(tag, "TBPM").and_then(|value| value.trim().parse::<u32>().ok()),
         key: text_frame(tag, "TKEY"),
         mood: text_frame(tag, "TMOO"),
         language: text_frame(tag, "TLAN"),
@@ -130,12 +131,10 @@ fn build_row_from_tag(path: PathBuf, tag: &Tag, audio: AudioProperties) -> Track
         encoded_by: text_frame(tag, "TENC"),
         copyright: text_frame(tag, "TCOP"),
         artwork_count,
-
         title_sort: text_frame(tag, "TSOT"),
         artist_sort: text_frame(tag, "TSOP"),
         album_sort: text_frame(tag, "TSOA"),
         album_artist_sort: text_frame(tag, "TSO2"),
-
         duration_ms,
         bitrate_kbps,
         sample_rate_hz: audio.sample_rate_hz,
@@ -153,15 +152,16 @@ fn apply_audio_properties(row: &mut TrackRow, audio: AudioProperties) {
     row.channels = audio.channels;
 }
 
-/// Get a best-effort string value from a frame id.
-/// This is intentionally defensive: some frames that are "text-ish"
-/// may not be represented as 'Content::Text'.
+/// Return a best-effort string value from an ID3 frame.
+///
+/// Some text-like frames may not be represented as 'Content::Text', so links
+/// are also accepted where appropriate.
 fn text_frame(tag: &Tag, id: &str) -> Option<String> {
     let frame = tag.get(id)?;
 
     match frame.content() {
-        Content::Text(s) => Some(s.clone()),
-        Content::Link(s) => Some(s.clone()),
+        Content::Text(value) => Some(value.clone()),
+        Content::Link(value) => Some(value.clone()),
         _ => None,
     }
 }
@@ -169,22 +169,24 @@ fn text_frame(tag: &Tag, id: &str) -> Option<String> {
 fn first_comment(tag: &Tag) -> Option<String> {
     for frame in tag.frames() {
         if frame.id() == "COMM" {
-            if let Content::Comment(c) = frame.content() {
-                return Some(c.text.clone());
+            if let Content::Comment(comment) = frame.content() {
+                return Some(comment.text.clone());
             }
         }
     }
+
     None
 }
 
 fn first_lyrics(tag: &Tag) -> Option<String> {
     for frame in tag.frames() {
         if frame.id() == "USLT" {
-            if let Content::Lyrics(l) = frame.content() {
-                return Some(l.text.clone());
+            if let Content::Lyrics(lyrics) = frame.content() {
+                return Some(lyrics.text.clone());
             }
         }
     }
+
     None
 }
 
@@ -193,10 +195,9 @@ fn user_text_value(tag: &Tag, description: &str) -> Option<String> {
         if frame.id() != "TXXX" {
             continue;
         }
-
-        if let Content::ExtendedText(et) = frame.content() {
-            if et.description.eq_ignore_ascii_case(description) {
-                return Some(et.value.clone());
+        if let Content::ExtendedText(extended_text) = frame.content() {
+            if extended_text.description.eq_ignore_ascii_case(description) {
+                return Some(extended_text.value.clone());
             }
         }
     }
@@ -207,8 +208,8 @@ fn user_text_value(tag: &Tag, description: &str) -> Option<String> {
 fn popm_rating_and_count(tag: &Tag) -> (Option<u8>, Option<u64>) {
     for frame in tag.frames() {
         if frame.id() == "POPM" {
-            if let Content::Popularimeter(p) = frame.content() {
-                return (Some(p.rating), Some(p.counter));
+            if let Content::Popularimeter(popularimeter) = frame.content() {
+                return (Some(popularimeter.rating), Some(popularimeter.counter));
             }
         }
     }
@@ -221,9 +222,8 @@ fn pcnt_count(tag: &Tag) -> Option<u64> {
         if frame.id() != "PCNT" {
             continue;
         }
-
-        let unk = frame.content().to_unknown().ok()?;
-        return parse_be_u64(unk.as_ref().data.as_slice());
+        let unknown = frame.content().to_unknown().ok()?;
+        return parse_be_u64(unknown.as_ref().data.as_slice());
     }
 
     None

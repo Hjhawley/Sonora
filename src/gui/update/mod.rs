@@ -31,9 +31,9 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
         Message::KeyboardEvent(event) => keyboard::handle_event(state, event),
 
         // Roots
-        Message::RootInputChanged(s) => roots::root_input_changed(state, s),
+        Message::RootInputChanged(value) => roots::root_input_changed(state, value),
         Message::AddRootPressed => roots::add_root_pressed(state),
-        Message::RemoveRoot(i) => roots::remove_root(state, i),
+        Message::RemoveRoot(index) => roots::remove_root(state, index),
 
         // Scan
         Message::ScanLibrary => scan::scan_library(state),
@@ -98,7 +98,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         Message::SeekTo(ratio) => playback::seek_preview(state, ratio),
         Message::SeekCommit => playback::seek_commit(state),
-        Message::SetVolume(vol) => playback::set_volume(state, vol),
+        Message::SetVolume(volume) => playback::set_volume(state, volume),
 
         // Inspector
         Message::InspectorChanged(field, value) => {

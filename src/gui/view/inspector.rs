@@ -2,7 +2,7 @@
 //!
 //! Right panel: metadata inspector/editor.
 //! - Selection is TrackId-based.
-//! - Rresolve id -> TrackRow on demand for display.
+//! - Resolve id -> TrackRow on demand for display.
 
 use iced::widget::text_input::Status as TextInputStatus;
 use iced::widget::{Column, Row, button, container, row, scrollable, text, text_input};
@@ -25,33 +25,33 @@ const SECONDARY_TEXT: Color = Color::from_rgb8(0xB8, 0xB8, 0xB8);
 fn button_text<'a>(label: &'a str) -> iced::widget::Text<'a> {
     text(label).color(BUTTON_TEXT)
 }
+
 fn section_title<'a>(label: &'a str) -> iced::widget::Text<'a> {
     text(label).size(14)
 }
+
 fn is_mixed(state: &Sonora, field: Field) -> bool {
     state.inspector_mixed.get(&field).copied().unwrap_or(false)
 }
 
-/// Text input used by the inspector.
-/// If the field is mixed:
-/// - show empty value
-/// - render '<mixed>' as placeholder
-/// - color the placeholder bright teal
 fn inspector_input<'a>(
     value: &'a str,
     mixed: bool,
     on_input: impl Fn(String) -> Message + 'a,
 ) -> iced::widget::TextInput<'a, Message> {
     let display_value = if mixed { "" } else { value };
+
     let placeholder = if mixed { mixed_display_string() } else { "" };
 
     text_input(placeholder, display_value)
         .on_input(on_input)
         .style(move |theme: &Theme, status: TextInputStatus| {
             let mut style = sonora_input(theme, status);
+
             if mixed {
                 style.placeholder = MIXED_TEAL;
             }
+
             style
         })
 }
@@ -89,18 +89,18 @@ fn num_pair_row<'a>(
     .align_y(Alignment::Center)
 }
 
-fn selected_rows<'a>(state: &'a Sonora) -> Vec<&'a TrackRow> {
-    let mut rows = Vec::new();
+fn selected_rows(state: &Sonora) -> Vec<&TrackRow> {
+    let mut rows: Vec<&TrackRow> = Vec::new();
 
     if !state.selected_tracks.is_empty() {
         for id in &state.selected_tracks {
-            if let Some(i) = state.index_of_id(*id) {
-                rows.push(&state.tracks[i]);
+            if let Some(index) = state.index_of_id(*id) {
+                rows.push(&state.tracks[index]);
             }
         }
     } else if let Some(id) = state.selected_track {
-        if let Some(i) = state.index_of_id(id) {
-            rows.push(&state.tracks[i]);
+        if let Some(index) = state.index_of_id(id) {
+            rows.push(&state.tracks[index]);
         }
     }
 
@@ -136,43 +136,54 @@ fn build_selection_info_section(state: &Sonora) -> Column<'_, Message> {
         .spacing(8);
     };
 
-    let sel_count = rows.len();
+    let selection_count = rows.len();
 
-    let path_line = if sel_count == 1 {
-        format!("{}", primary.path.display())
+    let path_line: String;
+
+    if selection_count == 1 {
+        path_line = primary.path.display().to_string();
     } else {
-        mixed_display_string().to_string()
-    };
+        path_line = mixed_display_string().to_string();
+    }
 
     let technical_line = format!(
         "Artwork: {} | Duration: {} | Avg. Bitrate: {} | Sample Rate: {} | Channels: {}",
-        mixed_or_value(&rows, |t| t.artwork_count, |v| v.to_string()),
-        mixed_or_value(&rows, |t| t.duration_ms, fmt_duration),
-        mixed_or_value(&rows, |t| t.bitrate_kbps, fmt_bitrate_kbps),
-        mixed_or_value(&rows, |t| t.sample_rate_hz, fmt_sample_rate_hz),
-        mixed_or_value(&rows, |t| t.channels, fmt_channels),
+        mixed_or_value(
+            &rows,
+            |track| track.artwork_count,
+            |value| value.to_string()
+        ),
+        mixed_or_value(&rows, |track| track.duration_ms, fmt_duration),
+        mixed_or_value(&rows, |track| track.bitrate_kbps, fmt_bitrate_kbps),
+        mixed_or_value(&rows, |track| track.sample_rate_hz, fmt_sample_rate_hz),
+        mixed_or_value(&rows, |track| track.channels, fmt_channels),
     );
 
     let library_line = format!(
         "Rating: {} | Plays: {}",
         mixed_or_value(
             &rows,
-            |t| t.rating,
-            |v| v.map(|n| n.to_string()).unwrap_or_else(|| "-".into())
+            |track| track.rating,
+            |value| {
+                value
+                    .map(|number| number.to_string())
+                    .unwrap_or_else(|| "-".to_string())
+            }
         ),
         mixed_or_value(
             &rows,
-            |t| t.play_count,
-            |v| v.map(|n| n.to_string()).unwrap_or_else(|| "-".into())
+            |track| track.play_count,
+            |value| {
+                value
+                    .map(|number| number.to_string())
+                    .unwrap_or_else(|| "-".to_string())
+            }
         ),
     );
 
-    // This section pulls selection metadata and technical facts into one compact
-    // block so the editor fields below do not have to carry both "what is this?"
-    // and "how do I edit it?" at the same time.
     iced::widget::column![
         section_title("Tag Inspector"),
-        text(format!("Selected files: {sel_count}"))
+        text(format!("Selected files: {selection_count}"))
             .size(12)
             .color(SECONDARY_TEXT),
         text(format!("File Path: {path_line}")).size(12),
@@ -188,54 +199,78 @@ fn artwork_preview_handle<'a>(
 ) -> Option<&'a iced::widget::image::Handle> {
     match &state.inspector_art_edit {
         ArtworkEdit::Replace { preview, .. } => Some(preview),
+
         ArtworkEdit::Remove => None,
+
         ArtworkEdit::Unchanged => {
             if rows.len() == 1 {
-                state
+                return state
                     .selected_track
-                    .and_then(|id| state.cover_cache.get(&id))
-            } else {
-                let all_have_art = !rows.is_empty() && rows.iter().all(|r| r.artwork_count > 0);
-                if all_have_art {
-                    state
-                        .selected_tracks
-                        .iter()
-                        .find_map(|id| state.cover_cache.get(id))
-                } else {
-                    None
-                }
+                    .and_then(|id| state.cover_cache.get(&id));
             }
+
+            let all_have_art = !rows.is_empty() && rows.iter().all(|row| row.artwork_count > 0);
+
+            if !all_have_art {
+                return None;
+            }
+
+            state
+                .selected_tracks
+                .iter()
+                .find_map(|id| state.cover_cache.get(id))
         }
     }
 }
 
 fn artwork_status_text(state: &Sonora, rows: &[&TrackRow]) -> String {
-    match &state.inspector_art_edit {
-        ArtworkEdit::Replace { .. } => "Pending: replace artwork on save".to_string(),
-        ArtworkEdit::Remove => "Pending: remove artwork on save".to_string(),
-        ArtworkEdit::Unchanged => {
-            if rows.is_empty() {
-                "No selection.".to_string()
-            } else if rows.len() == 1 {
-                if rows[0].artwork_count > 0 {
-                    String::new()
-                } else {
-                    "No embedded artwork.".to_string()
-                }
-            } else {
-                let all_have_art = rows.iter().all(|r| r.artwork_count > 0);
-                let none_have_art = rows.iter().all(|r| r.artwork_count == 0);
+    let mut status = String::new();
 
-                if all_have_art {
-                    "Artwork present in all selected files.".to_string()
-                } else if none_have_art {
-                    "No artwork in selected files.".to_string()
-                } else {
-                    format!("Artwork state: {}", mixed_display_string())
-                }
-            }
+    match &state.inspector_art_edit {
+        ArtworkEdit::Replace { .. } => {
+            status.push_str("Pending: replace artwork on save");
+            return status;
         }
+
+        ArtworkEdit::Remove => {
+            status.push_str("Pending: remove artwork on save");
+            return status;
+        }
+
+        ArtworkEdit::Unchanged => {}
     }
+
+    if rows.is_empty() {
+        status.push_str("No selection.");
+        return status;
+    }
+
+    if rows.len() == 1 {
+        if rows[0].artwork_count == 0 {
+            status.push_str("No embedded artwork.");
+        }
+
+        return status;
+    }
+
+    let all_have_art = rows.iter().all(|row| row.artwork_count > 0);
+
+    if all_have_art {
+        status.push_str("Artwork present in all selected files.");
+        return status;
+    }
+
+    let none_have_art = rows.iter().all(|row| row.artwork_count == 0);
+
+    if none_have_art {
+        status.push_str("No artwork in selected files.");
+        return status;
+    }
+
+    status.push_str("Artwork state: ");
+    status.push_str(mixed_display_string());
+
+    return status;
 }
 
 fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
@@ -248,7 +283,7 @@ fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
             ArtworkEdit::Unchanged => rows[0].artwork_count > 0,
         };
 
-    let add_btn = if state.scanning || state.saving {
+    let add_button = if state.scanning || state.saving {
         button(button_text("Add or replace artwork")).style(sonora_button)
     } else {
         button(button_text("Add or replace artwork"))
@@ -256,7 +291,7 @@ fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
             .style(sonora_button)
     };
 
-    let remove_btn = if state.scanning || state.saving {
+    let remove_button = if state.scanning || state.saving {
         button(button_text("Remove artwork")).style(sonora_button)
     } else {
         button(button_text("Remove artwork"))
@@ -264,7 +299,7 @@ fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
             .style(sonora_button)
     };
 
-    let extract_btn = if state.scanning || state.saving || !can_extract {
+    let extract_button = if state.scanning || state.saving || !can_extract {
         button(button_text("Extract artwork")).style(sonora_button)
     } else {
         button(button_text("Extract artwork"))
@@ -272,18 +307,16 @@ fn build_artwork_section(state: &Sonora) -> Column<'_, Message> {
             .style(sonora_button)
     };
 
-    // Keep artwork actions together as their own mini-workflow:
-    // preview -> status -> action buttons.
     iced::widget::column![
         section_title("Artwork"),
         cover_thumb(artwork_preview_handle(state, &rows), 150.0),
         text(artwork_status_text(state, &rows))
             .size(12)
             .color(SECONDARY_TEXT),
-        row![add_btn, remove_btn]
+        row![add_button, remove_button]
             .spacing(8)
             .align_y(Alignment::Center),
-        row![extract_btn].spacing(8).align_y(Alignment::Center),
+        row![extract_button].spacing(8).align_y(Alignment::Center),
     ]
     .spacing(8)
 }
@@ -295,67 +328,67 @@ fn build_primary_tag_fields(state: &Sonora) -> Column<'_, Message> {
             "Title",
             &state.inspector.title,
             is_mixed(state, Field::Title),
-            |s| Message::InspectorChanged(Field::Title, s)
+            |value| { Message::InspectorChanged(Field::Title, value,) }
         ),
         field_row(
             "Artist",
             &state.inspector.artist,
             is_mixed(state, Field::Artist),
-            |s| Message::InspectorChanged(Field::Artist, s)
+            |value| { Message::InspectorChanged(Field::Artist, value,) }
         ),
         field_row(
             "Album",
             &state.inspector.album,
             is_mixed(state, Field::Album),
-            |s| Message::InspectorChanged(Field::Album, s)
+            |value| { Message::InspectorChanged(Field::Album, value,) }
         ),
         field_row(
             "Album Artist",
             &state.inspector.album_artist,
             is_mixed(state, Field::AlbumArtist),
-            |s| Message::InspectorChanged(Field::AlbumArtist, s)
+            |value| { Message::InspectorChanged(Field::AlbumArtist, value,) }
         ),
         field_row(
             "Composer",
             &state.inspector.composer,
             is_mixed(state, Field::Composer),
-            |s| Message::InspectorChanged(Field::Composer, s)
+            |value| { Message::InspectorChanged(Field::Composer, value,) }
         ),
         num_pair_row(
             "Track",
             &state.inspector.track_no,
             is_mixed(state, Field::TrackNo),
-            |s| Message::InspectorChanged(Field::TrackNo, s),
+            |value| { Message::InspectorChanged(Field::TrackNo, value,) },
             &state.inspector.track_total,
             is_mixed(state, Field::TrackTotal),
-            |s| Message::InspectorChanged(Field::TrackTotal, s),
+            |value| { Message::InspectorChanged(Field::TrackTotal, value,) },
         ),
         num_pair_row(
             "Disc",
             &state.inspector.disc_no,
             is_mixed(state, Field::DiscNo),
-            |s| Message::InspectorChanged(Field::DiscNo, s),
+            |value| { Message::InspectorChanged(Field::DiscNo, value,) },
             &state.inspector.disc_total,
             is_mixed(state, Field::DiscTotal),
-            |s| Message::InspectorChanged(Field::DiscTotal, s),
+            |value| { Message::InspectorChanged(Field::DiscTotal, value,) },
         ),
         field_row(
             "Release Date",
             &state.inspector.release_date,
             is_mixed(state, Field::ReleaseDate),
-            |s| Message::InspectorChanged(Field::ReleaseDate, s)
+            |value| { Message::InspectorChanged(Field::ReleaseDate, value,) }
         ),
         field_row(
             "Genre",
             &state.inspector.genre,
             is_mixed(state, Field::Genre),
-            |s| Message::InspectorChanged(Field::Genre, s)
+            |value| { Message::InspectorChanged(Field::Genre, value,) }
         ),
         field_row(
             "Comment",
             &state.inspector.comment,
             is_mixed(state, Field::Comment),
-            |s| Message::InspectorChanged(Field::Comment, s)
+            |value| { Message::InspectorChanged(Field::Comment, value,) }
         ),
     ]
     .spacing(8)
@@ -368,43 +401,49 @@ fn build_descriptive_tag_fields(state: &Sonora) -> Column<'_, Message> {
             "Grouping",
             &state.inspector.grouping,
             is_mixed(state, Field::Grouping),
-            |s| Message::InspectorChanged(Field::Grouping, s)
+            |value| { Message::InspectorChanged(Field::Grouping, value,) }
+        ),
+        field_row(
+            "Content Group",
+            &state.inspector.content_group,
+            is_mixed(state, Field::ContentGroup),
+            |value| { Message::InspectorChanged(Field::ContentGroup, value,) }
         ),
         field_row(
             "Subtitle",
             &state.inspector.subtitle,
             is_mixed(state, Field::Subtitle),
-            |s| Message::InspectorChanged(Field::Subtitle, s)
+            |value| { Message::InspectorChanged(Field::Subtitle, value,) }
         ),
         field_row(
             "BPM",
             &state.inspector.bpm,
             is_mixed(state, Field::Bpm),
-            |s| Message::InspectorChanged(Field::Bpm, s)
+            |value| { Message::InspectorChanged(Field::Bpm, value,) }
         ),
         field_row(
             "Key",
             &state.inspector.key,
             is_mixed(state, Field::Key),
-            |s| Message::InspectorChanged(Field::Key, s)
+            |value| { Message::InspectorChanged(Field::Key, value,) }
         ),
         field_row(
             "Mood",
             &state.inspector.mood,
             is_mixed(state, Field::Mood),
-            |s| Message::InspectorChanged(Field::Mood, s)
+            |value| { Message::InspectorChanged(Field::Mood, value,) }
         ),
         field_row(
             "Language",
             &state.inspector.language,
             is_mixed(state, Field::Language),
-            |s| Message::InspectorChanged(Field::Language, s)
+            |value| { Message::InspectorChanged(Field::Language, value,) }
         ),
         field_row(
             "ISRC",
             &state.inspector.isrc,
             is_mixed(state, Field::Isrc),
-            |s| Message::InspectorChanged(Field::Isrc, s)
+            |value| { Message::InspectorChanged(Field::Isrc, value,) }
         ),
     ]
     .spacing(8)
@@ -417,57 +456,55 @@ fn build_credit_and_tech_tag_fields(state: &Sonora) -> Column<'_, Message> {
             "Lyrics",
             &state.inspector.lyrics,
             is_mixed(state, Field::Lyrics),
-            |s| Message::InspectorChanged(Field::Lyrics, s)
+            |value| { Message::InspectorChanged(Field::Lyrics, value,) }
         ),
         field_row(
             "Lyricist",
             &state.inspector.lyricist,
             is_mixed(state, Field::Lyricist),
-            |s| Message::InspectorChanged(Field::Lyricist, s)
+            |value| { Message::InspectorChanged(Field::Lyricist, value,) }
         ),
         field_row(
             "Conductor",
             &state.inspector.conductor,
             is_mixed(state, Field::Conductor),
-            |s| Message::InspectorChanged(Field::Conductor, s)
+            |value| { Message::InspectorChanged(Field::Conductor, value,) }
         ),
         field_row(
             "Remixer",
             &state.inspector.remixer,
             is_mixed(state, Field::Remixer),
-            |s| Message::InspectorChanged(Field::Remixer, s)
+            |value| { Message::InspectorChanged(Field::Remixer, value,) }
         ),
         field_row(
             "Publisher",
             &state.inspector.publisher,
             is_mixed(state, Field::Publisher),
-            |s| Message::InspectorChanged(Field::Publisher, s)
+            |value| { Message::InspectorChanged(Field::Publisher, value,) }
         ),
         field_row(
             "Encoder",
             &state.inspector.encoder_settings,
             is_mixed(state, Field::EncoderSettings),
-            |s| Message::InspectorChanged(Field::EncoderSettings, s)
+            |value| { Message::InspectorChanged(Field::EncoderSettings, value,) }
         ),
         field_row(
             "Encoded by",
             &state.inspector.encoded_by,
             is_mixed(state, Field::EncodedBy),
-            |s| Message::InspectorChanged(Field::EncodedBy, s)
+            |value| { Message::InspectorChanged(Field::EncodedBy, value,) }
         ),
         field_row(
             "Copyright",
             &state.inspector.copyright,
             is_mixed(state, Field::Copyright),
-            |s| Message::InspectorChanged(Field::Copyright, s)
+            |value| { Message::InspectorChanged(Field::Copyright, value,) }
         ),
     ]
     .spacing(8)
 }
 
 fn build_tags_section(state: &Sonora) -> Column<'_, Message> {
-    // The inspector remains honest and thorough.
-    // The improvement here is grouping, not hiding capability.
     iced::widget::column![
         section_title("Tags"),
         build_primary_tag_fields(state),
@@ -478,10 +515,7 @@ fn build_tags_section(state: &Sonora) -> Column<'_, Message> {
 }
 
 fn build_actions_section(state: &Sonora) -> Column<'_, Message> {
-    // Make save feel like the main commit action in this pane.
-    // The secondary button is intentionally muted so the eye knows which action
-    // matters more.
-    let save_btn = if state.scanning || !state.inspector_dirty {
+    let save_button = if state.scanning || !state.inspector_dirty {
         button(button_text("Save changes")).style(sonora_button)
     } else {
         button(button_text("Save changes"))
@@ -495,7 +529,7 @@ fn build_actions_section(state: &Sonora) -> Column<'_, Message> {
         "Close inspector"
     };
 
-    let close_btn = if state.scanning {
+    let close_button = if state.scanning {
         button(button_text(close_label)).style(sonora_button_muted)
     } else {
         button(button_text(close_label))
@@ -512,7 +546,7 @@ fn build_actions_section(state: &Sonora) -> Column<'_, Message> {
     iced::widget::column![
         section_title("Actions"),
         dirty_text,
-        row![save_btn, close_btn].spacing(8),
+        row![save_button, close_button].spacing(8),
     ]
     .spacing(8)
 }
@@ -534,14 +568,8 @@ pub(crate) fn build_inspector_panel(state: &Sonora) -> iced::widget::Container<'
     let tags = build_tags_section(state);
     let actions = build_actions_section(state);
 
-    // Scroll the content-heavy areas, but keep the action area visually separate
-    // at the bottom so save/cancel does not disappear into the form wall.
-    let editor = scrollable(
-        iced::widget::column![selection_info, artwork, tags,]
-            // Larger gap between major sections than inside them.
-            .spacing(18),
-    )
-    .height(Length::Fill);
+    let editor = scrollable(iced::widget::column![selection_info, artwork, tags].spacing(18))
+        .height(Length::Fill);
 
-    container(iced::widget::column![editor, actions,].spacing(14)).padding(14)
+    container(iced::widget::column![editor, actions].spacing(14)).padding(14)
 }

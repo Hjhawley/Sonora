@@ -140,6 +140,7 @@ pub(crate) struct InspectorDraft {
     pub genre: String,
 
     pub grouping: String,
+    pub content_group: String,
     pub comment: String,
     pub lyrics: String,
     pub lyricist: String,
@@ -183,6 +184,7 @@ pub(crate) enum InspectorField {
     Genre,
 
     Grouping,
+    ContentGroup,
     Comment,
     Lyrics,
     Lyricist,

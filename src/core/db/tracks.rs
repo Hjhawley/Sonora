@@ -22,7 +22,7 @@ impl Db {
             return Ok(());
         }
 
-        let tx = self.conn.transaction().map_err(|e| e.to_string())?;
+        let tx = self.conn.transaction().map_err(|error| error.to_string())?;
 
         {
             let mut update = tx
@@ -43,46 +43,50 @@ impl Db {
                         year = ?12,
                         genre = ?13,
                         grouping = ?14,
-                        comment_text = ?15,
-                        lyrics = ?16,
-                        lyricist = ?17,
-                        conductor = ?18,
-                        remixer = ?19,
-                        publisher = ?20,
-                        subtitle = ?21,
-                        bpm = ?22,
-                        key_text = ?23,
-                        mood = ?24,
-                        language = ?25,
-                        isrc = ?26,
-                        encoder_settings = ?27,
-                        encoded_by = ?28,
-                        copyright = ?29,
-                        artwork_count = ?30,
-                        title_sort = ?31,
-                        artist_sort = ?32,
-                        album_sort = ?33,
-                        album_artist_sort = ?34,
-                        duration_ms = ?35,
-                        bitrate_kbps = ?36,
-                        sample_rate_hz = ?37,
-                        channels = ?38,
-                        rating = ?39,
-                        play_count = ?40,
-                        compilation = ?41,
-                        metadata_cache_version = ?42
+                        content_group = ?15,
+                        comment_text = ?16,
+                        lyrics = ?17,
+                        lyricist = ?18,
+                        conductor = ?19,
+                        remixer = ?20,
+                        publisher = ?21,
+                        subtitle = ?22,
+                        bpm = ?23,
+                        key_text = ?24,
+                        mood = ?25,
+                        language = ?26,
+                        isrc = ?27,
+                        encoder_settings = ?28,
+                        encoded_by = ?29,
+                        copyright = ?30,
+                        artwork_count = ?31,
+                        title_sort = ?32,
+                        artist_sort = ?33,
+                        album_sort = ?34,
+                        album_artist_sort = ?35,
+                        duration_ms = ?36,
+                        bitrate_kbps = ?37,
+                        sample_rate_hz = ?38,
+                        channels = ?39,
+                        rating = ?40,
+                        play_count = ?41,
+                        compilation = ?42,
+                        metadata_cache_version = ?43
                     WHERE id = ?1
                     "#,
                 )
-                .map_err(|e| e.to_string())?;
+                .map_err(|error| error.to_string())?;
 
             for row in rows {
-                let id = row.id.ok_or_else(|| {
-                    format!(
-                        "Cannot cache metadata for {} without a TrackId",
-                        row.path.display()
-                    )
-                })?;
+                let id = match row.id {
+                    Some(id) => id,
+                    None => {
+                        return Err(format!(
+                            "Cannot cache metadata for {} without a TrackId",
+                            row.path.display()
+                        ));
+                    }
+                };
 
                 let play_count = row
                     .play_count
@@ -112,6 +116,7 @@ impl Db {
                         row.year,
                         row.genre.as_deref(),
                         row.grouping.as_deref(),
+                        row.content_group.as_deref(),
                         row.comment.as_deref(),
                         row.lyrics.as_deref(),
                         row.lyricist.as_deref(),
@@ -142,7 +147,7 @@ impl Db {
                             .map(|value| if value { 1_i64 } else { 0_i64 }),
                         TRACK_METADATA_CACHE_VERSION,
                     ])
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|error| error.to_string())?;
 
                 if affected != 1 {
                     return Err(format!(
@@ -153,7 +158,7 @@ impl Db {
             }
         }
 
-        tx.commit().map_err(|e| e.to_string())?;
+        tx.commit().map_err(|error| error.to_string())?;
 
         Ok(())
     }
@@ -189,6 +194,7 @@ impl Db {
                 year,
                 genre,
                 grouping,
+                content_group,
                 comment_text,
                 lyrics,
                 lyricist,
@@ -222,16 +228,16 @@ impl Db {
             "#
         );
 
-        let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
+        let mut statement = self.conn.prepare(&sql).map_err(|error| error.to_string())?;
 
-        let rows = stmt
+        let rows = statement
             .query_map([], Self::track_row_from_sql_row)
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
 
         let mut tracks = Vec::new();
 
         for row in rows {
-            tracks.push(row.map_err(|e| e.to_string())?);
+            tracks.push(row.map_err(|error| error.to_string())?);
         }
 
         Ok(tracks)
@@ -261,35 +267,36 @@ impl Db {
             genre: row.get(13)?,
 
             grouping: row.get(14)?,
-            comment: row.get(15)?,
-            lyrics: row.get(16)?,
-            lyricist: row.get(17)?,
-            conductor: row.get(18)?,
-            remixer: row.get(19)?,
-            publisher: row.get(20)?,
-            subtitle: row.get(21)?,
-            bpm: optional_u32(row, 22)?,
-            key: row.get(23)?,
-            mood: row.get(24)?,
-            language: row.get(25)?,
-            isrc: row.get(26)?,
-            encoder_settings: row.get(27)?,
-            encoded_by: row.get(28)?,
-            copyright: row.get(29)?,
+            content_group: row.get(15)?,
+            comment: row.get(16)?,
+            lyrics: row.get(17)?,
+            lyricist: row.get(18)?,
+            conductor: row.get(19)?,
+            remixer: row.get(20)?,
+            publisher: row.get(21)?,
+            subtitle: row.get(22)?,
+            bpm: optional_u32(row, 23)?,
+            key: row.get(24)?,
+            mood: row.get(25)?,
+            language: row.get(26)?,
+            isrc: row.get(27)?,
+            encoder_settings: row.get(28)?,
+            encoded_by: row.get(29)?,
+            copyright: row.get(30)?,
 
-            artwork_count: required_u32(row, 30)?,
-            title_sort: row.get(31)?,
-            artist_sort: row.get(32)?,
-            album_sort: row.get(33)?,
-            album_artist_sort: row.get(34)?,
+            artwork_count: required_u32(row, 31)?,
+            title_sort: row.get(32)?,
+            artist_sort: row.get(33)?,
+            album_sort: row.get(34)?,
+            album_artist_sort: row.get(35)?,
 
-            duration_ms: optional_u32(row, 35)?,
-            bitrate_kbps: optional_u32(row, 36)?,
-            sample_rate_hz: optional_u32(row, 37)?,
-            channels: optional_u8(row, 38)?,
-            rating: optional_u8(row, 39)?,
-            play_count: optional_u64(row, 40)?,
-            compilation: row.get::<_, Option<i64>>(41)?.map(|value| value != 0),
+            duration_ms: optional_u32(row, 36)?,
+            bitrate_kbps: optional_u32(row, 37)?,
+            sample_rate_hz: optional_u32(row, 38)?,
+            channels: optional_u8(row, 39)?,
+            rating: optional_u8(row, 40)?,
+            play_count: optional_u64(row, 41)?,
+            compilation: row.get::<_, Option<i64>>(42)?.map(|value| value != 0),
         })
     }
 
@@ -300,7 +307,7 @@ impl Db {
                 "UPDATE tracks SET hidden = ?2 WHERE id = ?1",
                 params![id.0, if hidden { 1_i64 } else { 0_i64 }],
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
 
         if affected != 1 {
             return Err(format!(
@@ -316,7 +323,7 @@ impl Db {
         let affected = self
             .conn
             .execute("DELETE FROM tracks WHERE id = ?1", params![id.0])
-            .map_err(|e| e.to_string())?;
+            .map_err(|error| error.to_string())?;
 
         if affected != 1 {
             return Err(format!(
