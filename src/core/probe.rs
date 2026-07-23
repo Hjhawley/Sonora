@@ -104,7 +104,7 @@ pub fn mp3_audio_bytes_excluding_id3(path: &Path) -> Option<u64> {
 ///
 /// Because one bit per millisecond equals one decimal kilobit per second:
 ///
-/// `kbps = (audio_bytes * 8) / duration_ms`
+/// 'kbps = (audio_bytes * 8) / duration_ms'
 pub fn average_bitrate_kbps_from_audio_bytes(audio_bytes: u64, duration_ms: u32) -> Option<u32> {
     if audio_bytes == 0 || duration_ms == 0 {
         return None;

@@ -7,6 +7,7 @@
 //! - marks tracks under the scanned roots as missing
 //! - marks rediscovered files as present
 //! - updates cached filesystem facts
+//! - invalidates cached metadata when filesystem facts change
 //! - identifies new, changed, or stale-cache rows
 //! - returns only the rows that must be rehydrated from disk
 
@@ -26,10 +27,11 @@ impl Db {
     /// Metadata must be rehydrated when a file is:
     /// - newly discovered
     /// - changed according to its '(mtime, size)' pair
-    /// - cached with an older metadata representation
+    /// - cached with a metadata representation other than the current version
     ///
-    /// A failed hydration does not stamp the current cache version, so the
-    /// track will be retried during a later scan.
+    /// When filesystem facts change, the cache version is reset before
+    /// hydration. A successful metadata write stamps the current version;
+    /// a failed hydration leaves the row stale so a later scan retries it.
     pub fn upsert_discovered(
         &mut self,
         scanned_roots: &[PathBuf],
@@ -78,7 +80,8 @@ impl Db {
                     SET
                         present = 1,
                         mtime = ?2,
-                        size = ?3
+                        size = ?3,
+                        metadata_cache_version = ?4
                     WHERE id = ?1
                     "#,
                 )
@@ -86,6 +89,7 @@ impl Db {
 
             for file in files {
                 let path_text = path_to_db_text(&file.path)?;
+
                 let size = file
                     .size
                     .map(|value| {
@@ -112,13 +116,17 @@ impl Db {
 
                 match existing {
                     Some((id, old_mtime, old_size, cache_version)) => {
+                        let filesystem_changed = old_mtime != file.mtime_unix || old_size != size;
+
+                        let stored_cache_version =
+                            if filesystem_changed { 0 } else { cache_version };
+
                         update_filesystem_facts
-                            .execute(params![id.0, file.mtime_unix, size,])
+                            .execute(params![id.0, file.mtime_unix, size, stored_cache_version,])
                             .map_err(|e| e.to_string())?;
 
-                        let needs_refresh = old_mtime != file.mtime_unix
-                            || old_size != size
-                            || cache_version < TRACK_METADATA_CACHE_VERSION;
+                        let needs_refresh =
+                            filesystem_changed || cache_version != TRACK_METADATA_CACHE_VERSION;
 
                         if needs_refresh {
                             tracks_to_hydrate.push((id, file.path.clone()));
@@ -127,7 +135,7 @@ impl Db {
 
                     None => {
                         insert_track
-                            .execute(params![path_text, file.mtime_unix, size,])
+                            .execute(params![path_text, file.mtime_unix, size])
                             .map_err(|e| e.to_string())?;
 
                         let id = TrackId(tx.last_insert_rowid());
@@ -162,6 +170,7 @@ fn mark_tracks_under_roots_missing(
             .query_map([], |row| {
                 let id = TrackId(row.get::<_, i64>(0)?);
                 let path = PathBuf::from(row.get::<_, String>(1)?);
+
                 Ok((id, path))
             })
             .map_err(|e| e.to_string())?;
