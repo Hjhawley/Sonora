@@ -1,21 +1,29 @@
 //! core/db/tracks.rs
 //!
-//! Track-record persistence, loading, and Sonora-only DB actions.
+//! Track-row persistence, DB-backed loading, SQL-to-TrackRow mapping, and
+//! Sonora-only row actions.
 
 use std::path::PathBuf;
 
-use rusqlite::{Row, params};
+use rusqlite::{Error as SqlError, Row, params, types::Type};
 
 use super::Db;
+use super::schema::TRACK_METADATA_CACHE_VERSION;
 use crate::core::types::{TrackId, TrackRow};
 
 impl Db {
-    pub fn upsert_track_rows_metadata(&mut self, rows: &[TrackRow]) -> Result<(), String> {
+    /// Update metadata for rows that already exist in the track cache.
+    ///
+    /// Reconciliation creates the underlying rows and assigns their TrackIds.
+    /// A successful metadata update stamps each row with the current cache
+    /// version so future scans can skip unchanged files.
+    pub fn update_track_rows_metadata(&mut self, rows: &[TrackRow]) -> Result<(), String> {
         if rows.is_empty() {
             return Ok(());
         }
 
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
+
         {
             let mut update = tx
                 .prepare(
@@ -61,18 +69,34 @@ impl Db {
                         channels = ?38,
                         rating = ?39,
                         play_count = ?40,
-                        compilation = ?41
+                        compilation = ?41,
+                        metadata_cache_version = ?42
                     WHERE id = ?1
                     "#,
                 )
                 .map_err(|e| e.to_string())?;
 
             for row in rows {
-                let Some(id) = row.id else {
-                    continue;
-                };
+                let id = row.id.ok_or_else(|| {
+                    format!(
+                        "Cannot cache metadata for {} without a TrackId",
+                        row.path.display()
+                    )
+                })?;
 
-                update
+                let play_count = row
+                    .play_count
+                    .map(|value| {
+                        i64::try_from(value).map_err(|_| {
+                            format!(
+                                "Play count does not fit SQLite INTEGER for {}",
+                                row.path.display()
+                            )
+                        })
+                    })
+                    .transpose()?;
+
+                let affected = update
                     .execute(params![
                         id.0,
                         row.title.as_deref(),
@@ -80,10 +104,10 @@ impl Db {
                         row.album.as_deref(),
                         row.album_artist.as_deref(),
                         row.composer.as_deref(),
-                        row.track_no.map(|v| v as i64),
-                        row.track_total.map(|v| v as i64),
-                        row.disc_no.map(|v| v as i64),
-                        row.disc_total.map(|v| v as i64),
+                        row.track_no.map(i64::from),
+                        row.track_total.map(i64::from),
+                        row.disc_no.map(i64::from),
+                        row.disc_total.map(i64::from),
                         row.release_date.as_deref(),
                         row.year,
                         row.genre.as_deref(),
@@ -95,7 +119,7 @@ impl Db {
                         row.remixer.as_deref(),
                         row.publisher.as_deref(),
                         row.subtitle.as_deref(),
-                        row.bpm.map(|v| v as i64),
+                        row.bpm.map(i64::from),
                         row.key.as_deref(),
                         row.mood.as_deref(),
                         row.language.as_deref(),
@@ -103,25 +127,43 @@ impl Db {
                         row.encoder_settings.as_deref(),
                         row.encoded_by.as_deref(),
                         row.copyright.as_deref(),
-                        row.artwork_count as i64,
+                        i64::from(row.artwork_count),
                         row.title_sort.as_deref(),
                         row.artist_sort.as_deref(),
                         row.album_sort.as_deref(),
                         row.album_artist_sort.as_deref(),
-                        row.duration_ms.map(|v| v as i64),
-                        row.bitrate_kbps.map(|v| v as i64),
-                        row.sample_rate_hz.map(|v| v as i64),
-                        row.channels.map(|v| v as i64),
-                        row.rating.map(|v| v as i64),
-                        row.play_count.map(|v| v as i64),
-                        row.compilation.map(|v| if v { 1_i64 } else { 0_i64 }),
+                        row.duration_ms.map(i64::from),
+                        row.bitrate_kbps.map(i64::from),
+                        row.sample_rate_hz.map(i64::from),
+                        row.channels.map(i64::from),
+                        row.rating.map(i64::from),
+                        play_count,
+                        row.compilation
+                            .map(|value| if value { 1_i64 } else { 0_i64 }),
+                        TRACK_METADATA_CACHE_VERSION,
                     ])
                     .map_err(|e| e.to_string())?;
+
+                if affected != 1 {
+                    return Err(format!(
+                        "Expected to update track {}, but updated {affected} rows",
+                        id.0
+                    ));
+                }
             }
         }
 
         tx.commit().map_err(|e| e.to_string())?;
+
         Ok(())
+    }
+
+    /// Backward-compatible alias retained for existing scan/save callers.
+    ///
+    /// The operation is technically an update because reconciliation creates
+    /// each database row before hydration occurs.
+    pub fn upsert_track_rows_metadata(&mut self, rows: &[TrackRow]) -> Result<(), String> {
+        self.update_track_rows_metadata(rows)
     }
 
     pub fn load_visible_tracks(&self) -> Result<Vec<TrackRow>, String> {
@@ -189,15 +231,18 @@ impl Db {
         );
 
         let mut stmt = self.conn.prepare(&sql).map_err(|e| e.to_string())?;
+
         let rows = stmt
             .query_map([], Self::track_row_from_sql_row)
             .map_err(|e| e.to_string())?;
 
-        let mut out = Vec::new();
+        let mut tracks = Vec::new();
+
         for row in rows {
-            out.push(row.map_err(|e| e.to_string())?);
+            tracks.push(row.map_err(|e| e.to_string())?);
         }
-        Ok(out)
+
+        Ok(tracks)
     }
 
     fn track_row_from_sql_row(row: &Row<'_>) -> rusqlite::Result<TrackRow> {
@@ -214,10 +259,10 @@ impl Db {
             album_artist: row.get(5)?,
             composer: row.get(6)?,
 
-            track_no: row.get::<_, Option<i64>>(7)?.map(|v| v as u32),
-            track_total: row.get::<_, Option<i64>>(8)?.map(|v| v as u32),
-            disc_no: row.get::<_, Option<i64>>(9)?.map(|v| v as u32),
-            disc_total: row.get::<_, Option<i64>>(10)?.map(|v| v as u32),
+            track_no: optional_u32(row, 7)?,
+            track_total: optional_u32(row, 8)?,
+            disc_no: optional_u32(row, 9)?,
+            disc_total: optional_u32(row, 10)?,
 
             release_date: row.get(11)?,
             year: row.get(12)?,
@@ -231,7 +276,7 @@ impl Db {
             remixer: row.get(19)?,
             publisher: row.get(20)?,
             subtitle: row.get(21)?,
-            bpm: row.get::<_, Option<i64>>(22)?.map(|v| v as u32),
+            bpm: optional_u32(row, 22)?,
             key: row.get(23)?,
             mood: row.get(24)?,
             language: row.get(25)?,
@@ -240,36 +285,86 @@ impl Db {
             encoded_by: row.get(28)?,
             copyright: row.get(29)?,
 
-            artwork_count: row.get::<_, i64>(30)? as u32,
+            artwork_count: required_u32(row, 30)?,
             title_sort: row.get(31)?,
             artist_sort: row.get(32)?,
             album_sort: row.get(33)?,
             album_artist_sort: row.get(34)?,
 
-            duration_ms: row.get::<_, Option<i64>>(35)?.map(|v| v as u32),
-            bitrate_kbps: row.get::<_, Option<i64>>(36)?.map(|v| v as u32),
-            sample_rate_hz: row.get::<_, Option<i64>>(37)?.map(|v| v as u32),
-            channels: row.get::<_, Option<i64>>(38)?.map(|v| v as u8),
-            rating: row.get::<_, Option<i64>>(39)?.map(|v| v as u8),
-            play_count: row.get::<_, Option<i64>>(40)?.map(|v| v as u64),
-            compilation: row.get::<_, Option<i64>>(41)?.map(|v| v != 0),
+            duration_ms: optional_u32(row, 35)?,
+            bitrate_kbps: optional_u32(row, 36)?,
+            sample_rate_hz: optional_u32(row, 37)?,
+            channels: optional_u8(row, 38)?,
+            rating: optional_u8(row, 39)?,
+            play_count: optional_u64(row, 40)?,
+            compilation: row.get::<_, Option<i64>>(41)?.map(|value| value != 0),
         })
     }
 
     pub fn set_hidden(&self, id: TrackId, hidden: bool) -> Result<(), String> {
-        self.conn
+        let affected = self
+            .conn
             .execute(
                 "UPDATE tracks SET hidden = ?2 WHERE id = ?1",
-                params![id.0, if hidden { 1 } else { 0 }],
+                params![id.0, if hidden { 1_i64 } else { 0_i64 }],
             )
             .map_err(|e| e.to_string())?;
+
+        if affected != 1 {
+            return Err(format!(
+                "Track {} does not exist in the Sonora database",
+                id.0
+            ));
+        }
+
         Ok(())
     }
 
     pub fn delete_track(&self, id: TrackId) -> Result<(), String> {
-        self.conn
+        let affected = self
+            .conn
             .execute("DELETE FROM tracks WHERE id = ?1", params![id.0])
             .map_err(|e| e.to_string())?;
+
+        if affected != 1 {
+            return Err(format!(
+                "Track {} does not exist in the Sonora database",
+                id.0
+            ));
+        }
+
         Ok(())
     }
+}
+
+fn required_u32(row: &Row<'_>, index: usize) -> rusqlite::Result<u32> {
+    let value = row.get::<_, i64>(index)?;
+    convert_integer(index, value)
+}
+
+fn optional_u32(row: &Row<'_>, index: usize) -> rusqlite::Result<Option<u32>> {
+    row.get::<_, Option<i64>>(index)?
+        .map(|value| convert_integer(index, value))
+        .transpose()
+}
+
+fn optional_u8(row: &Row<'_>, index: usize) -> rusqlite::Result<Option<u8>> {
+    row.get::<_, Option<i64>>(index)?
+        .map(|value| convert_integer(index, value))
+        .transpose()
+}
+
+fn optional_u64(row: &Row<'_>, index: usize) -> rusqlite::Result<Option<u64>> {
+    row.get::<_, Option<i64>>(index)?
+        .map(|value| convert_integer(index, value))
+        .transpose()
+}
+
+fn convert_integer<T>(index: usize, value: i64) -> rusqlite::Result<T>
+where
+    T: TryFrom<i64>,
+    T::Error: std::error::Error + Send + Sync + 'static,
+{
+    T::try_from(value)
+        .map_err(|error| SqlError::FromSqlConversionFailure(index, Type::Integer, Box::new(error)))
 }

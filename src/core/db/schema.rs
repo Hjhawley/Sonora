@@ -1,12 +1,17 @@
 //! core/db/schema.rs
 //!
-//! SQLite schema + additive migrations.
-//! - DB stores enough common metadata to build TrackRow directly at startup
-//! - filesystem tag reads happen during scan/save, not every launch
-
-use rusqlite::Connection;
+//! SQLite schema initialization and lightweight additive migrations.
+//!
+//! The database stores enough normalized metadata to reconstruct `TrackRow`
+//! values without reading every media file during normal startup.
+//!
+//! `TRACK_METADATA_CACHE_VERSION` identifies the current cached representation.
+//! Increment it whenever changes to tag reading, probing, normalization, or the
+//! cached schema require existing files to be rehydrated from disk.
 
 use super::Db;
+
+pub(super) const TRACK_METADATA_CACHE_VERSION: i64 = 1;
 
 impl Db {
     pub(super) fn init_schema(&self) -> Result<(), String> {
@@ -35,13 +40,13 @@ impl Db {
             )
             .map_err(|e| e.to_string())?;
 
-        // Filesystem / visibility facts
+        // Filesystem and Sonora visibility state.
         self.ensure_column("tracks", "present", "INTEGER NOT NULL DEFAULT 1")?;
         self.ensure_column("tracks", "hidden", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column("tracks", "mtime", "INTEGER")?;
         self.ensure_column("tracks", "size", "INTEGER")?;
 
-        // Common editable/display metadata
+        // Cached editable and display metadata.
         self.ensure_column("tracks", "title", "TEXT")?;
         self.ensure_column("tracks", "artist", "TEXT")?;
         self.ensure_column("tracks", "album", "TEXT")?;
@@ -74,23 +79,34 @@ impl Db {
         self.ensure_column("tracks", "encoded_by", "TEXT")?;
         self.ensure_column("tracks", "copyright", "TEXT")?;
 
-        // Sort / artwork helpers
+        // Sort and artwork helpers.
         self.ensure_column("tracks", "artwork_count", "INTEGER NOT NULL DEFAULT 0")?;
         self.ensure_column("tracks", "title_sort", "TEXT")?;
         self.ensure_column("tracks", "artist_sort", "TEXT")?;
         self.ensure_column("tracks", "album_sort", "TEXT")?;
         self.ensure_column("tracks", "album_artist_sort", "TEXT")?;
 
-        // Read-only technical metadata
+        // Read-only technical media properties.
         self.ensure_column("tracks", "duration_ms", "INTEGER")?;
         self.ensure_column("tracks", "bitrate_kbps", "INTEGER")?;
         self.ensure_column("tracks", "sample_rate_hz", "INTEGER")?;
         self.ensure_column("tracks", "channels", "INTEGER")?;
+
+        // Additional tag-derived library metadata.
         self.ensure_column("tracks", "rating", "INTEGER")?;
         self.ensure_column("tracks", "play_count", "INTEGER")?;
         self.ensure_column("tracks", "compilation", "INTEGER")?;
 
-        // Indexes must come AFTER migrations that add the referenced columns.
+        // Version of the cached metadata representation last successfully
+        // written for this row. Existing rows begin at zero and are refreshed
+        // during the next scan.
+        self.ensure_column(
+            "tracks",
+            "metadata_cache_version",
+            "INTEGER NOT NULL DEFAULT 0",
+        )?;
+
+        // Indexes must be created after migrations add their columns.
         self.conn
             .execute_batch(
                 r#"
@@ -109,28 +125,24 @@ impl Db {
         Ok(())
     }
 
-    pub(super) fn ensure_column(
-        &self,
-        table: &str,
-        column: &str,
-        definition: &str,
-    ) -> Result<(), String> {
+    fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<(), String> {
         let pragma = format!("PRAGMA table_info({table})");
         let mut stmt = self.conn.prepare(&pragma).map_err(|e| e.to_string())?;
+
         let mut rows = stmt.query([]).map_err(|e| e.to_string())?;
 
         while let Some(row) = rows.next().map_err(|e| e.to_string())? {
-            let name: String = row.get(1).map_err(|e| e.to_string())?;
-            if name == column {
+            let existing_name: String = row.get(1).map_err(|e| e.to_string())?;
+
+            if existing_name == column {
                 return Ok(());
             }
         }
 
         let sql = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
+
         self.conn.execute(&sql, []).map_err(|e| e.to_string())?;
+
         Ok(())
     }
 }
-
-#[allow(dead_code)]
-fn _future_migration_scaffold(_conn: &Connection) {}

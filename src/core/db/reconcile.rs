@@ -1,22 +1,35 @@
 //! core/db/reconcile.rs
 //!
 //! Scan-time reconciliation between discovered filesystem state and cached
-//! SQLite track records.
+//! SQLite track rows.
+//!
+//! Reconciliation:
+//! - marks tracks under the scanned roots as missing
+//! - marks rediscovered files as present
+//! - updates cached filesystem facts
+//! - identifies new, changed, or stale-cache rows
+//! - returns only the rows that must be rehydrated from disk
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rusqlite::{OptionalExtension, params};
 
 use super::Db;
+use super::path_to_db_text;
+use super::schema::TRACK_METADATA_CACHE_VERSION;
 use crate::core::library::DiscoveredFile;
 use crate::core::types::TrackId;
 
 impl Db {
-    /// Reconcile filesystem facts into DB truth for the scanned roots.
-    /// Re-read metadata when the file is:
-    /// - new
-    /// - changed by '(mtime, size)'
-    /// - still missing cached metadata in the DB
+    /// Reconcile discovered filesystem facts into the database.
+    ///
+    /// Metadata must be rehydrated when a file is:
+    /// - newly discovered
+    /// - changed according to its `(mtime, size)` pair
+    /// - cached with an older metadata representation
+    ///
+    /// A failed hydration does not stamp the current cache version, so the
+    /// track will be retried during a later scan.
     pub fn upsert_discovered(
         &mut self,
         scanned_roots: &[PathBuf],
@@ -24,41 +37,9 @@ impl Db {
     ) -> Result<Vec<(TrackId, PathBuf)>, String> {
         let tx = self.conn.transaction().map_err(|e| e.to_string())?;
 
-        let mut ids_under_scanned_roots: Vec<TrackId> = Vec::new();
-        {
-            let mut stmt = tx
-                .prepare("SELECT id, path FROM tracks")
-                .map_err(|e| e.to_string())?;
+        mark_tracks_under_roots_missing(&tx, scanned_roots)?;
 
-            let rows = stmt
-                .query_map([], |row| {
-                    let id: i64 = row.get(0)?;
-                    let path: String = row.get(1)?;
-                    Ok((TrackId(id), PathBuf::from(path)))
-                })
-                .map_err(|e| e.to_string())?;
-
-            for row in rows {
-                let (id, path) = row.map_err(|e| e.to_string())?;
-                if scanned_roots.iter().any(|root| path.starts_with(root)) {
-                    ids_under_scanned_roots.push(id);
-                }
-            }
-        }
-
-        if !ids_under_scanned_roots.is_empty() {
-            let mut mark_missing = tx
-                .prepare("UPDATE tracks SET present = 0 WHERE id = ?1")
-                .map_err(|e| e.to_string())?;
-
-            for id in &ids_under_scanned_roots {
-                mark_missing
-                    .execute(params![id.0])
-                    .map_err(|e| e.to_string())?;
-            }
-        }
-
-        let mut changed: Vec<(TrackId, PathBuf)> = Vec::new();
+        let mut tracks_to_hydrate = Vec::new();
 
         {
             let mut select_existing = tx
@@ -68,122 +49,149 @@ impl Db {
                         id,
                         mtime,
                         size,
-                        title,
-                        artist,
-                        album,
-                        album_artist,
-                        duration_ms
+                        metadata_cache_version
                     FROM tracks
                     WHERE path = ?1
                     "#,
                 )
                 .map_err(|e| e.to_string())?;
 
-            let mut insert = tx
-                .prepare("INSERT OR IGNORE INTO tracks(path) VALUES (?1)")
-                .map_err(|e| e.to_string())?;
-
-            let mut update_presence = tx
+            let mut insert_track = tx
                 .prepare(
                     r#"
-                    UPDATE tracks
-                    SET present = 1, mtime = ?2, size = ?3
-                    WHERE path = ?1
+                    INSERT INTO tracks(
+                        path,
+                        present,
+                        mtime,
+                        size,
+                        metadata_cache_version
+                    )
+                    VALUES (?1, 1, ?2, ?3, 0)
                     "#,
                 )
                 .map_err(|e| e.to_string())?;
 
-            let mut select_id = tx
-                .prepare("SELECT id FROM tracks WHERE path = ?1")
+            let mut update_filesystem_facts = tx
+                .prepare(
+                    r#"
+                    UPDATE tracks
+                    SET
+                        present = 1,
+                        mtime = ?2,
+                        size = ?3
+                    WHERE id = ?1
+                    "#,
+                )
                 .map_err(|e| e.to_string())?;
 
-            for f in files {
-                let p_str = f.path.to_string_lossy();
-                let new_size_i64 = f.size.map(|s| s as i64);
+            for file in files {
+                let path_text = path_to_db_text(&file.path)?;
+                let size = file
+                    .size
+                    .map(|value| {
+                        i64::try_from(value).map_err(|_| {
+                            format!(
+                                "File size does not fit SQLite INTEGER for {}",
+                                file.path.display()
+                            )
+                        })
+                    })
+                    .transpose()?;
 
-                let existing: Option<(
-                    TrackId,
-                    Option<i64>,
-                    Option<i64>,
-                    Option<String>,
-                    Option<String>,
-                    Option<String>,
-                    Option<String>,
-                    Option<i64>,
-                )> = select_existing
-                    .query_row(params![p_str.as_ref()], |row| {
+                let existing: Option<(TrackId, Option<i64>, Option<i64>, i64)> = select_existing
+                    .query_row(params![path_text], |row| {
                         Ok((
                             TrackId(row.get::<_, i64>(0)?),
                             row.get::<_, Option<i64>>(1)?,
                             row.get::<_, Option<i64>>(2)?,
-                            row.get::<_, Option<String>>(3)?,
-                            row.get::<_, Option<String>>(4)?,
-                            row.get::<_, Option<String>>(5)?,
-                            row.get::<_, Option<String>>(6)?,
-                            row.get::<_, Option<i64>>(7)?,
+                            row.get::<_, i64>(3)?,
                         ))
                     })
                     .optional()
                     .map_err(|e| e.to_string())?;
 
-                let needs_refresh = match existing {
-                    None => true,
-                    Some((
-                        _id,
-                        old_mtime,
-                        old_size,
-                        title,
-                        artist,
-                        album,
-                        album_artist,
-                        duration_ms,
-                    )) => {
-                        old_mtime != f.mtime_unix
-                            || old_size != new_size_i64
-                            || metadata_cache_missing(
-                                title.as_deref(),
-                                artist.as_deref(),
-                                album.as_deref(),
-                                album_artist.as_deref(),
-                                duration_ms,
-                            )
+                match existing {
+                    Some((id, old_mtime, old_size, cache_version)) => {
+                        update_filesystem_facts
+                            .execute(params![id.0, file.mtime_unix, size,])
+                            .map_err(|e| e.to_string())?;
+
+                        let needs_refresh = old_mtime != file.mtime_unix
+                            || old_size != size
+                            || cache_version < TRACK_METADATA_CACHE_VERSION;
+
+                        if needs_refresh {
+                            tracks_to_hydrate.push((id, file.path.clone()));
+                        }
                     }
-                };
 
-                insert
-                    .execute(params![p_str.as_ref()])
-                    .map_err(|e| e.to_string())?;
+                    None => {
+                        insert_track
+                            .execute(params![path_text, file.mtime_unix, size,])
+                            .map_err(|e| e.to_string())?;
 
-                update_presence
-                    .execute(params![p_str.as_ref(), f.mtime_unix, new_size_i64])
-                    .map_err(|e| e.to_string())?;
-
-                if needs_refresh {
-                    let id = TrackId(
-                        select_id
-                            .query_row(params![p_str.as_ref()], |row| row.get::<_, i64>(0))
-                            .map_err(|e| e.to_string())?,
-                    );
-                    changed.push((id, f.path.clone()));
+                        let id = TrackId(tx.last_insert_rowid());
+                        tracks_to_hydrate.push((id, file.path.clone()));
+                    }
                 }
             }
         }
 
         tx.commit().map_err(|e| e.to_string())?;
-        Ok(changed)
+
+        Ok(tracks_to_hydrate)
     }
 }
 
-fn metadata_cache_missing(
-    title: Option<&str>,
-    artist: Option<&str>,
-    album: Option<&str>,
-    album_artist: Option<&str>,
-    duration_ms: Option<i64>,
-) -> bool {
-    title.is_none()
-        && artist.is_none()
-        && album.is_none()
-        && album_artist.is_none()
-        && duration_ms.is_none()
+fn mark_tracks_under_roots_missing(
+    conn: &rusqlite::Connection,
+    scanned_roots: &[PathBuf],
+) -> Result<(), String> {
+    if scanned_roots.is_empty() {
+        return Ok(());
+    }
+
+    let mut ids_under_scanned_roots = Vec::new();
+
+    {
+        let mut stmt = conn
+            .prepare("SELECT id, path FROM tracks")
+            .map_err(|e| e.to_string())?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let id = TrackId(row.get::<_, i64>(0)?);
+                let path = PathBuf::from(row.get::<_, String>(1)?);
+                Ok((id, path))
+            })
+            .map_err(|e| e.to_string())?;
+
+        for row in rows {
+            let (id, path) = row.map_err(|e| e.to_string())?;
+
+            if is_under_any_root(&path, scanned_roots) {
+                ids_under_scanned_roots.push(id);
+            }
+        }
+    }
+
+    if ids_under_scanned_roots.is_empty() {
+        return Ok(());
+    }
+
+    let mut mark_missing = conn
+        .prepare("UPDATE tracks SET present = 0 WHERE id = ?1")
+        .map_err(|e| e.to_string())?;
+
+    for id in ids_under_scanned_roots {
+        mark_missing
+            .execute(params![id.0])
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn is_under_any_root(path: &Path, roots: &[PathBuf]) -> bool {
+    roots.iter().any(|root| path.starts_with(root))
 }
