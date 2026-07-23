@@ -41,6 +41,7 @@ pub(crate) enum TrackColumn {
     Year,
     Genre,
     Grouping,
+    ContentGroup,
     Comment,
     Lyrics,
     Lyricist,
@@ -73,7 +74,7 @@ pub(crate) enum TrackColumn {
 }
 
 impl TrackColumn {
-    pub const ALL: [Self; 42] = [
+    pub const ALL: [Self; 43] = [
         Self::Marker,
         Self::Path,
         Self::TrackNo,
@@ -89,6 +90,7 @@ impl TrackColumn {
         Self::Year,
         Self::Genre,
         Self::Grouping,
+        Self::ContentGroup,
         Self::Comment,
         Self::Lyrics,
         Self::Lyricist,
@@ -135,6 +137,7 @@ impl TrackColumn {
             Self::Year => "Year",
             Self::Genre => "Genre",
             Self::Grouping => "Grouping",
+            Self::ContentGroup => "Content Group",
             Self::Comment => "Comment",
             Self::Lyrics => "Lyrics",
             Self::Lyricist => "Lyricist",
@@ -182,6 +185,7 @@ impl TrackColumn {
             Self::Year => Some(TrackSortField::Year),
             Self::Genre => Some(TrackSortField::Genre),
             Self::Grouping => Some(TrackSortField::Grouping),
+            Self::ContentGroup => Some(TrackSortField::ContentGroup),
             Self::Comment => Some(TrackSortField::Comment),
             Self::Lyrics => Some(TrackSortField::Lyrics),
             Self::Lyricist => Some(TrackSortField::Lyricist),
@@ -229,6 +233,7 @@ impl TrackColumn {
             Self::Year => TRACK_COL_YEAR_W,
             Self::Genre => TRACK_COL_GENRE_W,
             Self::Grouping => TRACK_COL_GROUPING_W,
+            Self::ContentGroup => TRACK_COL_GROUPING_W,
             Self::Comment => TRACK_COL_COMMENT_W,
             Self::Lyrics => TRACK_COL_LYRICS_W,
             Self::Lyricist => TRACK_COL_LYRICIST_W,

@@ -35,6 +35,7 @@ pub(crate) enum TrackSortField {
     Year,
     Genre,
     Grouping,
+    ContentGroup,
     Comment,
     Lyrics,
     Lyricist,
@@ -118,6 +119,7 @@ pub(crate) struct QueryTrackCache {
     pub release_date: String,
     pub genre: String,
     pub grouping: String,
+    pub content_group: String,
     pub comment: String,
     pub lyrics: String,
     pub lyricist: String,
@@ -247,6 +249,7 @@ fn build_query_cache_row(row: &TrackRow) -> QueryTrackCache {
     let release_date = normalized_release_date(row);
     let genre = normalized_genre(row);
     let grouping = opt_norm(row.grouping.as_deref());
+    let content_group = opt_norm(row.content_group.as_deref());
     let comment = opt_norm(row.comment.as_deref());
     let lyrics = opt_norm(row.lyrics.as_deref());
     let lyricist = opt_norm(row.lyricist.as_deref());
@@ -292,6 +295,7 @@ fn build_query_cache_row(row: &TrackRow) -> QueryTrackCache {
         release_date.as_str(),
         genre.as_str(),
         grouping.as_str(),
+        content_group.as_str(),
         comment.as_str(),
         lyrics.as_str(),
         lyricist.as_str(),
@@ -339,6 +343,7 @@ fn build_query_cache_row(row: &TrackRow) -> QueryTrackCache {
         release_date,
         genre,
         grouping,
+        content_group,
         comment,
         lyrics,
         lyricist,
@@ -524,6 +529,22 @@ fn compare_query_rows(a: &QueryTrackCache, b: &QueryTrackCache, field: TrackSort
         )
             .cmp(&(
                 &b.grouping,
+                &b.artist,
+                &b.album,
+                b.disc_no,
+                b.track_no,
+                &b.title,
+            )),
+        TrackSortField::ContentGroup => (
+            &a.content_group,
+            &a.artist,
+            &a.album,
+            a.disc_no,
+            a.track_no,
+            &a.title,
+        )
+            .cmp(&(
+                &b.content_group,
                 &b.artist,
                 &b.album,
                 b.disc_no,

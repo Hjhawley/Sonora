@@ -47,7 +47,11 @@ pub(crate) fn build_tracks_center(state: &Sonora) -> Column<'_, Message> {
 
     let visible_ids = &state.track_view_ids;
     let visible_count = visible_ids.len();
-    let total_count = state.tracks.iter().filter(|t| t.id.is_some()).count();
+    let total_count = state
+        .tracks
+        .iter()
+        .filter(|track| track.id.is_some())
+        .count();
 
     let count_label = if state.track_query.search_text.trim().is_empty() {
         format!("{visible_count} tracks")
@@ -123,20 +127,20 @@ fn build_tracks_header<'a>(
     let table_content_w = table_content_width(columns);
     let table_outer_w = table_outer_width(columns);
 
-    let mut r = row![]
+    let mut row_widget = row![]
         .spacing(TRACK_COL_SPACING)
         .align_y(iced::Alignment::Center)
         .width(Length::Fixed(table_content_w));
 
-    for col in columns {
-        r = r.push(build_header_cell(
-            col,
+    for column in columns {
+        row_widget = row_widget.push(build_header_cell(
+            column,
             state.track_query.sort_field,
             state.track_query.sort_direction,
         ));
     }
 
-    container(r)
+    container(row_widget)
         .padding([TRACK_ROW_VPAD + 1.0, TRACK_ROW_HPAD])
         .width(Length::Fixed(table_outer_w))
         .style(|_theme: &Theme| table_header_band_style())
@@ -173,10 +177,10 @@ fn build_tracks_body<'a>(
     let top_spacer_h = (start_index as f32) * row_pitch;
     let bottom_spacer_h = ((total_rows.saturating_sub(end_index)) as f32) * row_pitch;
 
-    let mut col = column![];
+    let mut rows_column = column![];
 
     if top_spacer_h > 0.0 {
-        col = col.push(
+        rows_column = rows_column.push(
             container(text(""))
                 .height(Length::Fixed(top_spacer_h))
                 .width(Length::Fixed(table_outer_w)),
@@ -191,12 +195,12 @@ fn build_tracks_body<'a>(
         &visible_ids[0..0]
     };
 
-    for (rel_i, &id) in window.iter().enumerate() {
+    for (relative_index, &id) in window.iter().enumerate() {
         let Some(track) = state.track_by_id(id) else {
             continue;
         };
 
-        let absolute_index = start_index + rel_i;
+        let absolute_index = start_index + relative_index;
         let zebra_even = absolute_index % 2 == 0;
 
         let is_selected = state.selected_tracks.contains(&id);
@@ -209,10 +213,10 @@ fn build_tracks_body<'a>(
             .align_y(iced::Alignment::Center)
             .width(Length::Fixed(table_content_w));
 
-        for col_state in columns {
+        for column_state in columns {
             row_cells = row_cells.push(build_row_cell_for_track(
                 track,
-                col_state,
+                column_state,
                 marker,
                 marker_color,
             ));
@@ -227,11 +231,11 @@ fn build_tracks_body<'a>(
         ))
         .on_press(Message::TrackPressed(id));
 
-        col = col.push(row_widget);
+        rows_column = rows_column.push(row_widget);
     }
 
     if bottom_spacer_h > 0.0 {
-        col = col.push(
+        rows_column = rows_column.push(
             container(text(""))
                 .height(Length::Fixed(bottom_spacer_h))
                 .width(Length::Fixed(table_outer_w)),
@@ -254,7 +258,8 @@ fn build_tracks_body<'a>(
     );
 
     scrollable(
-        col.width(Length::Fixed(table_outer_w))
+        rows_column
+            .width(Length::Fixed(table_outer_w))
             .height(Length::Shrink),
     )
     .height(Length::Fill)
@@ -266,7 +271,11 @@ fn build_tracks_body<'a>(
 }
 
 fn visible_track_columns(state: &Sonora) -> Vec<&TrackColumnState> {
-    state.track_columns.iter().filter(|c| c.visible).collect()
+    state
+        .track_columns
+        .iter()
+        .filter(|column| column.visible)
+        .collect()
 }
 
 fn build_header_cell(
@@ -337,10 +346,10 @@ fn track_value_for_column(track: &crate::core::types::TrackRow, column: TrackCol
         TrackColumn::Marker => String::new(),
         TrackColumn::Path => track.path.to_string_lossy().to_string(),
 
-        TrackColumn::TrackNo => track.track_no.map(|n| n.to_string()).unwrap_or_default(),
-        TrackColumn::TrackTotal => track.track_total.map(|n| n.to_string()).unwrap_or_default(),
-        TrackColumn::DiscNo => track.disc_no.map(|n| n.to_string()).unwrap_or_default(),
-        TrackColumn::DiscTotal => track.disc_total.map(|n| n.to_string()).unwrap_or_default(),
+        TrackColumn::TrackNo => counter_display(&track.track_no_text, track.track_no),
+        TrackColumn::TrackTotal => counter_display(&track.track_total_text, track.track_total),
+        TrackColumn::DiscNo => counter_display(&track.disc_no_text, track.disc_no),
+        TrackColumn::DiscTotal => counter_display(&track.disc_total_text, track.disc_total),
 
         TrackColumn::Title => track
             .title
@@ -356,9 +365,13 @@ fn track_value_for_column(track: &crate::core::types::TrackRow, column: TrackCol
         TrackColumn::Composer => track.composer.clone().unwrap_or_default(),
 
         TrackColumn::ReleaseDate => track.release_date.clone().unwrap_or_default(),
-        TrackColumn::Year => track.year.map(|n| n.to_string()).unwrap_or_default(),
+        TrackColumn::Year => track
+            .year
+            .map(|number| number.to_string())
+            .unwrap_or_default(),
         TrackColumn::Genre => track.genre.clone().unwrap_or_default(),
         TrackColumn::Grouping => track.grouping.clone().unwrap_or_default(),
+        TrackColumn::ContentGroup => track.content_group.clone().unwrap_or_default(),
         TrackColumn::Comment => track.comment.clone().unwrap_or_default(),
         TrackColumn::Lyrics => track.lyrics.clone().unwrap_or_default(),
         TrackColumn::Lyricist => track.lyricist.clone().unwrap_or_default(),
@@ -366,7 +379,10 @@ fn track_value_for_column(track: &crate::core::types::TrackRow, column: TrackCol
         TrackColumn::Remixer => track.remixer.clone().unwrap_or_default(),
         TrackColumn::Publisher => track.publisher.clone().unwrap_or_default(),
         TrackColumn::Subtitle => track.subtitle.clone().unwrap_or_default(),
-        TrackColumn::Bpm => track.bpm.map(|n| n.to_string()).unwrap_or_default(),
+        TrackColumn::Bpm => track
+            .bpm
+            .map(|number| number.to_string())
+            .unwrap_or_default(),
         TrackColumn::Key => track.key.clone().unwrap_or_default(),
         TrackColumn::Mood => track.mood.clone().unwrap_or_default(),
         TrackColumn::Language => track.language.clone().unwrap_or_default(),
@@ -385,13 +401,26 @@ fn track_value_for_column(track: &crate::core::types::TrackRow, column: TrackCol
         TrackColumn::Bitrate => fmt_bitrate_kbps(track.bitrate_kbps),
         TrackColumn::SampleRate => fmt_sample_rate_hz(track.sample_rate_hz),
         TrackColumn::Channels => fmt_channels(track.channels),
-        TrackColumn::Rating => track.rating.map(|n| n.to_string()).unwrap_or_default(),
-        TrackColumn::PlayCount => track.play_count.map(|n| n.to_string()).unwrap_or_default(),
+        TrackColumn::Rating => track
+            .rating
+            .map(|number| number.to_string())
+            .unwrap_or_default(),
+        TrackColumn::PlayCount => track
+            .play_count
+            .map(|number| number.to_string())
+            .unwrap_or_default(),
         TrackColumn::Compilation => match track.compilation {
             Some(true) => "true".to_string(),
             Some(false) => "false".to_string(),
             None => String::new(),
         },
+    }
+}
+
+fn counter_display(raw: &Option<String>, numeric: Option<u32>) -> String {
+    match raw.as_deref() {
+        Some(value) if !value.trim().is_empty() => value.to_string(),
+        _ => numeric.map(|number| number.to_string()).unwrap_or_default(),
     }
 }
 
@@ -424,7 +453,7 @@ fn build_path_cell(path: &str, width: f32) -> iced::widget::Container<'static, M
 }
 
 fn table_content_width(columns: &[&TrackColumnState]) -> f32 {
-    let widths_sum: f32 = columns.iter().map(|c| c.width).sum();
+    let widths_sum: f32 = columns.iter().map(|column| column.width).sum();
     let gaps = (columns.len().saturating_sub(1) as f32) * TRACK_COL_SPACING;
     widths_sum + gaps
 }
