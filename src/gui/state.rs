@@ -35,8 +35,8 @@ pub(crate) fn mixed_display_string() -> &'static str {
 }
 
 #[inline]
-pub(crate) fn is_mixed_display_value(s: &str) -> bool {
-    s.trim() == MIXED_SENTINEL
+pub(crate) fn is_mixed_display_value(value: &str) -> bool {
+    value.trim() == MIXED_SENTINEL
 }
 
 /// Tracks vs Albums is a layout choice.
@@ -220,10 +220,53 @@ pub(crate) enum ArtworkEdit {
     },
 }
 
+impl ArtworkEdit {
+    #[inline]
+    pub fn is_unchanged(&self) -> bool {
+        matches!(self, Self::Unchanged)
+    }
+}
+
 impl Default for ArtworkEdit {
     fn default() -> Self {
         Self::Unchanged
     }
+}
+
+/// Artwork operation included in a completed save report.
+///
+/// Replacement bytes are retained long enough to rebuild the GUI cover cache
+/// even if the inspector state changed while the background task was running.
+#[derive(Debug, Clone)]
+pub(crate) enum SavedArtworkAction {
+    Unchanged,
+    Remove,
+    Replace { preview_bytes: Vec<u8> },
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SaveFileOutcome {
+    pub id: TrackId,
+    pub path: PathBuf,
+    pub refreshed_row: Option<TrackRow>,
+
+    pub metadata_attempted: bool,
+    pub metadata_succeeded: bool,
+
+    pub artwork_attempted: bool,
+    pub artwork_succeeded: bool,
+
+    pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SaveReport {
+    pub requested: usize,
+    pub files: Vec<SaveFileOutcome>,
+    pub artwork_action: SavedArtworkAction,
+
+    /// File changes may have succeeded even when the SQLite cache update failed.
+    pub db_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -339,6 +382,12 @@ pub(crate) struct Sonora {
     pub saving: bool,
     pub inspector_art_edit: ArtworkEdit,
 
+    /// Fields the user actually edited during the current inspector session.
+    ///
+    /// Save logic applies only these fields. Untouched draft values are display
+    /// state and must never be written merely because another field changed.
+    pub inspector_touched_fields: BTreeSet<InspectorField>,
+
     /// 'true' means "selected files disagree on this field".
     /// This is the authoritative mixed-state signal.
     /// The inspector draft may display 'MIXED_SENTINEL', but save logic should rely
@@ -400,10 +449,10 @@ impl Sonora {
                     )
                 }
             }
-            Err(e) => (Vec::new(), format!("Library DB unavailable: {e}")),
+            Err(error) => (Vec::new(), format!("Library DB unavailable: {error}")),
         };
 
-        let mut s = Self {
+        let mut state = Self {
             status,
             scanning: false,
 
@@ -464,16 +513,19 @@ impl Sonora {
             inspector_dirty: false,
             saving: false,
             inspector_art_edit: ArtworkEdit::Unchanged,
+            inspector_touched_fields: BTreeSet::new(),
             inspector_mixed: BTreeMap::new(),
         };
 
-        s.rebuild_library_caches();
+        state.rebuild_library_caches();
 
-        if let Some(controller) = &s.playback {
-            controller.send(crate::core::playback::PlayerCommand::SetVolume(s.volume));
+        if let Some(controller) = &state.playback {
+            controller.send(crate::core::playback::PlayerCommand::SetVolume(
+                state.volume,
+            ));
         }
 
-        s
+        state
     }
 
     #[inline]
@@ -492,20 +544,26 @@ impl Sonora {
     }
 
     #[inline]
+    pub fn refresh_inspector_dirty(&mut self) {
+        self.inspector_dirty =
+            !self.inspector_touched_fields.is_empty() || !self.inspector_art_edit.is_unchanged();
+    }
+
+    #[inline]
     pub fn index_of_id(&self, id: TrackId) -> Option<usize> {
         self.track_index.get(&id).copied()
     }
 
     #[inline]
     pub fn track_by_id(&self, id: TrackId) -> Option<&TrackRow> {
-        let i = self.index_of_id(id)?;
-        self.tracks.get(i)
+        let index = self.index_of_id(id)?;
+        self.tracks.get(index)
     }
 
     #[inline]
     pub fn track_by_id_mut(&mut self, id: TrackId) -> Option<&mut TrackRow> {
-        let i = self.index_of_id(id)?;
-        self.tracks.get_mut(i)
+        let index = self.index_of_id(id)?;
+        self.tracks.get_mut(index)
     }
 
     #[inline]
@@ -514,7 +572,10 @@ impl Sonora {
 
         ids.iter()
             .copied()
-            .find(|id| self.track_by_id(*id).is_some_and(|t| t.artwork_count > 0))
+            .find(|id| {
+                self.track_by_id(*id)
+                    .is_some_and(|track| track.artwork_count > 0)
+            })
             .or_else(|| ids.first().copied())
     }
 
@@ -524,26 +585,27 @@ impl Sonora {
 
         let mut visible_ids: Vec<TrackId> = Vec::new();
 
-        for (i, t) in self.tracks.iter().enumerate() {
-            let Some(id) = t.id else {
+        for (index, track) in self.tracks.iter().enumerate() {
+            let Some(id) = track.id else {
                 continue;
             };
-            self.track_index.insert(id, i);
+
+            self.track_index.insert(id, index);
             visible_ids.push(id);
         }
 
-        for t in &self.tracks {
-            let Some(id) = t.id else {
+        for track in &self.tracks {
+            let Some(id) = track.id else {
                 continue;
             };
 
-            let album_artist = t
+            let album_artist = track
                 .album_artist
                 .clone()
-                .or_else(|| t.artist.clone())
+                .or_else(|| track.artist.clone())
                 .unwrap_or_else(|| "Unknown Artist".to_string());
 
-            let album = t
+            let album = track
                 .album
                 .clone()
                 .unwrap_or_else(|| "Unknown Album".to_string());
@@ -564,29 +626,41 @@ impl Sonora {
             .retain(|id| valid_ids.contains(id) && seen.insert(*id));
 
         let mut queued: BTreeSet<TrackId> = self.shuffled_ids.iter().copied().collect();
+
         for id in visible_ids {
             if queued.insert(id) {
                 self.shuffled_ids.push(id);
             }
         }
 
-        if matches!(&self.playback_context, PlaybackContext::Album(key) if !self.album_groups.contains_key(key))
-        {
+        if matches!(
+            &self.playback_context,
+            PlaybackContext::Album(key) if !self.album_groups.contains_key(key)
+        ) {
             self.playback_context = PlaybackContext::Library;
         }
 
-        if matches!(&self.selected_album, Some(key) if !self.album_groups.contains_key(key)) {
+        if matches!(
+            &self.selected_album,
+            Some(key) if !self.album_groups.contains_key(key)
+        ) {
             self.selected_album = None;
         }
 
-        if matches!(self.selected_track, Some(id) if !self.track_index.contains_key(&id)) {
+        if matches!(
+            self.selected_track,
+            Some(id) if !self.track_index.contains_key(&id)
+        ) {
             self.selected_track = None;
         }
 
         self.selected_tracks
             .retain(|id| self.track_index.contains_key(id));
 
-        if matches!(self.selection_anchor, Some(id) if !self.track_index.contains_key(&id)) {
+        if matches!(
+            self.selection_anchor,
+            Some(id) if !self.track_index.contains_key(&id)
+        ) {
             self.selection_anchor = None;
         }
 
@@ -695,10 +769,9 @@ pub(crate) enum Message {
     InspectorChanged(InspectorField, String),
     CloseInspector,
 
-    // Actions
+    // Save
     SaveInspectorToFile,
-    SaveFinished(TrackId, Result<TrackRow, String>),
-    SaveFinishedBatch(Result<Vec<(TrackId, TrackRow)>, String>),
+    SaveCompleted(SaveReport),
 
     // Sonora-only visibility / DB record actions
     HideSelected,

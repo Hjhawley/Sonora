@@ -4,6 +4,7 @@
 //! - Selection is stored as TrackId(s).
 //! - We resolve ids -> indices only when we need to read TrackRow(s).
 //! - Mixed-state is tracked structurally in 'state.inspector_mixed'.
+//! - User-edited fields are tracked separately from display-only draft values.
 //! - The draft may display '<mixed>', but that is only a UI placeholder.
 
 use std::collections::BTreeMap;
@@ -20,13 +21,24 @@ pub(crate) fn inspector_changed(
     field: InspectorField,
     value: String,
 ) -> Task<Message> {
+    if state.saving {
+        return Task::none();
+    }
+
     state.inspector_mixed.insert(field, false);
+    state.inspector_touched_fields.insert(field);
+
     set_inspector_field(state, field, value);
-    state.inspector_dirty = true;
+    state.refresh_inspector_dirty();
+
     Task::none()
 }
 
 pub(crate) fn close_inspector(state: &mut Sonora) -> Task<Message> {
+    if state.saving {
+        return Task::none();
+    }
+
     state.inspector_open = false;
 
     if state.inspector_dirty {
@@ -74,15 +86,18 @@ fn set_inspector_field(state: &mut Sonora, field: InspectorField, value: String)
 }
 
 pub(crate) fn clear_inspector(state: &mut Sonora) {
-    state.inspector = Default::default();
-    state.inspector_dirty = false;
+    state.inspector = InspectorDraft::default();
+    state.inspector_touched_fields.clear();
     state.inspector_mixed.clear();
+
     reset_inspector_artwork_state(state);
+    state.refresh_inspector_dirty();
 }
 
 /// Load inspector fields from the current selection.
 /// - Works for single-track and multi-track selection.
 /// - Writes '<mixed>' into fields that disagree across selected tracks.
+/// - Clears the prior edit set because the draft now represents a fresh load.
 pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     reset_inspector_artwork_state(state);
 
@@ -98,12 +113,12 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         return;
     }
 
-    let idxs: Vec<usize> = ids
+    let indices: Vec<usize> = ids
         .into_iter()
         .filter_map(|id| state.index_of_id(id))
         .collect();
 
-    if idxs.is_empty() {
+    if indices.is_empty() {
         state.inspector_open = false;
         clear_inspector(state);
         return;
@@ -137,7 +152,7 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         }
     }
 
-    let titles: Vec<String> = idxs
+    let titles: Vec<String> = indices
         .iter()
         .map(|&index| {
             state.tracks[index]
@@ -147,137 +162,137 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         })
         .collect();
 
-    let artists: Vec<String> = idxs
+    let artists: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].artist))
         .collect();
 
-    let albums: Vec<String> = idxs
+    let albums: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].album))
         .collect();
 
-    let album_artists: Vec<String> = idxs
+    let album_artists: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].album_artist))
         .collect();
 
-    let composers: Vec<String> = idxs
+    let composers: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].composer))
         .collect();
 
-    let track_no: Vec<String> = idxs
+    let track_numbers: Vec<String> = indices
         .iter()
         .map(|&index| opt_u32(state.tracks[index].track_no))
         .collect();
 
-    let track_total: Vec<String> = idxs
+    let track_totals: Vec<String> = indices
         .iter()
         .map(|&index| opt_u32(state.tracks[index].track_total))
         .collect();
 
-    let disc_no: Vec<String> = idxs
+    let disc_numbers: Vec<String> = indices
         .iter()
         .map(|&index| opt_u32(state.tracks[index].disc_no))
         .collect();
 
-    let disc_total: Vec<String> = idxs
+    let disc_totals: Vec<String> = indices
         .iter()
         .map(|&index| opt_u32(state.tracks[index].disc_total))
         .collect();
 
-    let release_dates: Vec<String> = idxs
+    let release_dates: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].release_date))
         .collect();
 
-    let genres: Vec<String> = idxs
+    let genres: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].genre))
         .collect();
 
-    let groupings: Vec<String> = idxs
+    let groupings: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].grouping))
         .collect();
 
-    let content_groups: Vec<String> = idxs
+    let content_groups: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].content_group))
         .collect();
 
-    let comments: Vec<String> = idxs
+    let comments: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].comment))
         .collect();
 
-    let lyrics: Vec<String> = idxs
+    let lyrics: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].lyrics))
         .collect();
 
-    let lyricists: Vec<String> = idxs
+    let lyricists: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].lyricist))
         .collect();
 
-    let conductors: Vec<String> = idxs
+    let conductors: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].conductor))
         .collect();
 
-    let remixers: Vec<String> = idxs
+    let remixers: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].remixer))
         .collect();
 
-    let publishers: Vec<String> = idxs
+    let publishers: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].publisher))
         .collect();
 
-    let subtitles: Vec<String> = idxs
+    let subtitles: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].subtitle))
         .collect();
 
-    let bpms: Vec<String> = idxs
+    let bpms: Vec<String> = indices
         .iter()
         .map(|&index| opt_u32(state.tracks[index].bpm))
         .collect();
 
-    let keys: Vec<String> = idxs
+    let keys: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].key))
         .collect();
 
-    let moods: Vec<String> = idxs
+    let moods: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].mood))
         .collect();
 
-    let languages: Vec<String> = idxs
+    let languages: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].language))
         .collect();
 
-    let isrcs: Vec<String> = idxs
+    let isrcs: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].isrc))
         .collect();
 
-    let encoder_settings: Vec<String> = idxs
+    let encoder_settings: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].encoder_settings))
         .collect();
 
-    let encoded_by: Vec<String> = idxs
+    let encoded_by: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].encoded_by))
         .collect();
 
-    let copyrights: Vec<String> = idxs
+    let copyrights: Vec<String> = indices
         .iter()
         .map(|&index| opt_str(&state.tracks[index].copyright))
         .collect();
@@ -323,28 +338,28 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
         &mut state.inspector.track_no,
         &mut mixed_map,
         InspectorField::TrackNo,
-        track_no,
+        track_numbers,
     );
 
     apply_field(
         &mut state.inspector.track_total,
         &mut mixed_map,
         InspectorField::TrackTotal,
-        track_total,
+        track_totals,
     );
 
     apply_field(
         &mut state.inspector.disc_no,
         &mut mixed_map,
         InspectorField::DiscNo,
-        disc_no,
+        disc_numbers,
     );
 
     apply_field(
         &mut state.inspector.disc_total,
         &mut mixed_map,
         InspectorField::DiscTotal,
-        disc_total,
+        disc_totals,
     );
 
     apply_field(
@@ -481,5 +496,6 @@ pub(crate) fn load_inspector_from_selection(state: &mut Sonora) {
     );
 
     state.inspector_mixed = mixed_map;
-    state.inspector_dirty = false;
+    state.inspector_touched_fields.clear();
+    state.refresh_inspector_dirty();
 }

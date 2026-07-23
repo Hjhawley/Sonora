@@ -108,8 +108,7 @@ pub(crate) fn update(state: &mut Sonora, message: Message) -> Task<Message> {
 
         // Save
         Message::SaveInspectorToFile => save::save_inspector_to_file(state),
-        Message::SaveFinished(id, result) => save::save_finished(state, id, result),
-        Message::SaveFinishedBatch(result) => save::save_finished_batch(state, result),
+        Message::SaveCompleted(report) => save::save_completed(state, report),
 
         // Sonora-only visibility / DB record actions
         Message::HideSelected => actions::hide_selected(state),
