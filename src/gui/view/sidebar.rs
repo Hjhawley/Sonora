@@ -31,7 +31,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
 
     // Scope buttons: equal width so the section reads as one coherent control group.
     let library_btn = if state.library_scope == LibraryScope::Library {
-        button("▷ Library").style(sonora_button_selected)
+        button("Library").style(sonora_button_selected)
     } else {
         button("Library")
             .on_press(Message::SetLibraryScope(LibraryScope::Library))
@@ -40,7 +40,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     .width(Length::FillPortion(1));
 
     let hidden_btn = if state.library_scope == LibraryScope::Hidden {
-        button("▷ Hidden").style(sonora_button_selected)
+        button("Hidden").style(sonora_button_selected)
     } else {
         button("Hidden")
             .on_press(Message::SetLibraryScope(LibraryScope::Hidden))
@@ -49,7 +49,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     .width(Length::FillPortion(1));
 
     let missing_btn = if state.library_scope == LibraryScope::Missing {
-        button("▷ Missing").style(sonora_button_selected)
+        button("Missing").style(sonora_button_selected)
     } else {
         button("Missing")
             .on_press(Message::SetLibraryScope(LibraryScope::Missing))
@@ -61,7 +61,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
 
     // Layout mode buttons: same sizing rule as scope toggles.
     let albums_btn = if state.view_mode == ViewMode::Albums {
-        button("▷ Album View").style(sonora_button_selected)
+        button("Album View").style(sonora_button_selected)
     } else {
         button("Album View")
             .on_press(Message::SetViewMode(ViewMode::Albums))
@@ -70,7 +70,7 @@ pub(crate) fn build_sidebar(state: &Sonora) -> iced::widget::Container<'_, Messa
     .width(Length::FillPortion(1));
 
     let tracks_btn = if state.view_mode == ViewMode::Tracks {
-        button("▷ Track View").style(sonora_button_selected)
+        button("Track View").style(sonora_button_selected)
     } else {
         button("Track View")
             .on_press(Message::SetViewMode(ViewMode::Tracks))
